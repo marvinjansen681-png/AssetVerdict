@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  deals Deal[]
+}
+
+model Deal {
+  id           String  @id @default(cuid())
+  userId       String
+  user         User    @relation(fields: [userId], references: [id])
+  name         String
+  propertyType String?
+  address      String?
+  city         String?
+  notes        String?
+  currency     String  @default("ZAR")
+
+  // Acquisition
+  askingPrice       Float?
+  purchasePrice     Float?
+  marketValue       Float?
+  transferBondCost  Float?
+  renovationCost    Float?
+  sourcingFee       Float?
+  agentCommission   Float?
+  wantToSell        Boolean @default(false)
+  saleYear          Int?
+
+  // Other Inputs / Enterprise
+  incomeTaxRate         Float? @default(27)
+  capitalGainsTaxRate   Float? @default(22)
+  capitalGrowthRate     Float? @default(3)
+  rentalGrowthRate      Float? @default(8)
+  costInflation         Float? @default(5)
+  sustainableGrowthRate Float? @default(5)
+  discountRate          Float? @default(10)
+  realGrowthFactor      Float? @default(10)
+  occupationFactor      Float? @default(10)
+  marketCapRate         Float? @default(10)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  financeSources FinanceSource[]
+  cashflowInputs CashflowInputs?
+  capexItems     CapexItem[]
+
+  @@index([userId])
+}
+
+model FinanceSource {
+  id              String  @id @default(cuid())
+  dealId          String
+  deal            Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sourceType      String
+  ltvMode         String  @default("percent")
+  ltvValue        Float?
+  loanAmount      Float?
+  interestRate    Float?
+  termYears       Int?    @default(15)
+  repaymentAmount Float?
+  order           Int     @default(0)
+
+  @@index([dealId])
+}
+
+model CashflowInputs {
+  id     String @id @default(cuid())
+  dealId String @unique
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  // Revenue (monthly)
+  monthlyRent      Float?
+  occupancyRate    Float?  @default(88)
+  additionalIncome Float?  @default(0)
+  recoveries       Float?  @default(0)
+
+  // Expenses (monthly)
+  managementFeeMode    String @default("percent")
+  managementFeeValue   Float? @default(15)
+  maintenanceCostMode  String @default("percent")
+  maintenanceCostValue Float? @default(5)
+  levies               Float? @default(0)
+  ratesAndTaxes        Float?
+  insurance            Float?
+  waterSewerage        Float?
+  securityCleaning     Float?
+  electricity          Float?
+  badDebtsPct          Float? @default(5)
+}
+
+model CapexItem {
+  id     String @id @default(cuid())
+  dealId String
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  label  String
+  amount Float
+  color  String?
+
+  @@index([dealId])
+}
