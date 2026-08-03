@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import type { DealMetrics, YearlyProjection } from "@/lib/calculations";
 import type { Scenarios } from "@/lib/calculations/scenarios";
-import type { CapexItem } from "@/types";
+import type { CapexItem, RenovationItem } from "@/types";
 
 export interface DealSummaryInputs {
   askingPrice: number | null;
@@ -21,6 +21,21 @@ export interface DealSummaryInputs {
   }[];
   monthlyRent: number | null;
   occupancyRate: number | null;
+  erfNumber: string | null;
+  erfSize: number | null;
+  floorSize: number | null;
+  yearBuilt: number | null;
+  propertyZoning: string | null;
+  titleDeedNumber: string | null;
+  ratesAccountNumber: string | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  garages: number | null;
+  numUnits: number | null;
+  isSectionalTitle: boolean;
+  unitNumber: string | null;
+  schemeName: string | null;
+  schemeLevy: number | null;
 }
 
 export interface CalculateResponse {
@@ -34,6 +49,7 @@ export interface CalculateResponse {
   rentalGrowthRate: number;
   costInflation: number;
   capexItems: CapexItem[];
+  renovationItems: RenovationItem[];
   dealSummary: DealSummaryInputs;
 }
 
@@ -76,6 +92,7 @@ export function useDealMetrics(dealId: string) {
     rentalGrowthRate: data?.rentalGrowthRate,
     costInflation: data?.costInflation,
     capexItems: data?.capexItems,
+    renovationItems: data?.renovationItems,
     dealSummary: data?.dealSummary,
     isLoading,
     error: error as CalculateError | undefined,

@@ -16,6 +16,7 @@ import StrategyBadge from "@/components/StrategyBadge";
 import FlipDashboard from "@/components/FlipDashboard";
 import Link from "next/link";
 import type { DealMetrics } from "@/lib/calculations";
+import { isFiniteNumber } from "@/lib/calculations";
 import type { CapexItem } from "@/types";
 import { useState, useEffect } from "react";
 
@@ -40,6 +41,7 @@ export default function DealSummaryPage({
     rentalGrowthRate,
     costInflation,
     capexItems: capexFromApi,
+    renovationItems,
     dealName,
     address,
     currency,
@@ -61,7 +63,7 @@ export default function DealSummaryPage({
   }
 
   async function handleExportPdf() {
-    if (!activeMetrics || !activeProjection || !dealSummary || !dealName) return;
+    if (!scenarios || !dealSummary || !dealName) return;
     setExporting(true);
     try {
       const [{ pdf }, { default: DealSummaryPDF }] = await Promise.all([
@@ -74,10 +76,11 @@ export default function DealSummaryPage({
           dealName={dealName}
           address={address}
           currency={currency ?? "ZAR"}
-          scenarioLabel={`${scenario[0].toUpperCase()}${scenario.slice(1)} Case`}
-          metrics={activeMetrics}
-          projection={activeProjection}
+          strategyId={investmentStrategy ?? "commercial"}
+          activeScenario={scenario}
+          scenarios={scenarios}
           dealSummary={dealSummary}
+          renovationItems={renovationItems}
         />
       ).toBlob();
 
@@ -252,7 +255,7 @@ export default function DealSummaryPage({
           />
           <GaugeDial
             value={
-              isFinite(activeMetrics.paybackPeriod)
+              isFiniteNumber(activeMetrics.paybackPeriod)
                 ? activeMetrics.paybackPeriod
                 : null
             }
@@ -411,7 +414,7 @@ export default function DealSummaryPage({
           />
           <GaugeDial
             value={
-              isFinite(activeMetrics.paybackPeriod)
+              isFiniteNumber(activeMetrics.paybackPeriod)
                 ? activeMetrics.paybackPeriod
                 : null
             }

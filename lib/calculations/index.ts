@@ -1,5 +1,17 @@
 import { calcMonthlyRepayment } from "./amortisation";
 
+/**
+ * Type guard for "a real, usable number". Prefer this over the bare
+ * `isFinite()` global everywhere a value may have round-tripped through
+ * JSON: `Infinity` (e.g. an infinite payback period) serializes to `null`
+ * over the wire, and `isFinite(null)` is `true` (null coerces to 0), so a
+ * bare `isFinite()` check silently passes through a null as if it were a
+ * valid number — this guard catches that case.
+ */
+export function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && isFinite(value);
+}
+
 export interface FinanceSourceInput {
   loanAmount: number;
   interestRate: number; // %

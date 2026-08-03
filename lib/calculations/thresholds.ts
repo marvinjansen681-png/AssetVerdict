@@ -1,3 +1,5 @@
+import { isFiniteNumber } from "./index";
+
 export type GaugeColor = "green" | "orange" | "red";
 
 type ThresholdRule = (value: number) => GaugeColor;
@@ -111,6 +113,8 @@ export function getGaugeColorForStrategy(
 ): GaugeColor {
   const rule = getStrategyThresholds(strategyId)[metric];
   if (!rule) return "orange";
-  if (!isFinite(value)) return value > 0 ? "green" : "red";
+  // Infinity (e.g. an infinite payback period) and its JSON-over-the-wire
+  // form (null, since JSON has no Infinity) both fail this check.
+  if (!isFiniteNumber(value)) return "red";
   return rule(value);
 }
