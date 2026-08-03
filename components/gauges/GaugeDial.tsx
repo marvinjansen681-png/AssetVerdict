@@ -2,7 +2,7 @@
 
 import Card from "@/components/ui/Card";
 import TooltipIcon from "@/components/ui/TooltipIcon";
-import { getGaugeColor, type GaugeColor } from "@/lib/calculations/thresholds";
+import { getGaugeColorForStrategy, type GaugeColor } from "@/lib/calculations/thresholds";
 import clsx from "clsx";
 
 export interface GaugeThresholds {
@@ -17,6 +17,7 @@ export interface GaugeDialProps {
   label: string;
   tooltipText: string;
   metricKey: string;
+  strategyId?: string;
   min?: number;
   max?: number;
   benchmarkValue?: number;
@@ -73,6 +74,7 @@ export default function GaugeDial({
   label,
   tooltipText,
   metricKey,
+  strategyId = "commercial",
   min = 0,
   max = 30,
   benchmarkValue,
@@ -83,7 +85,7 @@ export default function GaugeDial({
   const cy = height - 5;
 
   const color: GaugeColor | "grey" =
-    value === null ? "grey" : getGaugeColor(metricKey, value);
+    value === null ? "grey" : getGaugeColorForStrategy(metricKey, value, strategyId);
 
   const valueAngle = value === null ? 180 : valueToAngle(value, min, max);
   const backgroundPath = describeArc(cx, cy, radius, 180, 0);

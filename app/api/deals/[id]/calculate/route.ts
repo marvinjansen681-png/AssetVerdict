@@ -44,6 +44,7 @@ export async function GET(
     dealName: deal.name,
     address: deal.address,
     currency: deal.currency,
+    investmentStrategy: deal.investmentStrategy ?? "commercial",
     rentalGrowthRate: inputs.rentalGrowthRate,
     costInflation: inputs.costInflation,
     capexItems: deal.capexItems,

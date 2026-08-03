@@ -220,9 +220,9 @@ export function calcGrossRevenueAnnual(inputs: DealInputs): number {
   return calcEffectiveMonthlyRevenue(inputs) * 12;
 }
 
-/** Monthly revenue split into rental / additional income / recoveries. */
+/** Monthly revenue split into rental/base income / additional income / recoveries. */
 export function calcRevenueMonthly(inputs: DealInputs): RevenueBreakdown {
-  const rentalIncome = inputs.monthlyRent * (inputs.occupancyRate / 100);
+  const rentalIncome = calcBaseMonthlyRevenue(inputs);
   const additionalIncome = inputs.additionalIncome;
   const recoveries = inputs.recoveries;
   return {
@@ -563,7 +563,13 @@ export function calcIRR(inputs: DealInputs): number {
     rate = nextRate;
   }
 
-  return rate * 100;
+  // Newton-Raphson can diverge to a spurious, numerically "converged" root far
+  // from any economically meaningful rate (e.g. deals with cashflow negative
+  // every single year, where no real break-even rate exists). Clamp to a wide
+  // but sane band so the UI shows "very bad"/"very good" rather than garbage
+  // like hundreds of millions of percent.
+  const clampedRate = Math.max(-0.99, Math.min(rate, 10));
+  return clampedRate * 100;
 }
 
 /** Net Present Value of 20-year cashflows plus terminal value, discounted at discountRate. */

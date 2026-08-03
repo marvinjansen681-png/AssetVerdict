@@ -12,6 +12,8 @@ import ProjectCashflowChart from "@/components/charts/ProjectCashflowChart";
 import SimpleYearTable from "@/components/charts/SimpleYearTable";
 import MentorDrawer from "@/components/MentorDrawer";
 import Button from "@/components/ui/Button";
+import StrategyBadge from "@/components/StrategyBadge";
+import FlipDashboard from "@/components/FlipDashboard";
 import Link from "next/link";
 import type { DealMetrics } from "@/lib/calculations";
 import type { CapexItem } from "@/types";
@@ -41,6 +43,7 @@ export default function DealSummaryPage({
     dealName,
     address,
     currency,
+    investmentStrategy,
     dealSummary,
     isLoading,
     error,
@@ -94,6 +97,8 @@ export default function DealSummaryPage({
     ? scenarios[scenario].metrics
     : metrics;
   const activeProjection = scenarios ? scenarios[scenario].projection : undefined;
+  const strategyId = investmentStrategy ?? "commercial";
+  const isFlip = strategyId === "fix_and_flip";
 
   if (isLoading) {
     return (
@@ -139,8 +144,9 @@ export default function DealSummaryPage({
   return (
     <div className="px-4 md:px-8 py-8 max-w-5xl mx-auto flex flex-col gap-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <h1 className="font-display text-2xl text-av-navy">Deal Summary</h1>
+          <StrategyBadge strategyId={strategyId} />
           <span className="text-xs font-body font-semibold px-3 py-1 rounded-full bg-av-light-grey text-av-navy capitalize">
             {scenario} Case
           </span>
@@ -164,6 +170,14 @@ export default function DealSummaryPage({
         </p>
       </AccordionSection>
 
+      <p className="font-body text-xs text-av-slate italic -mt-4">
+        ℹ️ Thresholds shown are calibrated for {strategyId.replace(/_/g, " ")} investments.
+      </p>
+
+      {isFlip && activeMetrics.flipMetrics ? (
+        <FlipDashboard flipMetrics={activeMetrics.flipMetrics} currency="R" />
+      ) : (
+        <>
       <section>
         <div className="flex items-center gap-2 mb-4">
           <h2 className="font-display text-xl text-av-navy">Returns</h2>
@@ -176,6 +190,7 @@ export default function DealSummaryPage({
             label="IRR"
             tooltipText="Internal Rate of Return — the annualised return on your total investment over 20 years. Above 15% is strong."
             metricKey="irr"
+            strategyId={strategyId}
             max={40}
             benchmarkValue={15}
           />
@@ -185,6 +200,7 @@ export default function DealSummaryPage({
             label="Net Yield Yr 1 (pre-tax)"
             tooltipText="Your first-year net income as a % of total investment, before tax."
             metricKey="netYieldPreTax"
+            strategyId={strategyId}
             max={20}
             benchmarkValue={8}
           />
@@ -194,6 +210,7 @@ export default function DealSummaryPage({
             label="Cap Rate (PP)"
             tooltipText="Net Operating Income as a % of your purchase price. 8–12% is the typical commercial sweet spot."
             metricKey="capRatePP"
+            strategyId={strategyId}
             max={20}
             benchmarkValue={10}
           />
@@ -209,6 +226,7 @@ export default function DealSummaryPage({
             label="Cap Rate (MV)"
             tooltipText="Net Operating Income as a % of market value. Helps assess if you bought below market."
             metricKey="capRateMV"
+            strategyId={strategyId}
             max={20}
             benchmarkValue={10}
           />
@@ -218,6 +236,7 @@ export default function DealSummaryPage({
             label="Debt Service Ratio"
             tooltipText="How many times your NOI covers your debt repayments. Above 1.25 is safe; below 1 means the property can't service its debt."
             metricKey="dscr"
+            strategyId={strategyId}
             max={3}
             benchmarkValue={1.25}
           />
@@ -227,6 +246,7 @@ export default function DealSummaryPage({
             label="Operating Expense Ratio"
             tooltipText="Total expenses as a % of gross revenue. Lower is better — below 40% is excellent."
             metricKey="operatingExpenseRatio"
+            strategyId={strategyId}
             max={100}
             benchmarkValue={40}
           />
@@ -240,6 +260,7 @@ export default function DealSummaryPage({
             label="Payback Period"
             tooltipText="How many years before you recover your total investment from cashflow alone."
             metricKey="paybackPeriod"
+            strategyId={strategyId}
             max={30}
             benchmarkValue={8}
           />
@@ -254,6 +275,7 @@ export default function DealSummaryPage({
             label="Gross Yield"
             tooltipText="Annual gross revenue as a % of purchase price."
             metricKey="grossYield"
+            strategyId={strategyId}
             max={40}
             benchmarkValue={10}
           />
@@ -263,6 +285,7 @@ export default function DealSummaryPage({
             label="Net Yield Yr 1 (pre-tax)"
             tooltipText="Your first-year net income as a % of total investment, before tax."
             metricKey="netYieldPreTax"
+            strategyId={strategyId}
             max={20}
             benchmarkValue={8}
           />
@@ -272,6 +295,7 @@ export default function DealSummaryPage({
             label="Net Yield Yr 1 (post-tax)"
             tooltipText="Your first-year net income as a % of total investment, after tax."
             metricKey="netYieldPostTax"
+            strategyId={strategyId}
             max={20}
             benchmarkValue={6}
           />
@@ -281,6 +305,7 @@ export default function DealSummaryPage({
             label="IRR"
             tooltipText="Internal Rate of Return over 20 years."
             metricKey="irr"
+            strategyId={strategyId}
             max={40}
             benchmarkValue={15}
           />
@@ -290,6 +315,7 @@ export default function DealSummaryPage({
             label="NOI Margin"
             tooltipText="NOI as a % of gross revenue. Shows operational efficiency."
             metricKey="noiMargin"
+            strategyId={strategyId}
             max={100}
             benchmarkValue={60}
           />
@@ -318,6 +344,7 @@ export default function DealSummaryPage({
             label="Debt Service Ratio"
             tooltipText="How many times your NOI covers your debt repayments. Above 1.25 is safe; below 1 means the property can't service its debt."
             metricKey="dscr"
+            strategyId={strategyId}
             max={3}
             benchmarkValue={1.25}
           />
@@ -327,6 +354,7 @@ export default function DealSummaryPage({
             label="LTV"
             tooltipText="Loan-to-Value ratio — your total debt as a % of purchase price."
             metricKey="ltv"
+            strategyId={strategyId}
             max={100}
             benchmarkValue={60}
           />
@@ -336,6 +364,7 @@ export default function DealSummaryPage({
             label="Break-even Ratio"
             tooltipText="The occupancy rate needed to cover all costs including debt. Lower is safer."
             metricKey="breakEvenRatio"
+            strategyId={strategyId}
             max={100}
             benchmarkValue={75}
           />
@@ -350,6 +379,7 @@ export default function DealSummaryPage({
             label="Utilities Ratio"
             tooltipText="Utility costs (water, electricity, security) as a % of gross revenue."
             metricKey="utilitiesRatio"
+            strategyId={strategyId}
             max={50}
             benchmarkValue={15}
           />
@@ -359,6 +389,7 @@ export default function DealSummaryPage({
             label="Operating Expense Ratio"
             tooltipText="Total expenses as a % of gross revenue. Lower is better — below 40% is excellent."
             metricKey="operatingExpenseRatio"
+            strategyId={strategyId}
             max={100}
             benchmarkValue={40}
           />
@@ -373,6 +404,7 @@ export default function DealSummaryPage({
             label="Cap Rate Spread"
             tooltipText="How much better your deal is vs the market — more than 2% above market is strong, showing you bought below value."
             metricKey="capRateSpread"
+            strategyId={strategyId}
             min={-5}
             max={10}
             benchmarkValue={2}
@@ -387,6 +419,7 @@ export default function DealSummaryPage({
             label="Payback Period"
             tooltipText="The Payback Period refers to the amount of time it takes to recover the cost of your investment."
             metricKey="paybackPeriod"
+            strategyId={strategyId}
             max={30}
             benchmarkValue={8}
           />
@@ -434,6 +467,8 @@ export default function DealSummaryPage({
           <ProjectCashflowChart projection={activeProjection} />
         ) : null}
       </AccordionSection>
+        </>
+      )}
 
       <AccordionSection title="Capex Spend">
         <CapexPieChart
