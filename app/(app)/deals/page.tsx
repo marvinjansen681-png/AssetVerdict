@@ -20,6 +20,8 @@ function quickStatsFor(deal: DealWithRelations): DealQuickStats | null {
     irr: metrics.irr,
     grossYield: metrics.grossYield,
     cashflowMonthly: metrics.cashflowMonthly,
+    netProfit: metrics.flipMetrics?.netProfit,
+    roi: metrics.flipMetrics?.roi,
   };
 }
 

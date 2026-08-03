@@ -8,6 +8,8 @@ import Logo from "@/components/Logo";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import BackButton from "@/components/ui/BackButton";
+import StrategySelector from "@/components/StrategySelector";
+import type { StrategyId } from "@/lib/strategies";
 
 const PROPERTY_TYPES = ["Commercial", "Residential", "Industrial", "Mixed Use"];
 
@@ -16,6 +18,7 @@ export default function WelcomePage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [name, setName] = useState("");
   const [propertyType, setPropertyType] = useState("Commercial");
+  const [investmentStrategy, setInvestmentStrategy] = useState<StrategyId>("buy_to_let");
   const [dealId, setDealId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -25,7 +28,7 @@ export default function WelcomePage() {
     const res = await fetch("/api/deals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, propertyType }),
+      body: JSON.stringify({ name, propertyType, investmentStrategy }),
     });
     setCreating(false);
     if (res.ok) {
@@ -37,7 +40,7 @@ export default function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-av-navy flex items-center justify-center px-4">
-      <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
+      <div className={clsx("w-full bg-white rounded-lg shadow-lg p-8", step === 2 ? "max-w-xl" : "max-w-md")}>
         <div className="flex justify-center mb-6">
           <Logo />
         </div>
@@ -118,6 +121,15 @@ export default function WelcomePage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-body text-av-slate mb-1.5">
+                  Investment Strategy
+                </label>
+                <StrategySelector
+                  value={investmentStrategy}
+                  onChange={setInvestmentStrategy}
+                />
               </div>
             </div>
             <Button type="submit" disabled={creating} className="w-full">

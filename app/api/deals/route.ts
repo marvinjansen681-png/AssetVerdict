@@ -6,6 +6,7 @@ import { createDeal } from "@/lib/db/deals";
 const createDealSchema = z.object({
   name: z.string().min(1),
   propertyType: z.string().optional(),
+  investmentStrategy: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
 });

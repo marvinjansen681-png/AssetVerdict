@@ -13,6 +13,8 @@ export interface DealQuickStats {
   irr: number;
   grossYield: number;
   cashflowMonthly: number;
+  netProfit?: number;
+  roi?: number;
 }
 
 interface DealCardProps {
@@ -72,32 +74,78 @@ export default function DealCard({ deal, quickStats }: DealCardProps) {
       </p>
 
       <div className="flex gap-2 mt-4">
-        <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
-          <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
-            IRR
-          </div>
-          <div className="text-sm font-mono font-semibold text-av-navy">
-            {quickStats ? `${quickStats.irr.toFixed(1)}%` : "--"}
-          </div>
-        </div>
-        <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
-          <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
-            Gross Yield
-          </div>
-          <div className="text-sm font-mono font-semibold text-av-navy">
-            {quickStats ? `${quickStats.grossYield.toFixed(1)}%` : "--"}
-          </div>
-        </div>
-        <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
-          <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
-            Cashflow
-          </div>
-          <div className="text-sm font-mono font-semibold text-av-navy">
-            {quickStats
-              ? `R ${quickStats.cashflowMonthly.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-              : "--"}
-          </div>
-        </div>
+        {strategy.id === "fix_and_flip" ? (
+          <>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                Net Profit
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats?.netProfit !== undefined
+                  ? `R ${quickStats.netProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                  : "--"}
+              </div>
+            </div>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                ROI
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats?.roi !== undefined ? `${quickStats.roi.toFixed(1)}%` : "--"}
+              </div>
+            </div>
+          </>
+        ) : strategy.id === "instalment_sale" ? (
+          <>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                Monthly
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats
+                  ? `R ${quickStats.cashflowMonthly.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                  : "--"}
+              </div>
+            </div>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                IRR
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats ? `${quickStats.irr.toFixed(1)}%` : "--"}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                IRR
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats ? `${quickStats.irr.toFixed(1)}%` : "--"}
+              </div>
+            </div>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                Gross Yield
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats ? `${quickStats.grossYield.toFixed(1)}%` : "--"}
+              </div>
+            </div>
+            <div className="flex-1 rounded-md bg-av-light-grey px-2 py-2 text-center">
+              <div className="text-[10px] font-body text-av-slate uppercase tracking-wide">
+                Cashflow
+              </div>
+              <div className="text-sm font-mono font-semibold text-av-navy">
+                {quickStats
+                  ? `R ${quickStats.cashflowMonthly.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                  : "--"}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-2 mt-4">
