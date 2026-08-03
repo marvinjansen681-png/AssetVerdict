@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import BackButton from "@/components/ui/BackButton";
 
 const PROPERTY_TYPES = ["Commercial", "Residential", "Industrial", "Mixed Use"];
 
@@ -39,6 +40,7 @@ export default function NewDealPage() {
 
   return (
     <div className="px-4 md:px-8 py-8 max-w-lg mx-auto">
+      <BackButton href="/deals" label="My Deals" className="mb-3" />
       <h1 className="font-display text-2xl text-av-navy mb-6">New Deal</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>

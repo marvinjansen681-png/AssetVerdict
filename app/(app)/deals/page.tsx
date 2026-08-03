@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { listDeals } from "@/lib/db/deals";
 import DealCard, { type DealQuickStats } from "@/components/DealCard";
 import Button from "@/components/ui/Button";
+import BackButton from "@/components/ui/BackButton";
 import { calcAllMetrics } from "@/lib/calculations";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
 import type { DealWithRelations } from "@/types";
@@ -28,6 +29,7 @@ export default async function DealsPage() {
 
   return (
     <div className="px-4 md:px-8 py-8 max-w-7xl mx-auto">
+      <BackButton href="/" label="Home" className="mb-3" />
       <div className="flex items-center justify-between mb-8">
         <h1 className="font-display text-3xl text-av-navy">My Deals</h1>
         <Link href="/deals/new">

@@ -7,6 +7,7 @@ import clsx from "clsx";
 import Logo from "@/components/Logo";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import BackButton from "@/components/ui/BackButton";
 
 const PROPERTY_TYPES = ["Commercial", "Residential", "Industrial", "Mixed Use"];
 
@@ -86,6 +87,7 @@ export default function WelcomePage() {
 
         {step === 2 && (
           <form onSubmit={handleCreateDeal}>
+            <BackButton onClick={() => setStep(1)} className="mb-2" />
             <h1 className="font-display text-2xl text-av-navy mb-4 text-center">
               Create your first deal
             </h1>

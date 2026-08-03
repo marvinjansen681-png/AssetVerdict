@@ -6,6 +6,7 @@ import Link from "next/link";
 import Logo from "@/components/Logo";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import BackButton from "@/components/ui/BackButton";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -50,6 +51,7 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-av-navy px-4">
       <div className="w-full max-w-sm">
+        <BackButton href="/" label="Home" variant="dark" className="mb-4" />
         <div className="flex justify-center mb-8">
           <div className="scale-125">
             <Logo />
