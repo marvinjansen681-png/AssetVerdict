@@ -50,6 +50,21 @@ const sampleInputs: DealInputs = {
   costInflation: 5,
   discountRate: 10,
   marketCapRate: 10,
+
+  strategy: "commercial",
+  numUnits: 1,
+  nightlyRate: 0,
+  avgOccupiedNights: 200,
+  platformFeesPct: 15,
+  billsIncluded: false,
+  academicYearWeeks: 42,
+  pricePerRoom: 0,
+  holdingPeriodMonths: 6,
+  expectedSalePrice: 0,
+  holdingCostPerMonth: 0,
+  instalmentAmount: 0,
+  instalmentTerm: 240,
+  instalmentRate: 0,
 };
 
 describe("calculation engine — sample deal", () => {

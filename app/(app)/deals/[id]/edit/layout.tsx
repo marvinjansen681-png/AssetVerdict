@@ -37,7 +37,7 @@ export default async function DealEditLayout({
             Home / My Deals / {deal.name}
           </p>
         </div>
-        <TabNav dealId={deal.id} />
+        <TabNav dealId={deal.id} strategy={deal.investmentStrategy ?? "commercial"} />
         <div className="pb-24">{children}</div>
       </div>
     </DealProvider>

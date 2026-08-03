@@ -47,6 +47,30 @@ export interface DealInputs {
   costInflation: number; // % per year
   discountRate: number; // % for NPV
   marketCapRate: number; // % for Cap Rate Spread
+
+  // Strategy
+  strategy: string;
+  numUnits: number;
+
+  // STR
+  nightlyRate: number;
+  avgOccupiedNights: number;
+  platformFeesPct: number;
+
+  // Student / Multi-Let
+  billsIncluded: boolean;
+  academicYearWeeks: number;
+  pricePerRoom: number;
+
+  // Fix & Flip
+  holdingPeriodMonths: number;
+  expectedSalePrice: number;
+  holdingCostPerMonth: number;
+
+  // Instalment Sale Agreement
+  instalmentAmount: number;
+  instalmentTerm: number;
+  instalmentRate: number;
 }
 
 export interface OperatingCosts {
@@ -85,6 +109,21 @@ export interface RevenueBreakdown {
   total: number;
 }
 
+export interface FlipMetrics {
+  totalCost: number;
+  purchasePrice: number;
+  renovationCost: number;
+  holdingCosts: number;
+  agentFee: number;
+  expectedSalePrice: number;
+  grossProfit: number;
+  cgt: number;
+  netProfit: number;
+  roi: number;
+  annualisedROI: number;
+  profitMargin: number;
+}
+
 export interface DealMetrics {
   totalInvestment: number;
   totalLoanAmount: number;
@@ -112,6 +151,7 @@ export interface DealMetrics {
   paybackPeriod: number;
   irr: number;
   npv: number;
+  flipMetrics?: FlipMetrics;
 }
 
 /** Total upfront investment: purchase price + all buying costs. */
@@ -136,12 +176,42 @@ export function calcDepositRequired(inputs: DealInputs): number {
 
 export { calcMonthlyRepayment };
 
+/**
+ * Base rental/nightly/room revenue before additional income and recoveries,
+ * branching on the deal's investment strategy (see /lib/strategies.ts).
+ */
+function calcBaseMonthlyRevenue(inputs: DealInputs): number {
+  switch (inputs.strategy) {
+    case "str":
+      // Nightly rate x occupied nights/year, averaged to a monthly figure.
+      return (inputs.nightlyRate * inputs.avgOccupiedNights) / 12;
+    case "student":
+      // Per-room weekly rent x rooms x academic-year weeks x occupancy, annualised to monthly.
+      return (
+        (inputs.pricePerRoom *
+          inputs.numUnits *
+          inputs.academicYearWeeks *
+          (inputs.occupancyRate / 100)) /
+        12
+      );
+    case "multi_let":
+      // Per-room monthly rent x rooms x occupancy.
+      return inputs.pricePerRoom * inputs.numUnits * (inputs.occupancyRate / 100);
+    case "fix_and_flip":
+      // No ongoing cashflow — profit is computed separately via calcFlipProfit().
+      return 0;
+    case "instalment_sale":
+      // Fixed monthly instalment from the buyer; occupancy is not applicable.
+      return inputs.instalmentAmount;
+    default:
+      return inputs.monthlyRent * (inputs.occupancyRate / 100);
+  }
+}
+
 /** Occupancy-adjusted monthly revenue including additional income and recoveries. */
 export function calcEffectiveMonthlyRevenue(inputs: DealInputs): number {
   return (
-    inputs.monthlyRent * (inputs.occupancyRate / 100) +
-    inputs.additionalIncome +
-    inputs.recoveries
+    calcBaseMonthlyRevenue(inputs) + inputs.additionalIncome + inputs.recoveries
   );
 }
 
@@ -164,6 +234,11 @@ export function calcRevenueMonthly(inputs: DealInputs): RevenueBreakdown {
 }
 
 export function calcManagementFeeMonthly(inputs: DealInputs): number {
+  // For STR, platform/agent fees (Airbnb, VRBO, etc.) are the direct analogue
+  // of a management fee and are always a % of revenue.
+  if (inputs.strategy === "str") {
+    return calcEffectiveMonthlyRevenue(inputs) * (inputs.platformFeesPct / 100);
+  }
   return inputs.managementFeeMode === "percent"
     ? calcEffectiveMonthlyRevenue(inputs) * (inputs.managementFeeValue / 100)
     : inputs.managementFeeValue;
@@ -320,6 +395,43 @@ export function calcTaxMonthly(inputs: DealInputs): number {
 /** Monthly net cashflow after operating costs, provisions, and tax. */
 export function calcCashflowMonthly(inputs: DealInputs): number {
   return calcCashflowAnnual(inputs, false) / 12;
+}
+
+/**
+ * Fix & Flip profit at point of sale — a single lump event rather than an
+ * ongoing cashflow. Only meaningful when inputs.strategy === 'fix_and_flip'.
+ */
+export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
+  const holdingCosts = inputs.holdingCostPerMonth * inputs.holdingPeriodMonths;
+  const agentFee = inputs.expectedSalePrice * (inputs.agentCommission / 100);
+  const totalCost =
+    inputs.purchasePrice + inputs.renovationCost + holdingCosts + agentFee;
+
+  const grossProfit = inputs.expectedSalePrice - totalCost;
+  const cgt = Math.max(0, grossProfit * (inputs.capitalGainsTaxRate / 100));
+  const netProfit = grossProfit - cgt;
+
+  const roi = totalCost ? (netProfit / totalCost) * 100 : 0;
+  const holdingYears = inputs.holdingPeriodMonths / 12;
+  const annualisedROI = holdingYears > 0 ? roi / holdingYears : 0;
+  const profitMargin = inputs.expectedSalePrice
+    ? (netProfit / inputs.expectedSalePrice) * 100
+    : 0;
+
+  return {
+    totalCost,
+    purchasePrice: inputs.purchasePrice,
+    renovationCost: inputs.renovationCost,
+    holdingCosts,
+    agentFee,
+    expectedSalePrice: inputs.expectedSalePrice,
+    grossProfit,
+    cgt,
+    netProfit,
+    roi,
+    annualisedROI,
+    profitMargin,
+  };
 }
 
 export function calcPaybackPeriod(inputs: DealInputs): number {
@@ -480,6 +592,8 @@ export function calcNPV(inputs: DealInputs): number {
 /** Computes the full metrics object used to populate the Summary dashboard. */
 export function calcAllMetrics(inputs: DealInputs): DealMetrics {
   return {
+    flipMetrics:
+      inputs.strategy === "fix_and_flip" ? calcFlipProfit(inputs) : undefined,
     totalInvestment: calcTotalInvestment(inputs),
     totalLoanAmount: calcTotalLoanAmount(inputs),
     depositRequired: calcDepositRequired(inputs),

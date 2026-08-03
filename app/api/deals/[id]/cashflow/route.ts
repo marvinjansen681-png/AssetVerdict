@@ -17,6 +17,17 @@ const CASHFLOW_NUMERIC_FIELDS = [
   "securityCleaning",
   "electricity",
   "badDebtsPct",
+  "nightlyRate",
+  "avgOccupiedNights",
+  "platformFeesPct",
+  "academicYearWeeks",
+  "pricePerRoom",
+  "holdingPeriodMonths",
+  "expectedSalePrice",
+  "holdingCostPerMonth",
+  "instalmentAmount",
+  "instalmentTerm",
+  "instalmentRate",
 ] as const;
 
 export async function GET(

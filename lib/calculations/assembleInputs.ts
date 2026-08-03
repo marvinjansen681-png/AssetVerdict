@@ -15,8 +15,61 @@ export const RECOMMENDED_FIELDS: { key: string; label: string; tab: string }[] =
 
 export function getMissingFields(deal: DealWithRelations): typeof REQUIRED_FIELDS {
   const missing: typeof REQUIRED_FIELDS = [];
-  if (!deal.purchasePrice) missing.push(REQUIRED_FIELDS[0]);
-  if (!deal.cashflowInputs?.monthlyRent) missing.push(REQUIRED_FIELDS[1]);
+  if (!deal.purchasePrice) {
+    missing.push({ key: "purchasePrice", label: "Purchase Price", tab: "acquisition" });
+  }
+
+  const cf = deal.cashflowInputs;
+  switch (deal.investmentStrategy) {
+    case "fix_and_flip":
+      if (!cf?.expectedSalePrice) {
+        missing.push({
+          key: "expectedSalePrice",
+          label: "Expected Sale Price",
+          tab: "cashflow",
+        });
+      }
+      if (!deal.renovationCost) {
+        missing.push({
+          key: "renovationCost",
+          label: "Renovation Budget",
+          tab: "acquisition",
+        });
+      }
+      break;
+    case "str":
+      if (!cf?.nightlyRate) {
+        missing.push({ key: "nightlyRate", label: "Nightly Rate", tab: "cashflow" });
+      }
+      if (!cf?.avgOccupiedNights) {
+        missing.push({
+          key: "avgOccupiedNights",
+          label: "Average Occupied Nights",
+          tab: "cashflow",
+        });
+      }
+      break;
+    case "instalment_sale":
+      if (!cf?.instalmentAmount) {
+        missing.push({
+          key: "instalmentAmount",
+          label: "Monthly Instalment",
+          tab: "cashflow",
+        });
+      }
+      break;
+    case "multi_let":
+    case "student":
+      if (!cf?.pricePerRoom) {
+        missing.push({ key: "pricePerRoom", label: "Rent Per Room", tab: "cashflow" });
+      }
+      break;
+    default:
+      if (!cf?.monthlyRent) {
+        missing.push({ key: "monthlyRent", label: "Monthly Rent", tab: "cashflow" });
+      }
+  }
+
   return missing;
 }
 
@@ -63,5 +116,24 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
     costInflation: deal.costInflation ?? 5,
     discountRate: deal.discountRate ?? 10,
     marketCapRate: deal.marketCapRate ?? 10,
+
+    strategy: deal.investmentStrategy ?? "commercial",
+    numUnits: deal.numUnits ?? 1,
+
+    nightlyRate: cf?.nightlyRate ?? 0,
+    avgOccupiedNights: cf?.avgOccupiedNights ?? 200,
+    platformFeesPct: cf?.platformFeesPct ?? 15,
+
+    billsIncluded: cf?.billsIncluded ?? false,
+    academicYearWeeks: cf?.academicYearWeeks ?? 42,
+    pricePerRoom: cf?.pricePerRoom ?? 0,
+
+    holdingPeriodMonths: cf?.holdingPeriodMonths ?? 6,
+    expectedSalePrice: cf?.expectedSalePrice ?? 0,
+    holdingCostPerMonth: cf?.holdingCostPerMonth ?? 0,
+
+    instalmentAmount: cf?.instalmentAmount ?? 0,
+    instalmentTerm: cf?.instalmentTerm ?? 240,
+    instalmentRate: cf?.instalmentRate ?? 0,
   };
 }
