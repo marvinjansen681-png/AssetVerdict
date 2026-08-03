@@ -22,6 +22,14 @@ const DEAL_NUMERIC_FIELDS = [
   "realGrowthFactor",
   "occupationFactor",
   "marketCapRate",
+  "erfSize",
+  "floorSize",
+  "bedrooms",
+  "bathrooms",
+  "garages",
+  "numUnits",
+  "yearBuilt",
+  "schemeLevy",
 ] as const;
 
 export async function GET(

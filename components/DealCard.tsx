@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import { getStrategy } from "@/lib/strategies";
 import type { DealWithRelations } from "@/types";
 
 export interface DealQuickStats {
@@ -23,6 +24,14 @@ export default function DealCard({ deal, quickStats }: DealCardProps) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const strategy = getStrategy(deal.investmentStrategy);
+
+  const propertySummaryParts = [
+    deal.bedrooms ? `${deal.bedrooms} bed` : null,
+    deal.bathrooms ? `${deal.bathrooms} bath` : null,
+    deal.floorSize ? `${deal.floorSize}m²` : null,
+    deal.erfNumber ? `Erf ${deal.erfNumber}` : null,
+  ].filter(Boolean);
 
   async function handleDelete() {
     setDeleting(true);
@@ -47,12 +56,16 @@ export default function DealCard({ deal, quickStats }: DealCardProps) {
             </p>
           )}
         </div>
-        {deal.propertyType && (
-          <span className="shrink-0 text-xs font-body px-2 py-1 rounded-full bg-av-light-grey text-av-navy">
-            {deal.propertyType}
-          </span>
-        )}
+        <span className="shrink-0 text-xs font-body px-2 py-1 rounded-full bg-av-light-grey text-av-navy whitespace-nowrap">
+          {strategy.icon} {strategy.label}
+        </span>
       </div>
+
+      {propertySummaryParts.length > 0 && (
+        <p className="text-xs text-av-slate font-body mt-1">
+          {propertySummaryParts.join(" • ")}
+        </p>
+      )}
 
       <p className="text-xs text-av-slate font-body mt-2">
         Created {new Date(deal.createdAt).toLocaleDateString("en-US")}

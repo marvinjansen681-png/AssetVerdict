@@ -1,11 +1,13 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import type { DealWithRelations } from "@/types";
+import { getStrategy, type Strategy } from "@/lib/strategies";
 
 interface DealContextValue {
   deal: DealWithRelations;
   refreshDeal: (updated: Partial<DealWithRelations>) => void;
+  strategy: Strategy;
 }
 
 const DealContext = createContext<DealContextValue | null>(null);
@@ -23,8 +25,13 @@ export function DealProvider({
     setDeal((prev) => ({ ...prev, ...updated }));
   }, []);
 
+  const strategy = useMemo(
+    () => getStrategy(deal.investmentStrategy),
+    [deal.investmentStrategy]
+  );
+
   return (
-    <DealContext.Provider value={{ deal, refreshDeal }}>
+    <DealContext.Provider value={{ deal, refreshDeal, strategy }}>
       {children}
     </DealContext.Provider>
   );

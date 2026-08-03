@@ -11,13 +11,13 @@ import FormField from "@/components/ui/FormField";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import PercentInput from "@/components/ui/PercentInput";
 import Button from "@/components/ui/Button";
+import RenovationBudget from "@/components/forms/RenovationBudget";
 
 interface AcquisitionForm {
   askingPrice: number;
   purchasePrice: number;
   marketValue: number;
   transferBondCost: number;
-  renovationCost: number;
   sourcingFee: number;
   agentCommission: number;
   wantToSell: boolean;
@@ -28,6 +28,7 @@ export default function AcquisitionTab() {
   const { deal, refreshDeal } = useDeal();
   const { showToast } = useToast();
   const [showTransferDuty, setShowTransferDuty] = useState(false);
+  const [renovationCost, setRenovationCost] = useState(deal.renovationCost ?? 0);
 
   const {
     register,
@@ -41,7 +42,6 @@ export default function AcquisitionTab() {
       purchasePrice: deal.purchasePrice ?? 0,
       marketValue: deal.marketValue ?? 0,
       transferBondCost: deal.transferBondCost ?? 0,
-      renovationCost: deal.renovationCost ?? 0,
       sourcingFee: deal.sourcingFee ?? 0,
       agentCommission: deal.agentCommission ?? 0,
       wantToSell: deal.wantToSell ?? false,
@@ -53,7 +53,6 @@ export default function AcquisitionTab() {
   const purchasePrice = Number(watch("purchasePrice")) || 0;
   const marketValue = Number(watch("marketValue")) || 0;
   const transferBondCost = Number(watch("transferBondCost")) || 0;
-  const renovationCost = Number(watch("renovationCost")) || 0;
   const sourcingFee = Number(watch("sourcingFee")) || 0;
   const wantToSell = watch("wantToSell");
 
@@ -174,12 +173,20 @@ export default function AcquisitionTab() {
           <FormField label="Transfer & Bond Cost">
             <CurrencyInput {...register("transferBondCost")} />
           </FormField>
-          <FormField label="Renovation & Inspections Costs">
-            <CurrencyInput {...register("renovationCost")} />
-          </FormField>
           <FormField label="Sourcing Fee">
             <CurrencyInput {...register("sourcingFee")} />
           </FormField>
+        </div>
+
+        <div className="mt-6">
+          <RenovationBudget
+            dealId={deal.id}
+            initialItems={deal.renovationItems}
+            onTotalChange={(total) => {
+              setRenovationCost(total);
+              refreshDeal({ renovationCost: total });
+            }}
+          />
         </div>
       </section>
 

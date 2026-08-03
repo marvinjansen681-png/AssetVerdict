@@ -11,6 +11,7 @@ export interface Deal {
   userId: string;
   name: string;
   propertyType?: string | null;
+  investmentStrategy?: string | null;
   address?: string | null;
   city?: string | null;
   notes?: string | null;
@@ -25,6 +26,23 @@ export interface Deal {
   agentCommission?: number | null;
   wantToSell: boolean;
   saleYear?: number | null;
+
+  // Property Details
+  erfNumber?: string | null;
+  erfSize?: number | null;
+  propertyZoning?: string | null;
+  floorSize?: number | null;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  garages?: number | null;
+  numUnits?: number | null;
+  yearBuilt?: number | null;
+  ratesAccountNumber?: string | null;
+  titleDeedNumber?: string | null;
+  isSectionalTitle: boolean;
+  unitNumber?: string | null;
+  schemeName?: string | null;
+  schemeLevy?: number | null;
 
   incomeTaxRate?: number | null;
   capitalGainsTaxRate?: number | null;
@@ -72,6 +90,26 @@ export interface CashflowInputs {
   securityCleaning?: number | null;
   electricity?: number | null;
   badDebtsPct?: number | null;
+
+  // STR
+  nightlyRate?: number | null;
+  avgOccupiedNights?: number | null;
+  platformFeesPct?: number | null;
+
+  // Student / Multi-Let
+  billsIncluded: boolean;
+  academicYearWeeks?: number | null;
+  pricePerRoom?: number | null;
+
+  // Fix & Flip
+  holdingPeriodMonths?: number | null;
+  expectedSalePrice?: number | null;
+  holdingCostPerMonth?: number | null;
+
+  // Instalment Sale Agreement
+  instalmentAmount?: number | null;
+  instalmentTerm?: number | null;
+  instalmentRate?: number | null;
 }
 
 export interface CapexItem {
@@ -82,8 +120,20 @@ export interface CapexItem {
   color?: string | null;
 }
 
+export interface RenovationItem {
+  id: string;
+  dealId: string;
+  category: string;
+  description: string;
+  budgeted: number;
+  quoted?: number | null;
+  status: string;
+  order: number;
+}
+
 export type DealWithRelations = Deal & {
   financeSources: FinanceSource[];
   cashflowInputs: CashflowInputs | null;
   capexItems: CapexItem[];
+  renovationItems: RenovationItem[];
 };

@@ -22,12 +22,13 @@ model Deal {
   id           String  @id @default(cuid())
   userId       String
   user         User    @relation(fields: [userId], references: [id])
-  name         String
-  propertyType String?
-  address      String?
-  city         String?
-  notes        String?
-  currency     String  @default("ZAR")
+  name               String
+  propertyType       String?
+  investmentStrategy String? @default("commercial")
+  address            String?
+  city               String?
+  notes              String?
+  currency           String  @default("ZAR")
 
   // Acquisition
   askingPrice       Float?
@@ -39,6 +40,23 @@ model Deal {
   agentCommission   Float?
   wantToSell        Boolean @default(false)
   saleYear          Int?
+
+  // Property Details
+  erfNumber          String?
+  erfSize            Float?
+  propertyZoning     String?
+  floorSize          Float?
+  bedrooms           Int?
+  bathrooms          Int?
+  garages            Int?
+  numUnits           Int?    @default(1)
+  yearBuilt          Int?
+  ratesAccountNumber String?
+  titleDeedNumber    String?
+  isSectionalTitle   Boolean @default(false)
+  unitNumber         String?
+  schemeName         String?
+  schemeLevy         Float?
 
   // Other Inputs / Enterprise
   incomeTaxRate         Float? @default(27)
@@ -55,9 +73,10 @@ model Deal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  financeSources FinanceSource[]
-  cashflowInputs CashflowInputs?
-  capexItems     CapexItem[]
+  financeSources   FinanceSource[]
+  cashflowInputs   CashflowInputs?
+  capexItems       CapexItem[]
+  renovationItems  RenovationItem[]
 
   @@index([userId])
 }
@@ -101,6 +120,40 @@ model CashflowInputs {
   securityCleaning     Float?
   electricity          Float?
   badDebtsPct          Float? @default(5)
+
+  // STR (Short-Term Rental)
+  nightlyRate       Float?
+  avgOccupiedNights Int?    @default(200)
+  platformFeesPct   Float?  @default(15)
+
+  // Student / Multi-Let (HMO)
+  billsIncluded     Boolean @default(false)
+  academicYearWeeks Int?    @default(42)
+  pricePerRoom      Float?
+
+  // Fix & Flip
+  holdingPeriodMonths Int?   @default(6)
+  expectedSalePrice   Float?
+  holdingCostPerMonth Float? @default(0)
+
+  // Instalment Sale Agreement
+  instalmentAmount Float?
+  instalmentTerm   Int?    @default(240)
+  instalmentRate   Float?
+}
+
+model RenovationItem {
+  id          String  @id @default(cuid())
+  dealId      String
+  deal        Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  category    String
+  description String
+  budgeted    Float   @default(0)
+  quoted      Float?
+  status      String  @default("Not Started")
+  order       Int     @default(0)
+
+  @@index([dealId])
 }
 
 model CapexItem {

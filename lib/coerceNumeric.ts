@@ -11,6 +11,10 @@ export function coerceNumericFields<T extends Record<string, unknown>>(
   const result: Record<string, unknown> = { ...body };
   for (const key of numericKeys) {
     if (key in result && result[key] !== null && result[key] !== undefined) {
+      if (result[key] === "") {
+        result[key] = null;
+        continue;
+      }
       const num = Number(result[key]);
       if (!Number.isNaN(num)) {
         result[key] = num;

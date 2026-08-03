@@ -5,6 +5,7 @@ const dealWithRelations = {
   financeSources: { orderBy: { order: "asc" } },
   cashflowInputs: true,
   capexItems: true,
+  renovationItems: { orderBy: { order: "asc" } },
 } satisfies Prisma.DealInclude;
 
 export async function createDeal(
@@ -85,5 +86,32 @@ export async function upsertFinanceSources(
       where: { dealId },
       orderBy: { order: "asc" },
     });
+  });
+}
+
+export async function upsertRenovationItems(
+  dealId: string,
+  items: Omit<Prisma.RenovationItemUncheckedCreateInput, "dealId">[]
+) {
+  return prisma.$transaction(async (tx) => {
+    await tx.renovationItem.deleteMany({ where: { dealId } });
+    if (items.length > 0) {
+      await tx.renovationItem.createMany({
+        data: items.map((item, index) => ({ ...item, dealId, order: index })),
+      });
+    }
+
+    const saved = await tx.renovationItem.findMany({
+      where: { dealId },
+      orderBy: { order: "asc" },
+    });
+
+    const total = saved.reduce((sum, item) => sum + item.budgeted, 0);
+    await tx.deal.update({
+      where: { id: dealId },
+      data: { renovationCost: total },
+    });
+
+    return saved;
   });
 }
