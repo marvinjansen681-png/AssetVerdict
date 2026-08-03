@@ -7,6 +7,7 @@ import { useDeal } from "@/lib/DealContext";
 import { useToast } from "@/components/ui/Toast";
 import SaveBar from "@/components/forms/SaveBar";
 import StrategyHint from "@/components/forms/StrategyHint";
+import MarketIntelligencePanel from "@/components/forms/MarketIntelligencePanel";
 import FormField from "@/components/ui/FormField";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import PercentInput from "@/components/ui/PercentInput";
@@ -299,6 +300,24 @@ export default function CashflowTab() {
       className="px-4 md:px-8 py-8 max-w-3xl mx-auto flex flex-col gap-10"
     >
       <StrategyHint strategyId={strategy.id} icon={strategy.icon} />
+
+      {(mode === "standard" || mode === "per_room" || mode === "academic") && (
+        <MarketIntelligencePanel
+          dealId={deal.id}
+          strategy={strategy.id}
+          isSectionalTitle={deal.isSectionalTitle}
+          bedrooms={deal.bedrooms ?? null}
+          numUnits={numUnits}
+          currentMonthlyRent={mode === "standard" ? Number(v.monthlyRent) || null : (Number(v.pricePerRoom) || 0) * numUnits || null}
+          onApplyRent={(rent) => {
+            if (mode === "standard") {
+              setValue("monthlyRent", Math.round(rent), { shouldDirty: true });
+            } else {
+              setValue("pricePerRoom", Math.round(rent / Math.max(numUnits, 1)), { shouldDirty: true });
+            }
+          }}
+        />
+      )}
 
       <section>
         <h2 className="font-display text-xl text-av-navy mb-4">{tabLabel} (monthly)</h2>

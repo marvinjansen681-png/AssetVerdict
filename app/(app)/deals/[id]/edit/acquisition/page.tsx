@@ -12,6 +12,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import PercentInput from "@/components/ui/PercentInput";
 import Button from "@/components/ui/Button";
 import RenovationBudget from "@/components/forms/RenovationBudget";
+import PropertyValuationPanel from "@/components/forms/PropertyValuationPanel";
 
 interface AcquisitionForm {
   askingPrice: number;
@@ -231,6 +232,12 @@ export default function AcquisitionTab() {
           )}
         </div>
       </section>
+
+      <PropertyValuationPanel
+        dealId={deal.id}
+        initial={deal.propertyValuation}
+        purchasePrice={purchasePrice}
+      />
 
       <div className="rounded-lg bg-av-navy text-white p-6 flex items-center justify-between">
         <span className="font-body text-sm">Total Investment Cost</span>

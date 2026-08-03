@@ -14,6 +14,9 @@ import MentorDrawer from "@/components/MentorDrawer";
 import Button from "@/components/ui/Button";
 import StrategyBadge from "@/components/StrategyBadge";
 import FlipDashboard from "@/components/FlipDashboard";
+import FallbackAnalysisCard from "@/components/FallbackAnalysisCard";
+import ExitAnalysisCard from "@/components/ExitAnalysisCard";
+import type { StrategyId } from "@/lib/strategies";
 import Link from "next/link";
 import type { DealMetrics } from "@/lib/calculations";
 import { isFiniteNumber } from "@/lib/calculations";
@@ -47,6 +50,8 @@ export default function DealSummaryPage({
     currency,
     investmentStrategy,
     dealSummary,
+    propertyValuation,
+    suburbProfile,
     isLoading,
     error,
   } = useDealMetrics(id);
@@ -81,6 +86,8 @@ export default function DealSummaryPage({
           scenarios={scenarios}
           dealSummary={dealSummary}
           renovationItems={renovationItems}
+          propertyValuation={propertyValuation}
+          suburbProfile={suburbProfile}
         />
       ).toBlob();
 
@@ -480,6 +487,36 @@ export default function DealSummaryPage({
           onItemAdded={(item) => setCapexItems((prev) => [...prev, item])}
         />
       </AccordionSection>
+
+      {dealSummary && (
+        <AccordionSection title="Area Intelligence">
+          <div className="flex flex-col gap-4">
+            <FallbackAnalysisCard
+              strategyId={strategyId as StrategyId}
+              isSectionalTitle={dealSummary.isSectionalTitle}
+              bedrooms={dealSummary.bedrooms}
+              numUnits={dealSummary.numUnits}
+              currentMonthlyRent={dealSummary.monthlyRent}
+              financeCostMonthly={dealSummary.financeSources.reduce(
+                (sum, f) => sum + (f.repaymentAmount ?? 0),
+                0
+              )}
+              suburbProfile={suburbProfile ?? null}
+            />
+            <ExitAnalysisCard
+              purchasePrice={dealSummary.purchasePrice}
+              marketValue={dealSummary.marketValue}
+              floorSize={dealSummary.floorSize}
+              isSectionalTitle={dealSummary.isSectionalTitle}
+              capitalGrowthRate={dealSummary.capitalGrowthRate}
+              saleYear={dealSummary.saleYear}
+              wantToSell={dealSummary.wantToSell}
+              propertyValuation={propertyValuation ?? null}
+              suburbProfile={suburbProfile ?? null}
+            />
+          </div>
+        </AccordionSection>
+      )}
 
       <MentorDrawer dealId={id} />
     </div>

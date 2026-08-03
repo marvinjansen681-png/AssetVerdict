@@ -131,9 +131,156 @@ export interface RenovationItem {
   order: number;
 }
 
+export interface PropertyTransaction {
+  id: string;
+  propertyValuationId: string;
+  transferDate?: string | Date | null;
+  purchasePrice?: number | null;
+  buyerName?: string | null;
+  sellerName?: string | null;
+  order: number;
+}
+
+export interface BondRecord {
+  id: string;
+  propertyValuationId: string;
+  registrationDate?: string | Date | null;
+  bondAmount?: number | null;
+  bondHolder?: string | null;
+  bondType?: string | null;
+  order: number;
+}
+
+export interface ComparableSale {
+  id: string;
+  propertyValuationId: string;
+  address?: string | null;
+  sgCode?: string | null;
+  saleDate?: string | Date | null;
+  salePrice?: number | null;
+  extentSqm?: number | null;
+  buildingSizeSqm?: number | null;
+  pricePerSqm?: number | null;
+  distanceKm?: number | null;
+  order: number;
+}
+
+export interface PropertyValuation {
+  id: string;
+  dealId: string;
+  reportDate?: string | Date | null;
+  sgCode?: string | null;
+  reportSource: string;
+  propertyDescription?: string | null;
+  extentSqm?: number | null;
+  zoning?: string | null;
+  buildingSizeSqm?: number | null;
+  bedroomsReported?: number | null;
+  bathroomsReported?: number | null;
+  garagesReported?: number | null;
+  yearBuiltReported?: number | null;
+  estimatedValue?: number | null;
+  valueConfidenceLow?: number | null;
+  valueConfidenceHigh?: number | null;
+  valuationConfidence?: string | null;
+  pricePerSqm?: number | null;
+  currentOwnerSince?: string | Date | null;
+  ownerAgeBand?: string | null;
+  transactions: PropertyTransaction[];
+  bonds: BondRecord[];
+  comparables: ComparableSale[];
+}
+
+export interface SuburbProfile {
+  id: string;
+  userId: string;
+  suburbName: string;
+  city?: string | null;
+  province?: string | null;
+  reportType: string;
+  reportDate?: string | Date | null;
+  reportYear?: number | null;
+  reportSource: string;
+  notes?: string | null;
+
+  paidOnTimePct?: number | null;
+  gracePeriodPct?: number | null;
+  paidLatePct?: number | null;
+  partialPaymentPct?: number | null;
+  didNotPayPct?: number | null;
+  goodStandingPct?: number | null;
+  provinceGoodStandingPct?: number | null;
+  nationalGoodStandingPct?: number | null;
+
+  stGrossYield?: number | null;
+  stEffectiveYield?: number | null;
+  fhGrossYield?: number | null;
+  fhEffectiveYield?: number | null;
+  nationalGrossYield?: number | null;
+
+  stSmallBedLow?: number | null;
+  stSmallBedAvg?: number | null;
+  stSmallBedHigh?: number | null;
+  st2BedLow?: number | null;
+  st2BedAvg?: number | null;
+  st2BedHigh?: number | null;
+  stLargeBedLow?: number | null;
+  stLargeBedAvg?: number | null;
+  stLargeBedHigh?: number | null;
+  stRentalTrend?: string | null;
+
+  fhSmallBedLow?: number | null;
+  fhSmallBedAvg?: number | null;
+  fhSmallBedHigh?: number | null;
+  fh3BedLow?: number | null;
+  fh3BedAvg?: number | null;
+  fh3BedHigh?: number | null;
+  fhLargeBedLow?: number | null;
+  fhLargeBedAvg?: number | null;
+  fhLargeBedHigh?: number | null;
+  fhRentalTrend?: string | null;
+
+  stAvgPurchasePrice?: number | null;
+  fhAvgPurchasePrice?: number | null;
+  stTransactionVolume?: number | null;
+  fhTransactionVolume?: number | null;
+  investmentPropertyPct?: number | null;
+
+  formalSectorPct?: number | null;
+  unemployedPct?: number | null;
+  incomeMiddleBandPct?: number | null;
+  incomeHighBandPct?: number | null;
+  age17to25Pct?: number | null;
+  age26to40Pct?: number | null;
+  age41to60Pct?: number | null;
+  largeHouseholdPct?: number | null;
+  singlePersonHouseholdPct?: number | null;
+
+  provinceSTGrossYield?: number | null;
+  provinceFHGrossYield?: number | null;
+  provinceST2BedAvgRent?: number | null;
+  provinceFH3BedAvgRent?: number | null;
+  provinceSTLargeBedAvg?: number | null;
+  provinceFHLargeBedAvg?: number | null;
+
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+export interface DealSuburb {
+  id: string;
+  dealId: string;
+  suburbProfileId: string;
+  isPrimary: boolean;
+  createdAt: string | Date;
+  suburbProfile: SuburbProfile;
+}
+
 export type DealWithRelations = Deal & {
   financeSources: FinanceSource[];
   cashflowInputs: CashflowInputs | null;
   capexItems: CapexItem[];
   renovationItems: RenovationItem[];
+  propertyValuation: PropertyValuation | null;
+  dealSuburbs: DealSuburb[];
 };

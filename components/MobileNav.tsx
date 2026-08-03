@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X, Home, Briefcase } from "lucide-react";
+import { Menu, X, Home, Briefcase, MapPin } from "lucide-react";
 import Logo from "./Logo";
 
 export default function MobileNav() {
@@ -48,6 +48,14 @@ export default function MobileNav() {
               >
                 <Briefcase size={18} />
                 My Deals
+              </Link>
+              <Link
+                href="/suburbs"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-3 py-3 min-h-[44px] rounded-md text-av-slate hover:bg-av-light-grey hover:text-av-navy font-body text-sm"
+              >
+                <MapPin size={18} />
+                Suburb Profiles
               </Link>
             </nav>
           </div>

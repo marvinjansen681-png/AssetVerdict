@@ -37,7 +37,12 @@ export async function GET(
     occupationFactor: deal.occupationFactor ?? 10,
   });
 
+  const primaryDealSuburb =
+    dealWithRelations.dealSuburbs.find((ds) => ds.isPrimary) ?? dealWithRelations.dealSuburbs[0] ?? null;
+
   return NextResponse.json({
+    propertyValuation: dealWithRelations.propertyValuation,
+    suburbProfile: primaryDealSuburb?.suburbProfile ?? null,
     metrics,
     projection,
     scenarios,
@@ -80,6 +85,9 @@ export async function GET(
       unitNumber: deal.unitNumber,
       schemeName: deal.schemeName,
       schemeLevy: deal.schemeLevy,
+      capitalGrowthRate: deal.capitalGrowthRate,
+      saleYear: deal.saleYear,
+      wantToSell: deal.wantToSell,
     },
   });
 }

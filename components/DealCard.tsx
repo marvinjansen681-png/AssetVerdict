@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Trash2, MapPin, FileSearch, AlertTriangle } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import { getStrategy } from "@/lib/strategies";
@@ -34,6 +34,19 @@ export default function DealCard({ deal, quickStats }: DealCardProps) {
     deal.floorSize ? `${deal.floorSize}m²` : null,
     deal.erfNumber ? `Erf ${deal.erfNumber}` : null,
   ].filter(Boolean);
+
+  const primarySuburb = deal.dealSuburbs?.find((ds) => ds.isPrimary)?.suburbProfile ?? deal.dealSuburbs?.[0]?.suburbProfile;
+  const hasValuation = !!deal.propertyValuation;
+  const suburbAgeMonths = (() => {
+    if (!primarySuburb) return null;
+    const date = primarySuburb.reportDate ?? (primarySuburb.reportYear ? new Date(primarySuburb.reportYear, 0, 1) : null);
+    if (!date) return null;
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    const now = new Date();
+    return (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+  })();
+  const suburbStale = suburbAgeMonths !== null && suburbAgeMonths > 24;
 
   async function handleDelete() {
     setDeleting(true);
@@ -72,6 +85,29 @@ export default function DealCard({ deal, quickStats }: DealCardProps) {
       <p className="text-xs text-av-slate font-body mt-2">
         Created {new Date(deal.createdAt).toLocaleDateString("en-US")}
       </p>
+
+      {(primarySuburb || hasValuation) && (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          {primarySuburb && (
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] font-body px-2 py-0.5 rounded-full ${
+                suburbStale ? "bg-av-orange/10 text-av-orange" : "bg-av-light-grey text-av-navy"
+              }`}
+              title={suburbStale ? "Suburb report is over 24 months old" : undefined}
+            >
+              <MapPin size={11} />
+              {primarySuburb.suburbName}
+              {suburbStale && <AlertTriangle size={11} />}
+            </span>
+          )}
+          {hasValuation && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-body px-2 py-0.5 rounded-full bg-av-light-grey text-av-navy">
+              <FileSearch size={11} />
+              AVM
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 mt-4">
         {strategy.id === "fix_and_flip" ? (

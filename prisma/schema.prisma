@@ -19,9 +19,9 @@ model User {
 }
 
 model Deal {
-  id           String  @id @default(cuid())
-  userId       String
-  user         User    @relation(fields: [userId], references: [id])
+  id                 String  @id @default(cuid())
+  userId             String
+  user               User    @relation(fields: [userId], references: [id])
   name               String
   propertyType       String?
   investmentStrategy String? @default("commercial")
@@ -31,15 +31,15 @@ model Deal {
   currency           String  @default("ZAR")
 
   // Acquisition
-  askingPrice       Float?
-  purchasePrice     Float?
-  marketValue       Float?
-  transferBondCost  Float?
-  renovationCost    Float?
-  sourcingFee       Float?
-  agentCommission   Float?
-  wantToSell        Boolean @default(false)
-  saleYear          Int?
+  askingPrice      Float?
+  purchasePrice    Float?
+  marketValue      Float?
+  transferBondCost Float?
+  renovationCost   Float?
+  sourcingFee      Float?
+  agentCommission  Float?
+  wantToSell       Boolean @default(false)
+  saleYear         Int?
 
   // Property Details
   erfNumber          String?
@@ -73,26 +73,28 @@ model Deal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  financeSources   FinanceSource[]
-  cashflowInputs   CashflowInputs?
-  capexItems       CapexItem[]
-  renovationItems  RenovationItem[]
+  financeSources    FinanceSource[]
+  cashflowInputs    CashflowInputs?
+  capexItems        CapexItem[]
+  renovationItems   RenovationItem[]
+  propertyValuation PropertyValuation?
+  dealSuburbs       DealSuburb[]
 
   @@index([userId])
 }
 
 model FinanceSource {
-  id              String  @id @default(cuid())
+  id              String @id @default(cuid())
   dealId          String
-  deal            Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal            Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
   sourceType      String
-  ltvMode         String  @default("percent")
+  ltvMode         String @default("percent")
   ltvValue        Float?
   loanAmount      Float?
   interestRate    Float?
-  termYears       Int?    @default(15)
+  termYears       Int?   @default(15)
   repaymentAmount Float?
-  order           Int     @default(0)
+  order           Int    @default(0)
 
   @@index([dealId])
 }
@@ -104,9 +106,9 @@ model CashflowInputs {
 
   // Revenue (monthly)
   monthlyRent      Float?
-  occupancyRate    Float?  @default(88)
-  additionalIncome Float?  @default(0)
-  recoveries       Float?  @default(0)
+  occupancyRate    Float? @default(88)
+  additionalIncome Float? @default(0)
+  recoveries       Float? @default(0)
 
   // Expenses (monthly)
   managementFeeMode    String @default("percent")
@@ -123,8 +125,8 @@ model CashflowInputs {
 
   // STR (Short-Term Rental)
   nightlyRate       Float?
-  avgOccupiedNights Int?    @default(200)
-  platformFeesPct   Float?  @default(15)
+  avgOccupiedNights Int?   @default(200)
+  platformFeesPct   Float? @default(15)
 
   // Student / Multi-Let (HMO)
   billsIncluded     Boolean @default(false)
@@ -138,31 +140,228 @@ model CashflowInputs {
 
   // Instalment Sale Agreement
   instalmentAmount Float?
-  instalmentTerm   Int?    @default(240)
+  instalmentTerm   Int?   @default(240)
   instalmentRate   Float?
 }
 
 model RenovationItem {
-  id          String  @id @default(cuid())
+  id          String @id @default(cuid())
   dealId      String
-  deal        Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal        Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
   category    String
   description String
-  budgeted    Float   @default(0)
+  budgeted    Float  @default(0)
   quoted      Float?
-  status      String  @default("Not Started")
-  order       Int     @default(0)
+  status      String @default("Not Started")
+  order       Int    @default(0)
 
   @@index([dealId])
 }
 
 model CapexItem {
-  id     String @id @default(cuid())
+  id     String  @id @default(cuid())
   dealId String
-  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal   Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
   label  String
   amount Float
   color  String?
 
   @@index([dealId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Area Analysis — Tier 1: Property-level valuation (AVM report)
+// ─────────────────────────────────────────────────────────────
+model PropertyValuation {
+  id     String @id @default(cuid())
+  dealId String @unique
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  // Source
+  reportDate   DateTime?
+  sgCode       String?
+  reportSource String    @default("TPN Property Valuation Report")
+
+  // Property Characteristics
+  propertyDescription String?
+  extentSqm           Float?
+  zoning              String?
+  buildingSizeSqm     Float?
+  bedroomsReported    Int?
+  bathroomsReported   Int?
+  garagesReported     Int?
+  yearBuiltReported   Int?
+
+  // AVM
+  estimatedValue      Float?
+  valueConfidenceLow  Float?
+  valueConfidenceHigh Float?
+  valuationConfidence String? // e.g. "High" / "Medium" / "Low"
+  pricePerSqm         Float?
+
+  // Owner / buyer-seller signal
+  currentOwnerSince DateTime?
+  ownerAgeBand      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions PropertyTransaction[]
+  bonds        BondRecord[]
+  comparables  ComparableSale[]
+
+  @@index([dealId])
+}
+
+model PropertyTransaction {
+  id                  String            @id @default(cuid())
+  propertyValuationId String
+  propertyValuation   PropertyValuation @relation(fields: [propertyValuationId], references: [id], onDelete: Cascade)
+
+  transferDate  DateTime?
+  purchasePrice Float?
+  buyerName     String?
+  sellerName    String?
+  order         Int       @default(0)
+
+  @@index([propertyValuationId])
+}
+
+model BondRecord {
+  id                  String            @id @default(cuid())
+  propertyValuationId String
+  propertyValuation   PropertyValuation @relation(fields: [propertyValuationId], references: [id], onDelete: Cascade)
+
+  registrationDate DateTime?
+  bondAmount       Float?
+  bondHolder       String?
+  bondType         String? // e.g. "First Bond", "Further Bond"
+  order            Int       @default(0)
+
+  @@index([propertyValuationId])
+}
+
+model ComparableSale {
+  id                  String            @id @default(cuid())
+  propertyValuationId String
+  propertyValuation   PropertyValuation @relation(fields: [propertyValuationId], references: [id], onDelete: Cascade)
+
+  address         String?
+  sgCode          String?
+  saleDate        DateTime?
+  salePrice       Float?
+  extentSqm       Float?
+  buildingSizeSqm Float?
+  pricePerSqm     Float?
+  distanceKm      Float?
+  order           Int       @default(0)
+
+  @@index([propertyValuationId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Area Analysis — Tier 2 & 3: Suburb / Province market intelligence
+// ─────────────────────────────────────────────────────────────
+model SuburbProfile {
+  id     String @id @default(cuid())
+  userId String
+
+  // Identity
+  suburbName   String
+  city         String?
+  province     String?
+  reportType   String // "suburb" | "multiple_suburbs" | "province"
+  reportDate   DateTime?
+  reportYear   Int?
+  reportSource String    @default("TPN Investor Report")
+  notes        String?
+
+  // Rental Payment Index (suburb-level)
+  paidOnTimePct           Float?
+  gracePeriodPct          Float?
+  paidLatePct             Float?
+  partialPaymentPct       Float?
+  didNotPayPct            Float?
+  goodStandingPct         Float?
+  provinceGoodStandingPct Float?
+  nationalGoodStandingPct Float?
+
+  // Residential Yield
+  stGrossYield       Float?
+  stEffectiveYield   Float?
+  fhGrossYield       Float?
+  fhEffectiveYield   Float?
+  nationalGrossYield Float?
+
+  // Rental Price Trends — Sectional Title (ST)
+  stSmallBedLow  Float? // <2Bed
+  stSmallBedAvg  Float?
+  stSmallBedHigh Float?
+  st2BedLow      Float?
+  st2BedAvg      Float?
+  st2BedHigh     Float?
+  stLargeBedLow  Float? // >2Bed
+  stLargeBedAvg  Float?
+  stLargeBedHigh Float?
+  stRentalTrend  String? // ">10%Up" | "Up" | "None" | "Down" | ">10%Down"
+
+  // Rental Price Trends — Freehold (FH)
+  fhSmallBedLow  Float? // <3Bed
+  fhSmallBedAvg  Float?
+  fhSmallBedHigh Float?
+  fh3BedLow      Float?
+  fh3BedAvg      Float?
+  fh3BedHigh     Float?
+  fhLargeBedLow  Float? // >3Bed
+  fhLargeBedAvg  Float?
+  fhLargeBedHigh Float?
+  fhRentalTrend  String?
+
+  // Property Transactions / Investment activity
+  stAvgPurchasePrice    Float?
+  fhAvgPurchasePrice    Float?
+  stTransactionVolume   Int?
+  fhTransactionVolume   Int?
+  investmentPropertyPct Float?
+
+  // Demographics
+  formalSectorPct          Float?
+  unemployedPct            Float?
+  incomeMiddleBandPct      Float? // R76k - R307k p.a.
+  incomeHighBandPct        Float? // R307k+ p.a.
+  age17to25Pct             Float?
+  age26to40Pct             Float?
+  age41to60Pct             Float?
+  largeHouseholdPct        Float? // 6+ persons
+  singlePersonHouseholdPct Float?
+
+  // Province / National benchmarks (Tier 3)
+  provinceSTGrossYield  Float?
+  provinceFHGrossYield  Float?
+  provinceST2BedAvgRent Float?
+  provinceFH3BedAvgRent Float?
+  provinceSTLargeBedAvg Float?
+  provinceFHLargeBedAvg Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dealSuburbs DealSuburb[]
+
+  @@index([userId])
+  @@index([suburbName])
+}
+
+model DealSuburb {
+  id              String        @id @default(cuid())
+  dealId          String
+  deal            Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  suburbProfileId String
+  suburbProfile   SuburbProfile @relation(fields: [suburbProfileId], references: [id], onDelete: Cascade)
+  isPrimary       Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+
+  @@unique([dealId, suburbProfileId])
+  @@index([dealId])
+  @@index([suburbProfileId])
 }

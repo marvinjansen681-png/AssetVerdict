@@ -6,6 +6,14 @@ const dealWithRelations = {
   cashflowInputs: true,
   capexItems: true,
   renovationItems: { orderBy: { order: "asc" } },
+  propertyValuation: {
+    include: {
+      transactions: { orderBy: { order: "asc" } },
+      bonds: { orderBy: { order: "asc" } },
+      comparables: { orderBy: { order: "asc" } },
+    },
+  },
+  dealSuburbs: { include: { suburbProfile: true }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.DealInclude;
 
 export async function createDeal(

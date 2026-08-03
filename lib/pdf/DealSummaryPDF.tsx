@@ -11,7 +11,7 @@ import type { DealMetrics, YearlyProjection } from "@/lib/calculations";
 import { isFiniteNumber } from "@/lib/calculations";
 import type { DealSummaryInputs } from "@/hooks/useDealMetrics";
 import type { Scenarios } from "@/lib/calculations/scenarios";
-import type { RenovationItem } from "@/types";
+import type { RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
 import { getGaugeColorForStrategy } from "@/lib/calculations/thresholds";
 import { getStrategy } from "@/lib/strategies";
 
@@ -99,6 +99,8 @@ interface DealSummaryPDFProps {
   scenarios: Scenarios;
   dealSummary: DealSummaryInputs;
   renovationItems?: RenovationItem[];
+  propertyValuation?: PropertyValuation | null;
+  suburbProfile?: SuburbProfile | null;
 }
 
 const SCENARIO_COLORS = { bear: COLORS.red, base: COLORS.gold, bull: COLORS.green };
@@ -139,6 +141,8 @@ export default function DealSummaryPDF({
   scenarios,
   dealSummary,
   renovationItems = [],
+  propertyValuation = null,
+  suburbProfile = null,
 }: DealSummaryPDFProps) {
   const currencySymbol = currency === "ZAR" ? "R" : currency;
   const reportDate = new Date().toLocaleDateString("en-US");
@@ -512,6 +516,86 @@ export default function DealSummaryPDF({
           </Text>
         </View>
       </Page>
+
+      {(propertyValuation || suburbProfile) && (
+        <Page size="A4" style={styles.page}>
+          <Text style={styles.h1}>Area Intelligence</Text>
+
+          {propertyValuation && (
+            <>
+              <Text style={styles.h2}>Property Valuation (Tier 1)</Text>
+              <View style={styles.row}>
+                <Text style={styles.label}>Estimated Value (AVM)</Text>
+                <Text style={styles.value}>{fmt(propertyValuation.estimatedValue, currencySymbol)}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Confidence</Text>
+                <Text style={styles.value}>{propertyValuation.valuationConfidence ?? "--"}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Building Size</Text>
+                <Text style={styles.value}>
+                  {propertyValuation.buildingSizeSqm ? `${propertyValuation.buildingSizeSqm} m²` : "--"}
+                </Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Comparable Sales Captured</Text>
+                <Text style={styles.value}>{propertyValuation.comparables.length}</Text>
+              </View>
+            </>
+          )}
+
+          {suburbProfile && (
+            <>
+              <Text style={styles.h2}>
+                Suburb Profile — {suburbProfile.suburbName} (Tier 2/3)
+              </Text>
+              <View style={styles.twoCol}>
+                <View style={styles.col}>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>ST Gross Yield</Text>
+                    <Text style={styles.value}>
+                      {suburbProfile.stGrossYield !== null && suburbProfile.stGrossYield !== undefined
+                        ? `${suburbProfile.stGrossYield}%`
+                        : "--"}
+                    </Text>
+                  </View>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>FH Gross Yield</Text>
+                    <Text style={styles.value}>
+                      {suburbProfile.fhGrossYield !== null && suburbProfile.fhGrossYield !== undefined
+                        ? `${suburbProfile.fhGrossYield}%`
+                        : "--"}
+                    </Text>
+                  </View>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Good Standing (Suburb)</Text>
+                    <Text style={styles.value}>
+                      {suburbProfile.goodStandingPct !== null && suburbProfile.goodStandingPct !== undefined
+                        ? `${suburbProfile.goodStandingPct}%`
+                        : "--"}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.col}>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>FH 3Bed Avg Rent</Text>
+                    <Text style={styles.value}>{fmt(suburbProfile.fh3BedAvg, currencySymbol)}</Text>
+                  </View>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>ST 2Bed Avg Rent</Text>
+                    <Text style={styles.value}>{fmt(suburbProfile.st2BedAvg, currencySymbol)}</Text>
+                  </View>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Report Year</Text>
+                    <Text style={styles.value}>{suburbProfile.reportYear ?? "--"}</Text>
+                  </View>
+                </View>
+              </View>
+            </>
+          )}
+        </Page>
+      )}
     </Document>
   );
 }

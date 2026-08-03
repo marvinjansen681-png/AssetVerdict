@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import type { DealMetrics, YearlyProjection } from "@/lib/calculations";
 import type { Scenarios } from "@/lib/calculations/scenarios";
-import type { CapexItem, RenovationItem } from "@/types";
+import type { CapexItem, RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
 
 export interface DealSummaryInputs {
   askingPrice: number | null;
@@ -36,6 +36,9 @@ export interface DealSummaryInputs {
   unitNumber: string | null;
   schemeName: string | null;
   schemeLevy: number | null;
+  capitalGrowthRate: number | null;
+  saleYear: number | null;
+  wantToSell: boolean;
 }
 
 export interface CalculateResponse {
@@ -51,6 +54,8 @@ export interface CalculateResponse {
   capexItems: CapexItem[];
   renovationItems: RenovationItem[];
   dealSummary: DealSummaryInputs;
+  propertyValuation: PropertyValuation | null;
+  suburbProfile: SuburbProfile | null;
 }
 
 export interface CalculateErrorBody {
@@ -94,6 +99,8 @@ export function useDealMetrics(dealId: string) {
     capexItems: data?.capexItems,
     renovationItems: data?.renovationItems,
     dealSummary: data?.dealSummary,
+    propertyValuation: data?.propertyValuation,
+    suburbProfile: data?.suburbProfile,
     isLoading,
     error: error as CalculateError | undefined,
     refresh: mutate,

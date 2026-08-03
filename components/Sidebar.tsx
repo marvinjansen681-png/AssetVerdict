@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Briefcase } from "lucide-react";
+import { Home, Briefcase, MapPin } from "lucide-react";
 import Logo from "./Logo";
 
 export default function Sidebar() {
@@ -22,6 +22,13 @@ export default function Sidebar() {
         >
           <Briefcase size={18} />
           My Deals
+        </Link>
+        <Link
+          href="/suburbs"
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-av-slate hover:bg-av-light-grey hover:text-av-navy font-body text-sm transition-colors"
+        >
+          <MapPin size={18} />
+          Suburb Profiles
         </Link>
       </nav>
     </aside>
