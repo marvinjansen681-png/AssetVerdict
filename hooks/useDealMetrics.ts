@@ -51,6 +51,7 @@ export interface CalculateResponse {
   investmentStrategy: string;
   rentalGrowthRate: number;
   costInflation: number;
+  discountRate: number;
   capexItems: CapexItem[];
   renovationItems: RenovationItem[];
   dealSummary: DealSummaryInputs;
@@ -96,6 +97,7 @@ export function useDealMetrics(dealId: string) {
     investmentStrategy: data?.investmentStrategy,
     rentalGrowthRate: data?.rentalGrowthRate,
     costInflation: data?.costInflation,
+    discountRate: data?.discountRate,
     capexItems: data?.capexItems,
     renovationItems: data?.renovationItems,
     dealSummary: data?.dealSummary,

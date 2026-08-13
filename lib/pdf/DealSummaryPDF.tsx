@@ -12,7 +12,11 @@ import { isFiniteNumber } from "@/lib/calculations";
 import type { DealSummaryInputs } from "@/hooks/useDealMetrics";
 import type { Scenarios } from "@/lib/calculations/scenarios";
 import type { RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
-import { getGaugeColorForStrategy } from "@/lib/calculations/thresholds";
+import { getGaugeColorForStrategy, type GaugeVisualColor } from "@/lib/calculations/thresholds";
+import {
+  getMetricApplicability,
+  applicabilityContextFromMetrics,
+} from "@/lib/calculations/applicability";
 import { getStrategy } from "@/lib/strategies";
 
 const COLORS = {
@@ -23,6 +27,16 @@ const COLORS = {
   orange: "#E67E22",
   red: "#E74C3C",
   lightGrey: "#EDF2F7",
+  // Matches GaugeDial's "grey" (no data / no calibrated benchmark) token.
+  neutral: "#CBD5E0",
+};
+
+/** Visual colour hex for a gauge-style value — "neutral" for metrics with no calibrated AssetVerdict threshold, never amber (Phase 3.1). */
+const GAUGE_COLOR_HEX: Record<GaugeVisualColor, string> = {
+  green: COLORS.green,
+  orange: COLORS.orange,
+  red: COLORS.red,
+  neutral: COLORS.neutral,
 };
 
 const styles = StyleSheet.create({
@@ -113,7 +127,7 @@ const COMPARISON_ROWS: {
   unit: "%" | "x" | "Yrs" | "R";
 }[] = [
   { label: "IRR", key: "irr", metricKey: "irr", unit: "%" },
-  { label: "Net Yield Yr 1", key: "netYieldPreTax", metricKey: "netYieldPreTax", unit: "%" },
+  { label: "Cash-on-Cash Return", key: "netYieldPreTax", metricKey: "netYieldPreTax", unit: "%" },
   { label: "Gross Yield", key: "grossYield", metricKey: "grossYield", unit: "%" },
   { label: "Cap Rate (PP)", key: "capRatePP", metricKey: "capRatePP", unit: "%" },
   { label: "NPV", key: "npv", metricKey: "npv", unit: "R" },
@@ -152,29 +166,56 @@ export default function DealSummaryPDF({
   const metrics = scenarios[activeScenario].metrics;
   const scenarioLabel = `${activeScenario[0].toUpperCase()}${activeScenario.slice(1)} Case`;
 
+  // Equity IRR, Equity NPV, Net Yield (Cash-on-Cash), and Equity Payback
+  // Period are denominated in the investor's own equity, not total cost —
+  // not applicable for a fully/over-financed deal. Financing (and therefore
+  // equity) doesn't change between bear/base/bull scenarios, so this is safe
+  // to compute once. See lib/calculations/applicability.ts.
+  const equityApplicable = getMetricApplicability(
+    "irr",
+    applicabilityContextFromMetrics(metrics)
+  ).applicable;
+
   const highlightYears = [1, 5, 10, 15, 20];
 
   const metricBoxes: { key: string; label: string; value: string }[] = isFlip && metrics.flipMetrics
     ? [
         { key: "netProfit", label: "Net Profit", value: fmt(metrics.flipMetrics.netProfit, currencySymbol) },
         { key: "roi", label: "ROI", value: `${metrics.flipMetrics.roi.toFixed(1)}%` },
-        { key: "annualisedRoi", label: "Annualised ROI", value: `${metrics.flipMetrics.annualisedROI.toFixed(1)}%` },
+        { key: "annualisedROI", label: "Annualised ROI", value: `${metrics.flipMetrics.annualisedROI.toFixed(1)}%` },
         { key: "totalCost", label: "Total Cost", value: fmt(metrics.flipMetrics.totalCost, currencySymbol) },
       ]
     : [
-        { key: "irr", label: "IRR", value: `${metrics.irr.toFixed(2)}%` },
-        { key: "netYieldPreTax", label: "Net Yield (pre-tax)", value: `${metrics.netYieldPreTax.toFixed(2)}%` },
+        {
+          key: "irr",
+          label: "IRR (Equity)",
+          value: equityApplicable ? `${metrics.irr.toFixed(2)}%` : "N/A (no equity invested)",
+        },
+        {
+          key: "netYieldPreTax",
+          label: "Cash-on-Cash Return (Pre-Tax)",
+          value: equityApplicable ? `${metrics.netYieldPreTax.toFixed(2)}%` : "N/A (no equity invested)",
+        },
         { key: "capRatePP", label: "Cap Rate (PP)", value: `${metrics.capRatePP.toFixed(2)}%` },
-        { key: "npv", label: "NPV", value: fmt(metrics.npv, currencySymbol) },
+        {
+          key: "npv",
+          label: "NPV (Equity)",
+          value: equityApplicable ? fmt(metrics.npv, currencySymbol) : "N/A (no equity invested)",
+        },
         { key: "capRateMV", label: "Cap Rate (MV)", value: `${metrics.capRateMV.toFixed(2)}%` },
-        { key: "dscr", label: "Debt Service Ratio", value: `${metrics.dscr.toFixed(2)}x` },
+        {
+          key: "dscr",
+          label: "DSCR (Debt Service Coverage Ratio)",
+          value: isFiniteNumber(metrics.dscr) ? `${metrics.dscr.toFixed(2)}x` : "N/A (no debt)",
+        },
         { key: "operatingExpenseRatio", label: "Operating Expense Ratio", value: `${metrics.operatingExpenseRatio.toFixed(2)}%` },
         {
           key: "paybackPeriod",
           label: "Payback Period",
-          value: isFiniteNumber(metrics.paybackPeriod)
-            ? `${metrics.paybackPeriod.toFixed(1)} Yrs`
-            : "--",
+          value:
+            equityApplicable && isFiniteNumber(metrics.paybackPeriod)
+              ? `${metrics.paybackPeriod.toFixed(1)} Yrs`
+              : "--",
         },
       ];
 
@@ -220,10 +261,22 @@ export default function DealSummaryPDF({
             <View style={styles.tableRow} key={row.key}>
               <Text style={styles.tableCell}>{row.label}</Text>
               {(["bear", "base", "bull"] as const).map((s) => {
-                const value = scenarios[s].metrics[row.key] as number;
-                const color = getGaugeColorForStrategy(row.metricKey, value, strategyId);
+                const rowMetrics = scenarios[s].metrics;
+                const value = rowMetrics[row.key] as number;
+                const applicable = getMetricApplicability(
+                  row.metricKey,
+                  applicabilityContextFromMetrics(rowMetrics)
+                ).applicable;
+                if (!applicable) {
+                  return (
+                    <Text key={s} style={[styles.tableCell, { color: COLORS.slate }]}>
+                      N/A
+                    </Text>
+                  );
+                }
+                const color = GAUGE_COLOR_HEX[getGaugeColorForStrategy(row.metricKey, value, strategyId)];
                 return (
-                  <Text key={s} style={[styles.tableCell, { color: COLORS[color] }]}>
+                  <Text key={s} style={[styles.tableCell, { color }]}>
                     {formatMetricValue(value, row.unit, currencySymbol)}
                   </Text>
                 );
@@ -270,7 +323,7 @@ export default function DealSummaryPDF({
                 : box.key === "totalCost"
                   ? COLORS.slate
                   : !isNaN(numeric)
-                    ? COLORS[getGaugeColorForStrategy(box.key, numeric, strategyId)]
+                    ? GAUGE_COLOR_HEX[getGaugeColorForStrategy(box.key, numeric, strategyId)]
                     : COLORS.slate;
             return (
               <View key={box.key} style={styles.metricBox}>

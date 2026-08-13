@@ -142,7 +142,7 @@ export default function OtherInputsTab() {
           </FormField>
           <FormField
             label="Discount Rate"
-            helperText="Used to discount future cashflows for NPV."
+            helperText="The minimum annual return you require from the cash you invest in the deal — used to discount future equity cashflows for NPV."
           >
             <PercentInput {...register("discountRate")} />
           </FormField>

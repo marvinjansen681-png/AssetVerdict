@@ -10,18 +10,22 @@ import CashflowTable from "@/components/charts/CashflowTable";
 import CapexPieChart from "@/components/charts/CapexPieChart";
 import ProjectCashflowChart from "@/components/charts/ProjectCashflowChart";
 import SimpleYearTable from "@/components/charts/SimpleYearTable";
-import MentorDrawer from "@/components/MentorDrawer";
+import DealCoachDrawer from "@/components/DealCoachDrawer";
 import Button from "@/components/ui/Button";
 import StrategyBadge from "@/components/StrategyBadge";
 import FlipDashboard from "@/components/FlipDashboard";
 import FallbackAnalysisCard from "@/components/FallbackAnalysisCard";
 import ExitAnalysisCard from "@/components/ExitAnalysisCard";
+import UnderstandYourDeal from "@/components/education/UnderstandYourDeal";
 import type { StrategyId } from "@/lib/strategies";
 import Link from "next/link";
 import type { DealMetrics } from "@/lib/calculations";
 import { isFiniteNumber } from "@/lib/calculations";
+import { getMetricApplicability, applicabilityContextFromMetrics } from "@/lib/calculations/applicability";
 import type { CapexItem } from "@/types";
 import { useState, useEffect } from "react";
+import { ChevronDown } from "lucide-react";
+import clsx from "clsx";
 
 function formatCurrency(value: number) {
   const sign = value < 0 ? "-" : "";
@@ -62,6 +66,8 @@ export default function DealSummaryPage({
   }, [capexFromApi]);
 
   const [exporting, setExporting] = useState(false);
+  const [understandOpen, setUnderstandOpen] = useState(false);
+  const [coachSelection, setCoachSelection] = useState<{ metricKey: string } | null>(null);
 
   function handleScenarioSelect(s: ScenarioKey) {
     router.push(`/deals/${id}/summary?scenario=${s}`);
@@ -151,6 +157,22 @@ export default function DealSummaryPage({
 
   if (!activeMetrics) return null;
 
+  // Equity IRR, Equity NPV, Net Yield (Cash-on-Cash), and Equity Payback
+  // Period are all denominated in the investor's own equity, not the
+  // property's total cost — with no (or negative) equity invested, i.e. a
+  // fully or over-financed deal, they're undefined, not a real 0%/0-years/
+  // R0. See lib/calculations/applicability.ts.
+  const applicabilityCtx = applicabilityContextFromMetrics(activeMetrics);
+  const equityMetricsApplicable = getMetricApplicability("irr", applicabilityCtx).applicable;
+  const showIrr = equityMetricsApplicable ? activeMetrics.irr : null;
+  const showNpv = equityMetricsApplicable ? activeMetrics.npv : null;
+  const showNetYieldPreTax = equityMetricsApplicable ? activeMetrics.netYieldPreTax : null;
+  const showNetYieldPostTax = equityMetricsApplicable ? activeMetrics.netYieldPostTax : null;
+  const showPaybackPeriod =
+    equityMetricsApplicable && isFiniteNumber(activeMetrics.paybackPeriod)
+      ? activeMetrics.paybackPeriod
+      : null;
+
   return (
     <div className="px-4 md:px-8 py-8 max-w-5xl mx-auto flex flex-col gap-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -184,6 +206,39 @@ export default function DealSummaryPage({
         ℹ️ Thresholds shown are calibrated for {strategyId.replace(/_/g, " ")} investments.
       </p>
 
+      <section className="rounded-lg border border-av-gold/40 bg-av-white p-5 md:p-6">
+        <button
+          type="button"
+          onClick={() => setUnderstandOpen((o) => !o)}
+          aria-expanded={understandOpen}
+          aria-controls="understand-your-deal-panel"
+          className="w-full flex items-center justify-between gap-4 text-left min-h-[44px]"
+        >
+          <div>
+            <h2 className="font-display text-xl text-av-navy">Understand Your Deal</h2>
+            <p className="font-body text-sm text-av-slate mt-1">
+              Learn what these numbers mean, where they come from, and how they work together.
+            </p>
+          </div>
+          <span className="shrink-0 inline-flex items-center gap-1.5 font-body text-sm font-semibold text-av-navy bg-av-light-grey rounded-md px-4 py-2.5 min-h-[44px]">
+            {understandOpen ? "Close" : "Open learning panel"}
+            <ChevronDown size={16} className={clsx("transition-transform", understandOpen && "rotate-180")} />
+          </span>
+        </button>
+
+        {understandOpen && dealSummary && (
+          <div id="understand-your-deal-panel" className="mt-6 pt-6 border-t border-av-light-grey">
+            <UnderstandYourDeal
+              metrics={activeMetrics}
+              dealSummary={dealSummary}
+              strategyId={strategyId}
+              currency={currency === "ZAR" || !currency ? "R" : currency}
+              onAskCoach={(metricKey) => setCoachSelection({ metricKey })}
+            />
+          </div>
+        )}
+      </section>
+
       {isFlip && activeMetrics.flipMetrics ? (
         <FlipDashboard flipMetrics={activeMetrics.flipMetrics} currency="R" />
       ) : (
@@ -195,20 +250,20 @@ export default function DealSummaryPage({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <GaugeDial
-            value={activeMetrics.irr}
+            value={showIrr}
             unit="%"
             label="IRR"
-            tooltipText="Internal Rate of Return — the annualised return on your total investment over 20 years. Above 15% is strong."
+            tooltipText="Equity IRR — the annualised return on the cash YOU invest in the deal (after debt financing and tax), over 20 years including the eventual sale. Above 15% is strong. Not applicable if the deal is fully or over-financed (no positive equity invested)."
             metricKey="irr"
             strategyId={strategyId}
             max={40}
             benchmarkValue={15}
           />
           <GaugeDial
-            value={activeMetrics.netYieldPreTax}
+            value={showNetYieldPreTax}
             unit="%"
-            label="Net Yield Yr 1 (pre-tax)"
-            tooltipText="Your first-year net income as a % of total investment, before tax."
+            label="Cash-on-Cash Return (Pre-Tax)"
+            tooltipText="A Cash-on-Cash Return: your first-year cashflow after debt service, before tax, as a % of your own cash invested (not the full purchase price)."
             metricKey="netYieldPreTax"
             strategyId={strategyId}
             max={20}
@@ -218,7 +273,7 @@ export default function DealSummaryPage({
             value={activeMetrics.capRatePP}
             unit="%"
             label="Cap Rate (PP)"
-            tooltipText="Net Operating Income as a % of your purchase price. 8–12% is the typical commercial sweet spot."
+            tooltipText="Net Operating Income as a % of your purchase price — the property's own unlevered return, before financing. 8–12% is the typical commercial sweet spot."
             metricKey="capRatePP"
             strategyId={strategyId}
             max={20}
@@ -226,9 +281,9 @@ export default function DealSummaryPage({
           />
           <MetricCard
             label="NPV"
-            value={formatCurrency(activeMetrics.npv)}
-            tooltipText="Net Present Value — the total value created by this deal in today's money, discounted at your discount rate."
-            trend={activeMetrics.npv >= 0 ? "positive" : "negative"}
+            value={showNpv !== null ? formatCurrency(showNpv) : "N/A"}
+            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest, discounted at your required equity return. Not applicable if the deal is fully or over-financed."
+            trend={showNpv === null ? "neutral" : showNpv >= 0 ? "positive" : "negative"}
           />
           <GaugeDial
             value={activeMetrics.capRateMV}
@@ -238,13 +293,19 @@ export default function DealSummaryPage({
             metricKey="capRateMV"
             strategyId={strategyId}
             max={20}
-            benchmarkValue={10}
+            // Phase 4 audit fix: the marker was hardcoded to 10, but the
+            // actual rule (COMMERCIAL_THRESHOLDS.capRateMV, thresholds.ts)
+            // has always coloured green at >8 — the arrow was pointing at
+            // the wrong spot relative to the arc it sits on. This corrects
+            // the marker to match the existing, unchanged rule; it does not
+            // change any classification.
+            benchmarkValue={8}
           />
           <GaugeDial
-            value={activeMetrics.dscr}
+            value={isFiniteNumber(activeMetrics.dscr) ? activeMetrics.dscr : null}
             unit="x"
-            label="Debt Service Ratio"
-            tooltipText="How many times your NOI covers your debt repayments. Above 1.25 is safe; below 1 means the property can't service its debt."
+            label="DSCR"
+            tooltipText="Debt Service Coverage Ratio — how many times your NOI covers your annual debt repayments. Above 1.25x is safe; below 1x means the property can't service its debt. With no debt, DSCR doesn't apply."
             metricKey="dscr"
             strategyId={strategyId}
             max={3}
@@ -254,21 +315,17 @@ export default function DealSummaryPage({
             value={activeMetrics.operatingExpenseRatio}
             unit="%"
             label="Operating Expense Ratio"
-            tooltipText="Total expenses as a % of gross revenue. Lower is better — below 40% is excellent."
+            tooltipText="Operating expenses (excl. debt repayments) as a % of gross revenue. Lower is better — below 40% is excellent."
             metricKey="operatingExpenseRatio"
             strategyId={strategyId}
             max={100}
             benchmarkValue={40}
           />
           <GaugeDial
-            value={
-              isFiniteNumber(activeMetrics.paybackPeriod)
-                ? activeMetrics.paybackPeriod
-                : null
-            }
+            value={showPaybackPeriod}
             unit="Yrs"
             label="Payback Period"
-            tooltipText="How many years before you recover your total investment from cashflow alone."
+            tooltipText="How many years before you recover the cash YOU invested, from after-debt-service cashflow alone. Not applicable if the deal is fully or over-financed."
             metricKey="paybackPeriod"
             strategyId={strategyId}
             max={30}
@@ -290,30 +347,30 @@ export default function DealSummaryPage({
             benchmarkValue={10}
           />
           <GaugeDial
-            value={activeMetrics.netYieldPreTax}
+            value={showNetYieldPreTax}
             unit="%"
-            label="Net Yield Yr 1 (pre-tax)"
-            tooltipText="Your first-year net income as a % of total investment, before tax."
+            label="Cash-on-Cash Return (Pre-Tax)"
+            tooltipText="A Cash-on-Cash Return: your first-year cashflow after debt service, before tax, as a % of your own cash invested (not the full purchase price)."
             metricKey="netYieldPreTax"
             strategyId={strategyId}
             max={20}
             benchmarkValue={8}
           />
           <GaugeDial
-            value={activeMetrics.netYieldPostTax}
+            value={showNetYieldPostTax}
             unit="%"
-            label="Net Yield Yr 1 (post-tax)"
-            tooltipText="Your first-year net income as a % of total investment, after tax."
+            label="Cash-on-Cash Return (Post-Tax)"
+            tooltipText="A Cash-on-Cash Return: your first-year cashflow after debt service, after tax, as a % of your own cash invested (not the full purchase price)."
             metricKey="netYieldPostTax"
             strategyId={strategyId}
             max={20}
             benchmarkValue={6}
           />
           <GaugeDial
-            value={activeMetrics.irr}
+            value={showIrr}
             unit="%"
             label="IRR"
-            tooltipText="Internal Rate of Return over 20 years."
+            tooltipText="Equity IRR over 20 years — the annualised return on the cash YOU invest, after financing and tax."
             metricKey="irr"
             strategyId={strategyId}
             max={40}
@@ -331,9 +388,9 @@ export default function DealSummaryPage({
           />
           <MetricCard
             label="NPV"
-            value={formatCurrency(activeMetrics.npv)}
-            tooltipText="Net Present Value — the total value created by this deal in today's money."
-            trend={activeMetrics.npv >= 0 ? "positive" : "negative"}
+            value={showNpv !== null ? formatCurrency(showNpv) : "N/A"}
+            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest."
+            trend={showNpv === null ? "neutral" : showNpv >= 0 ? "positive" : "negative"}
           />
         </div>
       </AccordionSection>
@@ -349,10 +406,10 @@ export default function DealSummaryPage({
       <AccordionSection title="Debt & Coverage">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <GaugeDial
-            value={activeMetrics.dscr}
+            value={isFiniteNumber(activeMetrics.dscr) ? activeMetrics.dscr : null}
             unit="x"
-            label="Debt Service Ratio"
-            tooltipText="How many times your NOI covers your debt repayments. Above 1.25 is safe; below 1 means the property can't service its debt."
+            label="DSCR"
+            tooltipText="Debt Service Coverage Ratio — how many times your NOI covers your annual debt repayments. Above 1.25x is safe; below 1x means the property can't service its debt. With no debt, DSCR doesn't apply."
             metricKey="dscr"
             strategyId={strategyId}
             max={3}
@@ -372,7 +429,7 @@ export default function DealSummaryPage({
             value={activeMetrics.breakEvenRatio}
             unit="%"
             label="Break-even Ratio"
-            tooltipText="The occupancy rate needed to cover all costs including debt. Lower is safer."
+            tooltipText="The share of gross revenue needed to cover all operating expenses plus debt repayments. Lower is safer."
             metricKey="breakEvenRatio"
             strategyId={strategyId}
             max={100}
@@ -397,7 +454,7 @@ export default function DealSummaryPage({
             value={activeMetrics.operatingExpenseRatio}
             unit="%"
             label="Operating Expense Ratio"
-            tooltipText="Total expenses as a % of gross revenue. Lower is better — below 40% is excellent."
+            tooltipText="Operating expenses (excl. debt repayments) as a % of gross revenue. Lower is better — below 40% is excellent."
             metricKey="operatingExpenseRatio"
             strategyId={strategyId}
             max={100}
@@ -420,14 +477,10 @@ export default function DealSummaryPage({
             benchmarkValue={2}
           />
           <GaugeDial
-            value={
-              isFiniteNumber(activeMetrics.paybackPeriod)
-                ? activeMetrics.paybackPeriod
-                : null
-            }
+            value={showPaybackPeriod}
             unit="Yrs"
             label="Payback Period"
-            tooltipText="The Payback Period refers to the amount of time it takes to recover the cost of your investment."
+            tooltipText="The amount of time it takes to recover the cash YOU invested, from after-debt-service cashflow."
             metricKey="paybackPeriod"
             strategyId={strategyId}
             max={30}
@@ -518,7 +571,13 @@ export default function DealSummaryPage({
         </AccordionSection>
       )}
 
-      <MentorDrawer dealId={id} />
+      <DealCoachDrawer
+        dealId={id}
+        strategyId={strategyId}
+        activeScenario={scenario}
+        pendingSelection={coachSelection}
+        onPendingSelectionHandled={() => setCoachSelection(null)}
+      />
     </div>
   );
 }

@@ -57,7 +57,11 @@ export interface DealInputs {
   capitalGrowthRate: number; // % per year
   rentalGrowthRate: number; // % per year
   costInflation: number; // % per year
-  discountRate: number; // % for NPV
+  // The investor's required annual return on their own cash in the deal (an
+  // equity hurdle rate) — the minimum return AssetVerdict discounts the
+  // Equity NPV cashflow stream at. Not WACC, not a property-level discount
+  // rate: it's specifically "what I need this cash to earn me."
+  discountRate: number; // %
   marketCapRate: number; // % for Cap Rate Spread
 
   // Strategy
@@ -154,6 +158,37 @@ export interface FlipMetrics {
   profitMargin: number;
 }
 
+/**
+ * Present-value decomposition of Equity NPV — the same equity cashflow
+ * stream buildEquityCashflows() produces, just returned in named pieces
+ * instead of summed into one number, so the education layer can show
+ * "Initial Equity + PV of future cashflows + PV of eventual sale" without
+ * re-implementing NPV's discounting math itself. presentValueOfOperatingCashflows
+ * + presentValueOfTerminalValue - initialEquityInvestment reconciles to npv
+ * (and to calcNPV()'s own return value) up to floating-point rounding.
+ */
+export interface NPVBreakdown {
+  initialEquityInvestment: number;
+  presentValueOfOperatingCashflows: number;
+  presentValueOfTerminalValue: number;
+  discountRate: number;
+  npv: number;
+}
+
+/**
+ * The un-discounted pieces behind Equity IRR, for education display without
+ * exposing the Newton-Raphson solver: how much cash you put in, how much
+ * operating cashflow the projection expects over 20 years, and the projected
+ * equity proceeds at sale — the same three ingredients buildEquityCashflows()
+ * feeds into the IRR solve.
+ */
+export interface IRRSummary {
+  initialEquityInvestment: number;
+  totalProjectedCashflow: number;
+  terminalValueYear20: number;
+  irr: number;
+}
+
 export interface DealMetrics {
   totalInvestment: number;
   totalLoanAmount: number;
@@ -162,9 +197,15 @@ export interface DealMetrics {
   grossRevenueAnnual: number;
   revenueMonthly: RevenueBreakdown;
   operatingCostsMonthly: OperatingCosts;
+  /** Annual operating expenses excl. finance — see calcOperatingExpensesAnnual(). */
+  operatingExpensesAnnual: number;
+  /** Total annual debt service across all finance sources — calcTotalFinanceCostMonthly() × 12. */
+  annualDebtService: number;
   provisionsMonthly: Provisions;
   taxMonthly: number;
   cashflowMonthly: number;
+  /** Annual cashflow after debt service, BEFORE income tax — the numerator behind Cash-on-Cash Return (Pre-Tax). */
+  cashflowAnnualPreTax: number;
   noiAnnual: number;
   capRatePP: number;
   capRateMV: number;
@@ -181,6 +222,8 @@ export interface DealMetrics {
   paybackPeriod: number;
   irr: number;
   npv: number;
+  npvBreakdown: NPVBreakdown;
+  irrSummary: IRRSummary;
   flipMetrics?: FlipMetrics;
 }
 
@@ -201,6 +244,24 @@ export function calcTotalLoanAmount(inputs: DealInputs): number {
 
 /** Cash required at close: total investment less total debt raised. */
 export function calcDepositRequired(inputs: DealInputs): number {
+  return calcTotalInvestment(inputs) - calcTotalLoanAmount(inputs);
+}
+
+/**
+ * Initial equity investment: the investor's own cash contribution, used as the
+ * time-zero outflow for Equity IRR / Equity NPV. Numerically identical to
+ * calcDepositRequired() — both are Total Investment less Total Loan Amount,
+ * i.e. the standard sources-and-uses reconciliation (Uses = Total Investment;
+ * Sources = Total Loan Amount + your cash) — under the assumption that every
+ * finance source's proceeds are applied against the acquisition costs in
+ * calcTotalInvestment() and nothing else (AssetVerdict doesn't model
+ * cash-out/refinance proceeds used elsewhere). It's kept as its own,
+ * explicitly-named function rather than reusing "depositRequired" directly in
+ * return calculations: "deposit required" is a closing-cash concept for the
+ * Summary page, "initial equity investment" is a return-calculation concept —
+ * conflating the two names would obscure why calcIRR/calcNPV read this value.
+ */
+export function calcInitialEquityInvestment(inputs: DealInputs): number {
   return calcTotalInvestment(inputs) - calcTotalLoanAmount(inputs);
 }
 
@@ -308,6 +369,11 @@ export function calcTotalFinanceCostMonthly(inputs: DealInputs): number {
   return inputs.financeSources.reduce((sum, f) => sum + f.repaymentAmount, 0);
 }
 
+/** Total annual debt service across all finance sources — the denominator behind DSCR and a term in Break-Even Ratio. */
+export function calcAnnualDebtService(inputs: DealInputs): number {
+  return calcTotalFinanceCostMonthly(inputs) * 12;
+}
+
 export function calcOperatingCostsMonthly(inputs: DealInputs): OperatingCosts {
   const finance = calcTotalFinanceCostMonthly(inputs);
   const utilities =
@@ -335,17 +401,14 @@ export function calcProvisionsMonthly(inputs: DealInputs): Provisions {
   return { management, maintenance, badDebts, total: management + maintenance + badDebts };
 }
 
-/** Net Operating Income, annualised, excluding finance costs and provisions on the expense side. */
+/**
+ * Net Operating Income, annualised: gross revenue less operating expenses
+ * (utilities, rates/insurance/other, and provisions). Excludes finance/debt
+ * service, which is a financing cost, not an operating expense.
+ */
 export function calcNOIAnnual(inputs: DealInputs): number {
   const grossRevenue = calcGrossRevenueAnnual(inputs);
-  const operatingCosts = calcOperatingCostsMonthly(inputs);
-  const provisions = calcProvisionsMonthly(inputs);
-  return (
-    grossRevenue -
-    operatingCosts.utilities * 12 -
-    operatingCosts.ratesInsuranceOther * 12 -
-    provisions.total * 12
-  );
+  return grossRevenue - calcOperatingExpensesAnnual(inputs);
 }
 
 export function calcCapRatePP(inputs: DealInputs): number {
@@ -382,21 +445,39 @@ export function calcCashflowAnnual(inputs: DealInputs, beforeTax: boolean): numb
   return cashflowBeforeTax - tax;
 }
 
+/**
+ * "Net Yield (Pre-Tax)" is AssetVerdict's name for a Cash-on-Cash Return: the
+ * first year's cashflow AFTER debt service (but before income tax) as a % of
+ * the investor's own cash in the deal. The numerator (calcCashflowAnnual) has
+ * always subtracted debt service, so the denominator must be the investor's
+ * equity, not the property's total cost — dividing a levered cashflow by an
+ * unlevered basis mixes two different cash-flow perspectives (the same class
+ * of bug fixed in calcIRR/calcNPV; see calcInitialEquityInvestment). With no
+ * (or negative) equity invested, the ratio is undefined, not a real 0%.
+ */
 export function calcNetYieldPreTax(inputs: DealInputs): number {
-  const totalInvestment = calcTotalInvestment(inputs);
-  if (!totalInvestment) return 0;
-  return (calcCashflowAnnual(inputs, true) / totalInvestment) * 100;
+  const equity = calcInitialEquityInvestment(inputs);
+  if (!(equity > 0)) return 0;
+  return (calcCashflowAnnual(inputs, true) / equity) * 100;
 }
 
+/** Post-tax counterpart of calcNetYieldPreTax — see that function's doc comment. */
 export function calcNetYieldPostTax(inputs: DealInputs): number {
-  const totalInvestment = calcTotalInvestment(inputs);
-  if (!totalInvestment) return 0;
-  return (calcCashflowAnnual(inputs, false) / totalInvestment) * 100;
+  const equity = calcInitialEquityInvestment(inputs);
+  if (!(equity > 0)) return 0;
+  return (calcCashflowAnnual(inputs, false) / equity) * 100;
 }
 
+/**
+ * Debt Service Coverage Ratio (DSCR): NOI / Annual Debt Service. With no debt
+ * (an all-cash purchase) there is nothing to divide by and no debt to fail to
+ * cover, so this returns Infinity — the same "not applicable, not a bad score"
+ * convention calcPaybackPeriod already uses — rather than 0, which would read
+ * as the worst possible score for a deal that in fact carries zero debt risk.
+ */
 export function calcDSCR(inputs: DealInputs): number {
-  const annualDebtService = calcTotalFinanceCostMonthly(inputs) * 12;
-  if (!annualDebtService) return 0;
+  const annualDebtService = calcAnnualDebtService(inputs);
+  if (!annualDebtService) return Infinity;
   return calcNOIAnnual(inputs) / annualDebtService;
 }
 
@@ -405,22 +486,46 @@ export function calcLTV(inputs: DealInputs): number {
   return (calcTotalLoanAmount(inputs) / inputs.purchasePrice) * 100;
 }
 
+/**
+ * Total annual operating expenses used by NOI, the Operating Expense Ratio, and
+ * the Break-Even Ratio: utilities + rates/insurance/other + provisions
+ * (management, maintenance, bad debts). Deliberately EXCLUDES finance/debt
+ * service, which is a financing cost, not an operating expense — this keeps
+ * calcNOIAnnual, calcOperatingExpenseRatio and calcNOIMargin internally
+ * consistent (NOI Margin + Operating Expense Ratio == 100%).
+ */
+export function calcOperatingExpensesAnnual(inputs: DealInputs): number {
+  const operatingCosts = calcOperatingCostsMonthly(inputs);
+  const provisions = calcProvisionsMonthly(inputs);
+  return (
+    (operatingCosts.utilities + operatingCosts.ratesInsuranceOther + provisions.total) * 12
+  );
+}
+
+/**
+ * Break-Even (Default) Ratio: the share of gross revenue needed to cover ALL
+ * operating expenses plus annual debt service. Unlike Operating Expense Ratio,
+ * this DOES include debt service, since the point of the metric is to show the
+ * occupancy/income level at which the property stops covering its debt.
+ */
 export function calcBreakEvenRatio(inputs: DealInputs): number {
   const grossRevenue = calcGrossRevenueAnnual(inputs);
   if (!grossRevenue) return 0;
-  const operatingCosts = calcOperatingCostsMonthly(inputs);
-  const opExExclProvisions =
-    (operatingCosts.utilities + operatingCosts.ratesInsuranceOther) * 12;
-  const financeCostAnnual = operatingCosts.finance * 12;
-  return ((opExExclProvisions + financeCostAnnual) / grossRevenue) * 100;
+  const operatingExpenses = calcOperatingExpensesAnnual(inputs);
+  const financeCostAnnual = calcAnnualDebtService(inputs);
+  return ((operatingExpenses + financeCostAnnual) / grossRevenue) * 100;
 }
 
+/**
+ * Operating Expense Ratio: operating expenses (excl. finance/debt service) as a
+ * % of gross revenue. Debt service is a financing cost, not an operating
+ * expense, so it is intentionally excluded here — see Break-Even Ratio for the
+ * version of this calculation that includes debt service.
+ */
 export function calcOperatingExpenseRatio(inputs: DealInputs): number {
   const grossRevenue = calcGrossRevenueAnnual(inputs);
   if (!grossRevenue) return 0;
-  const operatingCosts = calcOperatingCostsMonthly(inputs).total * 12;
-  const provisions = calcProvisionsMonthly(inputs).total * 12;
-  return ((operatingCosts + provisions) / grossRevenue) * 100;
+  return (calcOperatingExpensesAnnual(inputs) / grossRevenue) * 100;
 }
 
 export function calcUtilitiesRatio(inputs: DealInputs): number {
@@ -489,10 +594,20 @@ export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
   };
 }
 
+/**
+ * Equity Payback Period: years of after-debt-service, after-tax cashflow to
+ * recover the investor's own cash. Same fix as Net Yield / IRR / NPV — the
+ * numerator is already levered, so the denominator must be equity invested,
+ * not total investment. A deal with zero or negative cash actually put in
+ * (fully or over-financed) has already "paid back" by construction — 0 years,
+ * not a divide-by-zero.
+ */
 export function calcPaybackPeriod(inputs: DealInputs): number {
   const cashflow = calcCashflowAnnual(inputs, false);
   if (cashflow <= 0) return Infinity;
-  return calcTotalInvestment(inputs) / cashflow;
+  const equity = calcInitialEquityInvestment(inputs);
+  if (equity <= 0) return 0;
+  return equity / cashflow;
 }
 
 const PROJECTION_YEARS = 20;
@@ -586,19 +701,63 @@ export function calcTotalRemainingLoanBalance(inputs: DealInputs, yearsElapsed: 
 }
 
 /**
- * Internal Rate of Return over 20 years using Newton-Raphson, including terminal
- * value (property value less remaining debt) added to the final year's cashflow.
+ * Terminal (exit) value at the end of year 20: property value less remaining
+ * debt and the capital gains tax due on sale. Shared by calcIRR and calcNPV so
+ * both solvers discount the exact same year-20 cashflow — if this diverged
+ * between the two, IRR and NPV would disagree about what "break-even" means.
+ */
+export function calcTerminalValue(inputs: DealInputs, projection: YearlyProjection[]): number {
+  const remainingDebtYear20 = calcTotalRemainingLoanBalance(inputs, PROJECTION_YEARS);
+  const terminalPropertyValue = projection[PROJECTION_YEARS - 1].propertyValue;
+  const capitalGainsTax = Math.max(
+    0,
+    (terminalPropertyValue - inputs.marketValue) * (inputs.capitalGainsTaxRate / 100)
+  );
+  return terminalPropertyValue - remainingDebtYear20 - capitalGainsTax;
+}
+
+/**
+ * The single equity-level cash-flow stream shared by calcIRR and calcNPV —
+ * this is what makes them "Equity IRR" and "Equity NPV": both measure the
+ * return on the investor's own cash, not on the property's full purchase
+ * price.
+ *
+ * Index 0 (t=0)   = -Initial Equity Investment (the investor's own cash — see
+ *                    calcInitialEquityInvestment). NOT total investment: that
+ *                    would count debt-financed cost as the investor's own
+ *                    outlay while years 1-20 already treat that same debt as
+ *                    a cost to be serviced, double-counting it.
+ * Index 1-20 (t=1..20) = calc20YearProjection's cashflowForPeriod, which is
+ *                    already after debt service and tax (levered) — sourced
+ *                    from calcCashflowAnnual/calc20YearProjection.
+ * Index 20 (t=20) additionally includes the terminal (exit) value: property
+ *                    value less remaining debt less capital gains tax — also
+ *                    already levered (net of what's owed to the lender).
+ *
+ * Building this once and having both calcIRR and calcNPV consume it is what
+ * guarantees they can never drift onto different cash-flow conventions.
+ */
+export function buildEquityCashflows(inputs: DealInputs): number[] {
+  const initialEquity = calcInitialEquityInvestment(inputs);
+  const projection = calc20YearProjection(inputs);
+  const terminalValue = calcTerminalValue(inputs, projection);
+
+  const cashflows = [-initialEquity, ...projection.map((p) => p.cashflowForPeriod)];
+  cashflows[PROJECTION_YEARS] += terminalValue;
+  return cashflows;
+}
+
+/**
+ * Equity IRR over 20 years using Newton-Raphson on buildEquityCashflows(): the
+ * annualised return on the investor's OWN cash, after debt service and the
+ * eventual (after-tax, after-debt-payoff) sale. AssetVerdict's dashboard and
+ * DealMetrics field are simply named "IRR", but this is always the equity/
+ * levered return, never an unlevered property-only return — see
+ * lib/education/metricDefinitions.ts for the education-facing explanation of
+ * that distinction.
  */
 export function calcIRR(inputs: DealInputs): number {
-  const totalInvestment = calcTotalInvestment(inputs);
-  const projection = calc20YearProjection(inputs);
-
-  const remainingDebtYear20 = calcTotalRemainingLoanBalance(inputs, PROJECTION_YEARS);
-  const terminalValue =
-    projection[PROJECTION_YEARS - 1].propertyValue - remainingDebtYear20;
-
-  const cashflows = [-totalInvestment, ...projection.map((p) => p.cashflowForPeriod)];
-  cashflows[PROJECTION_YEARS] += terminalValue;
+  const cashflows = buildEquityCashflows(inputs);
 
   const npvAt = (rate: number) =>
     cashflows.reduce((sum, cf, t) => sum + cf / Math.pow(1 + rate, t), 0);
@@ -627,27 +786,69 @@ export function calcIRR(inputs: DealInputs): number {
   return clampedRate * 100;
 }
 
-/** Net Present Value of 20-year cashflows plus terminal value, discounted at discountRate. */
+/**
+ * Equity NPV: present value of buildEquityCashflows() — the exact same
+ * equity-level cash-flow stream calcIRR solves against — discounted at
+ * discountRate (the investor's required equity return; see the DealInputs
+ * doc comment on discountRate). Because both functions consume the same
+ * builder, discounting calcNPV's cashflows at the rate calcIRR found for the
+ * same inputs is guaranteed to land NPV at ~0 — they can no longer drift onto
+ * different cash-flow conventions.
+ */
 export function calcNPV(inputs: DealInputs): number {
-  const projection = calc20YearProjection(inputs);
-  const remainingDebtYear20 = calcTotalRemainingLoanBalance(inputs, PROJECTION_YEARS);
-  const terminalPropertyValue = projection[PROJECTION_YEARS - 1].propertyValue;
-  const capitalGainsTax = Math.max(
-    0,
-    (terminalPropertyValue - inputs.marketValue) * (inputs.capitalGainsTaxRate / 100)
-  );
-  const terminalValue = terminalPropertyValue - remainingDebtYear20 - capitalGainsTax;
-
+  const cashflows = buildEquityCashflows(inputs);
   const rate = inputs.discountRate / 100;
-  let npv = 0;
+  return cashflows.reduce((sum, cf, t) => sum + cf / Math.pow(1 + rate, t), 0);
+}
+
+/**
+ * Equity NPV, decomposed into its named pieces for education display (Phase 2,
+ * section 8): "Initial Equity Invested + PV of future cashflows + PV of
+ * eventual sale proceeds". Reuses the exact same primitives as calcNPV
+ * (calc20YearProjection, calcTerminalValue, calcInitialEquityInvestment) —
+ * this is a restructuring of calcNPV's own math, not a second implementation
+ * of it, and reconciles to calcNPV(inputs) up to floating-point rounding.
+ */
+export function calcNPVBreakdown(inputs: DealInputs): NPVBreakdown {
+  const initialEquityInvestment = calcInitialEquityInvestment(inputs);
+  const projection = calc20YearProjection(inputs);
+  const terminalValue = calcTerminalValue(inputs, projection);
+  const rate = inputs.discountRate / 100;
+
+  let presentValueOfOperatingCashflows = 0;
   projection.forEach((p, index) => {
     const t = index + 1;
-    let cashflow = p.cashflowForPeriod;
-    if (t === PROJECTION_YEARS) cashflow += terminalValue;
-    npv += cashflow / Math.pow(1 + rate, t);
+    presentValueOfOperatingCashflows += p.cashflowForPeriod / Math.pow(1 + rate, t);
   });
+  const presentValueOfTerminalValue = terminalValue / Math.pow(1 + rate, PROJECTION_YEARS);
 
-  return npv;
+  return {
+    initialEquityInvestment,
+    presentValueOfOperatingCashflows,
+    presentValueOfTerminalValue,
+    discountRate: inputs.discountRate,
+    npv: presentValueOfOperatingCashflows + presentValueOfTerminalValue - initialEquityInvestment,
+  };
+}
+
+/**
+ * Equity IRR, decomposed into its named (un-discounted) pieces for education
+ * display (Phase 2, section 8) without exposing the Newton-Raphson solver:
+ * how much cash went in, how much operating cashflow the 20-year projection
+ * expects, and the projected equity proceeds at sale.
+ */
+export function calcIRRSummary(inputs: DealInputs): IRRSummary {
+  const initialEquityInvestment = calcInitialEquityInvestment(inputs);
+  const projection = calc20YearProjection(inputs);
+  const terminalValueYear20 = calcTerminalValue(inputs, projection);
+  const totalProjectedCashflow = projection.reduce((sum, p) => sum + p.cashflowForPeriod, 0);
+
+  return {
+    initialEquityInvestment,
+    totalProjectedCashflow,
+    terminalValueYear20,
+    irr: calcIRR(inputs),
+  };
 }
 
 /** Computes the full metrics object used to populate the Summary dashboard. */
@@ -662,9 +863,12 @@ export function calcAllMetrics(inputs: DealInputs): DealMetrics {
     grossRevenueAnnual: calcGrossRevenueAnnual(inputs),
     revenueMonthly: calcRevenueMonthly(inputs),
     operatingCostsMonthly: calcOperatingCostsMonthly(inputs),
+    operatingExpensesAnnual: calcOperatingExpensesAnnual(inputs),
+    annualDebtService: calcAnnualDebtService(inputs),
     provisionsMonthly: calcProvisionsMonthly(inputs),
     taxMonthly: calcTaxMonthly(inputs),
     cashflowMonthly: calcCashflowMonthly(inputs),
+    cashflowAnnualPreTax: calcCashflowAnnual(inputs, true),
     noiAnnual: calcNOIAnnual(inputs),
     capRatePP: calcCapRatePP(inputs),
     capRateMV: calcCapRateMV(inputs),
@@ -681,5 +885,7 @@ export function calcAllMetrics(inputs: DealInputs): DealMetrics {
     paybackPeriod: calcPaybackPeriod(inputs),
     irr: calcIRR(inputs),
     npv: calcNPV(inputs),
+    npvBreakdown: calcNPVBreakdown(inputs),
+    irrSummary: calcIRRSummary(inputs),
   };
 }

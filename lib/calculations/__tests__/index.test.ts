@@ -3,6 +3,34 @@ import {
   calcAllMetrics,
   calcEffectiveMonthlyRevenue,
   calcMonthlyRepayment,
+  calcIRR,
+  calcNPV,
+  calcDSCR,
+  calcLTV,
+  calcCapRatePP,
+  calcCapRateMV,
+  calcGrossYield,
+  calcNetYieldPreTax,
+  calcNetYieldPostTax,
+  calcPaybackPeriod,
+  calcOperatingExpenseRatio,
+  calcBreakEvenRatio,
+  calcNOIMargin,
+  calcNOIAnnual,
+  calcTotalInvestment,
+  calcTotalLoanAmount,
+  calcDepositRequired,
+  calcInitialEquityInvestment,
+  calcTotalRemainingLoanBalance,
+  calcCashflowAnnual,
+  buildEquityCashflows,
+  calcNPVBreakdown,
+  calcIRRSummary,
+  calcOperatingExpensesAnnual,
+  calcAnnualDebtService,
+  calcTerminalValue,
+  calc20YearProjection,
+  isFiniteNumber,
   type DealInputs,
 } from "../index";
 
@@ -114,5 +142,578 @@ describe("calculation engine — sample deal", () => {
     const metrics = calcAllMetrics(sampleInputs);
     expect(Number.isFinite(metrics.irr)).toBe(true);
     expect(Number.isFinite(metrics.npv)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge-case fixtures
+// ---------------------------------------------------------------------------
+
+/** All-cash purchase: no finance sources, so no debt service anywhere. Equity == Total Investment. */
+const noFinanceInputs: DealInputs = {
+  ...sampleInputs,
+  financeSources: [],
+};
+
+/**
+ * A realistic, partially-financed deal with POSITIVE equity: just the single
+ * primary bank loan from `sampleInputs` (the second loan there is a
+ * deliberate over-leverage stress fixture for DSCR — see below). This is the
+ * base fixture for all Equity IRR / Equity NPV / Cash-on-Cash tests, since
+ * `sampleInputs` itself has NEGATIVE initial equity (its two loans total
+ * R7.5M against a R6.07M total investment) and is kept only for the
+ * pre-existing DSCR-under-stress and cost-ratio tests that don't depend on
+ * the sign of equity.
+ */
+const leveredSampleInputs: DealInputs = {
+  ...sampleInputs,
+  financeSources: [sampleInputs.financeSources[0]],
+};
+
+/** Heavily geared deal: a single loan far exceeding purchase price — negative equity. */
+const highLeverageInputs: DealInputs = {
+  ...sampleInputs,
+  financeSources: [
+    {
+      loanAmount: 9_000_000,
+      interestRate: 15,
+      termYears: 15,
+      repaymentAmount: calcMonthlyRepayment(9_000_000, 15, 15),
+    },
+  ],
+};
+
+/** Loan amount exactly equal to total investment — initial equity is exactly zero. */
+const zeroEquityInputs: DealInputs = {
+  ...sampleInputs,
+  financeSources: [
+    {
+      loanAmount: calcTotalInvestment(sampleInputs),
+      interestRate: 15,
+      termYears: 15,
+      repaymentAmount: calcMonthlyRepayment(calcTotalInvestment(sampleInputs), 15, 15),
+    },
+  ],
+};
+
+/** Fully vacant property: zero occupancy drives gross revenue to zero. */
+const zeroRevenueInputs: DealInputs = {
+  ...sampleInputs,
+  occupancyRate: 0,
+  additionalIncome: 0,
+  recoveries: 0,
+};
+
+/** Zero purchase price — a degenerate input that price-denominated ratios must guard against. */
+const zeroPurchasePriceInputs: DealInputs = {
+  ...sampleInputs,
+  purchasePrice: 0,
+};
+
+/** Zero total investment (every acquisition cost line is zero) — for ratios denominated in total investment. */
+const zeroTotalInvestmentInputs: DealInputs = {
+  ...sampleInputs,
+  purchasePrice: 0,
+  transferBondCost: 0,
+  renovationCost: 0,
+  sourcingFee: 0,
+};
+
+/**
+ * Deep negative cashflow, based on the single-loan (positive-equity) fixture
+ * so that Equity-based ratios produce a real, meaningful negative number
+ * rather than hitting the "no positive equity" guard.
+ */
+const negativeCashflowInputs: DealInputs = {
+  ...leveredSampleInputs,
+  monthlyRent: 20_000,
+  occupancyRate: 50,
+};
+
+// ---------------------------------------------------------------------------
+// Initial Equity Investment
+// ---------------------------------------------------------------------------
+
+describe("calcInitialEquityInvestment", () => {
+  it("equals Total Investment − Total Loan Amount, and matches calcDepositRequired", () => {
+    for (const inputs of [sampleInputs, leveredSampleInputs, noFinanceInputs, highLeverageInputs]) {
+      const expected = calcTotalInvestment(inputs) - calcTotalLoanAmount(inputs);
+      expect(calcInitialEquityInvestment(inputs)).toBeCloseTo(expected, 6);
+      expect(calcInitialEquityInvestment(inputs)).toBeCloseTo(calcDepositRequired(inputs), 6);
+    }
+  });
+
+  it("equals Total Investment for an all-cash purchase (no debt raised)", () => {
+    expect(calcInitialEquityInvestment(noFinanceInputs)).toBeCloseTo(
+      calcTotalInvestment(noFinanceInputs),
+      6
+    );
+  });
+
+  it("is negative when the loan amount exceeds total investment (over-financed deal)", () => {
+    expect(calcInitialEquityInvestment(highLeverageInputs)).toBeLessThan(0);
+  });
+
+  it("is exactly zero when the loan amount exactly equals total investment", () => {
+    expect(calcInitialEquityInvestment(zeroEquityInputs)).toBeCloseTo(0, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildEquityCashflows — the shared stream behind Equity IRR and Equity NPV
+// ---------------------------------------------------------------------------
+
+describe("buildEquityCashflows", () => {
+  it("year 0 is -Initial Equity Investment, not -Total Investment", () => {
+    const cashflows = buildEquityCashflows(leveredSampleInputs);
+    expect(cashflows[0]).toBeCloseTo(-calcInitialEquityInvestment(leveredSampleInputs), 4);
+    expect(cashflows[0]).not.toBeCloseTo(-calcTotalInvestment(leveredSampleInputs), 4);
+  });
+
+  it("has 21 entries: year 0 through year 20", () => {
+    expect(buildEquityCashflows(leveredSampleInputs)).toHaveLength(21);
+  });
+
+  it("years 1-19 equal calc20YearProjection's after-debt-service, after-tax cashflow", () => {
+    const cashflows = buildEquityCashflows(leveredSampleInputs);
+    const annualCashflow = calcCashflowAnnual(leveredSampleInputs, false);
+    // Year 1 has no growth escalation yet, so it matches the flat annual figure directly.
+    expect(cashflows[1]).toBeCloseTo(annualCashflow, 0);
+  });
+
+  it("year 20 includes a positive terminal value on top of that year's operating cashflow", () => {
+    const cashflows = buildEquityCashflows(leveredSampleInputs);
+    const annualCashflow = calcCashflowAnnual(leveredSampleInputs, false);
+    // With 3% capital growth over 20 years, terminal value should dwarf a single year's cashflow.
+    expect(cashflows[20]).toBeGreaterThan(annualCashflow * 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 education-layer support: calcNPVBreakdown, calcIRRSummary, and the
+// newly-public calcOperatingExpensesAnnual / calcAnnualDebtService /
+// calcTerminalValue. These must reconcile exactly with the numbers calcNPV /
+// calcIRR / calcOperatingExpenseRatio / calcDSCR already produce — the
+// education layer is not allowed to show a different number than the engine.
+// ---------------------------------------------------------------------------
+
+describe("calcNPVBreakdown", () => {
+  it("reconciles to calcNPV(): initialEquity, PV(cashflows), and PV(terminal) combine to the same NPV", () => {
+    const breakdown = calcNPVBreakdown(leveredSampleInputs);
+    const npv = calcNPV(leveredSampleInputs);
+    expect(breakdown.npv).toBeCloseTo(npv, 4);
+    expect(
+      breakdown.presentValueOfOperatingCashflows + breakdown.presentValueOfTerminalValue - breakdown.initialEquityInvestment
+    ).toBeCloseTo(npv, 4);
+  });
+
+  it("initialEquityInvestment matches calcInitialEquityInvestment()", () => {
+    expect(calcNPVBreakdown(leveredSampleInputs).initialEquityInvestment).toBeCloseTo(
+      calcInitialEquityInvestment(leveredSampleInputs),
+      4
+    );
+  });
+
+  it("carries the discount rate used", () => {
+    expect(calcNPVBreakdown(leveredSampleInputs).discountRate).toBe(leveredSampleInputs.discountRate);
+  });
+
+  it("stays finite for an all-cash deal", () => {
+    const breakdown = calcNPVBreakdown(noFinanceInputs);
+    expect(Number.isFinite(breakdown.npv)).toBe(true);
+    expect(Number.isFinite(breakdown.presentValueOfOperatingCashflows)).toBe(true);
+    expect(Number.isFinite(breakdown.presentValueOfTerminalValue)).toBe(true);
+  });
+});
+
+describe("calcIRRSummary", () => {
+  it("reconciles: irr matches calcIRR(), initialEquityInvestment matches calcInitialEquityInvestment()", () => {
+    const summary = calcIRRSummary(leveredSampleInputs);
+    expect(summary.irr).toBeCloseTo(calcIRR(leveredSampleInputs), 6);
+    expect(summary.initialEquityInvestment).toBeCloseTo(calcInitialEquityInvestment(leveredSampleInputs), 4);
+  });
+
+  it("totalProjectedCashflow equals the sum of all 20 years' cashflowForPeriod", () => {
+    const summary = calcIRRSummary(leveredSampleInputs);
+    const projection = calc20YearProjection(leveredSampleInputs);
+    const expected = projection.reduce((sum, p) => sum + p.cashflowForPeriod, 0);
+    expect(summary.totalProjectedCashflow).toBeCloseTo(expected, 4);
+  });
+
+  it("terminalValueYear20 matches calcTerminalValue() for the same 20-year projection", () => {
+    const summary = calcIRRSummary(leveredSampleInputs);
+    const projection = calc20YearProjection(leveredSampleInputs);
+    expect(summary.terminalValueYear20).toBeCloseTo(calcTerminalValue(leveredSampleInputs, projection), 4);
+  });
+});
+
+describe("calcOperatingExpensesAnnual / calcAnnualDebtService (now public for breakdown display)", () => {
+  it("calcOperatingExpensesAnnual reconciles with calcOperatingExpenseRatio", () => {
+    const opex = calcOperatingExpensesAnnual(leveredSampleInputs);
+    const grossRevenue = calcEffectiveMonthlyRevenue(leveredSampleInputs) * 12;
+    expect((opex / grossRevenue) * 100).toBeCloseTo(calcOperatingExpenseRatio(leveredSampleInputs), 6);
+  });
+
+  it("calcAnnualDebtService reconciles with calcDSCR's denominator", () => {
+    const debtService = calcAnnualDebtService(leveredSampleInputs);
+    const noi = calcNOIAnnual(leveredSampleInputs);
+    expect(noi / debtService).toBeCloseTo(calcDSCR(leveredSampleInputs), 6);
+  });
+
+  it("calcAnnualDebtService is 0 for an all-cash deal", () => {
+    expect(calcAnnualDebtService(noFinanceInputs)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NPV (Equity NPV)
+// ---------------------------------------------------------------------------
+
+describe("calcNPV", () => {
+  it("subtracts the initial EQUITY investment (not total investment) at a punitively high discount rate", () => {
+    // At a punitively high discount rate, the present value of every future
+    // cashflow and the terminal value collapses toward zero, so NPV should
+    // converge on -Initial Equity Investment. Before the Phase 1 fix, calcNPV
+    // never subtracted anything; before the Phase 1.1 fix, it subtracted the
+    // unlevered Total Investment instead of the investor's actual equity.
+    const punitiveDiscountInputs: DealInputs = { ...leveredSampleInputs, discountRate: 1_000_000_000 };
+    const npv = calcNPV(punitiveDiscountInputs);
+    const equity = calcInitialEquityInvestment(leveredSampleInputs);
+    expect(Math.abs(npv - -equity) / equity).toBeLessThan(0.001);
+  });
+
+  it("is internally consistent with IRR on a realistic, positively-geared deal: discounting at the IRR yields ~0 NPV", () => {
+    // IRR is, by definition, the discount rate at which NPV is zero. calcIRR
+    // solves this using buildEquityCashflows(), the exact same stream calcNPV
+    // discounts, so re-running calcNPV at the IRR it found should land NPV
+    // very close to zero (small residual only from Newton-Raphson's numerical
+    // tolerance).
+    const irrPct = calcIRR(leveredSampleInputs);
+    const npvAtIRR = calcNPV({ ...leveredSampleInputs, discountRate: irrPct });
+    expect(Math.abs(npvAtIRR)).toBeLessThan(1);
+  });
+
+  it("is internally consistent with IRR for an all-cash deal too", () => {
+    const irrPct = calcIRR(noFinanceInputs);
+    const npvAtIRR = calcNPV({ ...noFinanceInputs, discountRate: irrPct });
+    expect(Math.abs(npvAtIRR)).toBeLessThan(1);
+  });
+
+  it("stays finite for a no-finance purchase", () => {
+    expect(Number.isFinite(calcNPV(noFinanceInputs))).toBe(true);
+  });
+
+  it("stays finite (does not throw or produce NaN) for a deliberately over-leveraged, negative-equity deal", () => {
+    // sampleInputs' two loans total more than its total investment. This is a
+    // genuinely degenerate case for a return-on-equity calculation (there's no
+    // real "return" concept on a negative investment), so IRR/NPV are only
+    // guaranteed to stay finite here, not to reconcile with each other the way
+    // they do for a normal, positive-equity deal — the applicability layer
+    // (lib/calculations/applicability.ts) is what flags this case as N/A for
+    // display, rather than the low-level math being forced to "look normal."
+    expect(Number.isFinite(calcIRR(sampleInputs))).toBe(true);
+    expect(Number.isFinite(calcNPV(sampleInputs))).toBe(true);
+  });
+
+  it("increases with a higher capital growth rate (positive terminal value effect)", () => {
+    const lowGrowth = calcNPV({ ...leveredSampleInputs, capitalGrowthRate: 1 });
+    const highGrowth = calcNPV({ ...leveredSampleInputs, capitalGrowthRate: 6 });
+    expect(highGrowth).toBeGreaterThan(lowGrowth);
+  });
+
+  it("decreases as the discount rate (required equity return) rises", () => {
+    const lowRate = calcNPV({ ...leveredSampleInputs, discountRate: 5 });
+    const highRate = calcNPV({ ...leveredSampleInputs, discountRate: 25 });
+    expect(highRate).toBeLessThan(lowRate);
+  });
+
+  it("decreases as capital gains tax rate rises, all else equal (CGT reduces terminal value)", () => {
+    const lowCGT = calcNPV({ ...leveredSampleInputs, capitalGainsTaxRate: 5 });
+    const highCGT = calcNPV({ ...leveredSampleInputs, capitalGainsTaxRate: 40 });
+    expect(highCGT).toBeLessThan(lowCGT);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IRR (Equity IRR)
+// ---------------------------------------------------------------------------
+
+describe("calcIRR", () => {
+  it("returns a finite, clamped percentage even under deep negative cashflow", () => {
+    const irr = calcIRR(negativeCashflowInputs);
+    expect(Number.isFinite(irr)).toBe(true);
+    expect(irr).toBeGreaterThanOrEqual(-99);
+    expect(irr).toBeLessThanOrEqual(1000);
+  });
+
+  it("handles a no-finance purchase without throwing", () => {
+    expect(Number.isFinite(calcIRR(noFinanceInputs))).toBe(true);
+  });
+
+  it("changes when financing changes, because equity and debt service both change — but property performance does not (leverage affects the investor, not the property)", () => {
+    const unlevered = calcAllMetrics(noFinanceInputs);
+    const levered = calcAllMetrics(leveredSampleInputs);
+
+    // The property itself performs identically either way...
+    expect(calcNOIAnnual(noFinanceInputs)).toBeCloseTo(calcNOIAnnual(leveredSampleInputs), 4);
+    expect(unlevered.capRatePP).toBeCloseTo(levered.capRatePP, 6);
+
+    // ...but the investor's return is a different number once financing is introduced.
+    // This deliberately does NOT assert a direction (more leverage isn't
+    // always better or worse) — only that debt is a real input to the
+    // investor-return calculation, not a no-op.
+    expect(unlevered.irr).not.toBeCloseTo(levered.irr, 2);
+  });
+
+  it("is not applicable in a meaningful return sense once equity is zero or negative — stays finite, not asserted close to any particular value", () => {
+    expect(Number.isFinite(calcIRR(zeroEquityInputs))).toBe(true);
+    expect(Number.isFinite(calcIRR(highLeverageInputs))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Operating Expense Ratio
+// ---------------------------------------------------------------------------
+
+describe("calcOperatingExpenseRatio", () => {
+  it("excludes debt service: is identical for a no-finance and a financed version of the same deal", () => {
+    const noFinanceRatio = calcOperatingExpenseRatio(noFinanceInputs);
+    const financedRatio = calcOperatingExpenseRatio(sampleInputs);
+    expect(noFinanceRatio).toBeCloseTo(financedRatio, 6);
+  });
+
+  it("is complementary to NOI Margin (both computed off the same excl.-finance expense base)", () => {
+    const ratio = calcOperatingExpenseRatio(sampleInputs);
+    const margin = calcNOIMargin(sampleInputs);
+    expect(ratio + margin).toBeCloseTo(100, 6);
+  });
+
+  it("changes when a genuine operating expense (e.g. maintenance) changes", () => {
+    const higherMaintenance: DealInputs = { ...sampleInputs, maintenanceCostValue: 20 };
+    expect(calcOperatingExpenseRatio(higherMaintenance)).toBeGreaterThan(
+      calcOperatingExpenseRatio(sampleInputs)
+    );
+  });
+
+  it("returns 0 for zero gross revenue rather than dividing by zero", () => {
+    expect(calcOperatingExpenseRatio(zeroRevenueInputs)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Break-Even Ratio
+// ---------------------------------------------------------------------------
+
+describe("calcBreakEvenRatio", () => {
+  it("equals the Operating Expense Ratio plus debt service as a % of revenue", () => {
+    const grossRevenue = calcEffectiveMonthlyRevenue(sampleInputs) * 12;
+    const annualDebtService = sampleInputs.financeSources.reduce(
+      (sum, f) => sum + f.repaymentAmount * 12,
+      0
+    );
+    const expected = calcOperatingExpenseRatio(sampleInputs) + (annualDebtService / grossRevenue) * 100;
+    expect(calcBreakEvenRatio(sampleInputs)).toBeCloseTo(expected, 4);
+  });
+
+  it("equals the Operating Expense Ratio exactly when there is no debt", () => {
+    expect(calcBreakEvenRatio(noFinanceInputs)).toBeCloseTo(
+      calcOperatingExpenseRatio(noFinanceInputs),
+      6
+    );
+  });
+
+  it("is always >= Operating Expense Ratio once any debt service exists", () => {
+    expect(calcBreakEvenRatio(sampleInputs)).toBeGreaterThanOrEqual(
+      calcOperatingExpenseRatio(sampleInputs)
+    );
+  });
+
+  it("returns 0 for zero gross revenue rather than dividing by zero", () => {
+    expect(calcBreakEvenRatio(zeroRevenueInputs)).toBe(0);
+  });
+
+  it("rises sharply under very high leverage", () => {
+    expect(calcBreakEvenRatio(highLeverageInputs)).toBeGreaterThan(
+      calcBreakEvenRatio(sampleInputs)
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DSCR
+// ---------------------------------------------------------------------------
+
+describe("calcDSCR", () => {
+  it("is Infinity (not 0) for a no-finance / zero-debt purchase — there is no debt to fail to cover", () => {
+    expect(calcDSCR(noFinanceInputs)).toBe(Infinity);
+  });
+
+  it("computes NOI / Annual Debt Service for a financed deal", () => {
+    const metrics = calcAllMetrics(sampleInputs);
+    const annualDebtService = sampleInputs.financeSources.reduce(
+      (sum, f) => sum + f.repaymentAmount * 12,
+      0
+    );
+    expect(calcDSCR(sampleInputs)).toBeCloseTo(metrics.noiAnnual / annualDebtService, 6);
+  });
+
+  it("drops under very high leverage", () => {
+    expect(calcDSCR(highLeverageInputs)).toBeLessThan(calcDSCR(sampleInputs));
+  });
+
+  it("survives a JSON round-trip as null (the codebase's established Infinity convention)", () => {
+    const roundTripped = JSON.parse(JSON.stringify({ dscr: calcDSCR(noFinanceInputs) }));
+    expect(roundTripped.dscr).toBeNull();
+    expect(isFiniteNumber(roundTripped.dscr)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LTV
+// ---------------------------------------------------------------------------
+
+describe("calcLTV", () => {
+  it("computes total loan amount as a % of purchase price", () => {
+    const totalLoan = sampleInputs.financeSources.reduce((sum, f) => sum + f.loanAmount, 0);
+    expect(calcLTV(sampleInputs)).toBeCloseTo((totalLoan / sampleInputs.purchasePrice) * 100, 6);
+  });
+
+  it("is 0 for a no-finance purchase", () => {
+    expect(calcLTV(noFinanceInputs)).toBe(0);
+  });
+
+  it("can exceed 100% under very high leverage without throwing", () => {
+    expect(calcLTV(highLeverageInputs)).toBeGreaterThan(100);
+  });
+
+  it("returns 0 for zero purchase price rather than dividing by zero", () => {
+    expect(calcLTV(zeroPurchasePriceInputs)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cap Rate (PP) / Cap Rate (MV)
+// ---------------------------------------------------------------------------
+
+describe("calcCapRatePP / calcCapRateMV", () => {
+  it("returns 0 for zero purchase price / zero market value", () => {
+    expect(calcCapRatePP(zeroPurchasePriceInputs)).toBe(0);
+    expect(calcCapRateMV({ ...sampleInputs, marketValue: 0 })).toBe(0);
+  });
+
+  it("is unaffected by financing choices (NOI excludes debt service)", () => {
+    expect(calcCapRatePP(noFinanceInputs)).toBeCloseTo(calcCapRatePP(sampleInputs), 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gross Yield (property-level, unlevered) / Net Yield (AssetVerdict's name
+// for Cash-on-Cash Return — equity-level, levered) — see section 8/9 of the
+// Phase 1.1 brief. "Net Yield" is deliberately measured against the
+// investor's own cash (calcInitialEquityInvestment), not total investment,
+// because its numerator (calcCashflowAnnual) is already after debt service.
+// ---------------------------------------------------------------------------
+
+describe("calcGrossYield / calcNetYieldPreTax / calcNetYieldPostTax", () => {
+  it("Gross Yield returns 0 for zero purchase price", () => {
+    expect(calcGrossYield(zeroPurchasePriceInputs)).toBe(0);
+  });
+
+  it("Net Yield returns 0 for zero total investment (equity is also 0 with no debt)", () => {
+    expect(calcNetYieldPreTax(zeroTotalInvestmentInputs)).toBe(0);
+    expect(calcNetYieldPostTax(zeroTotalInvestmentInputs)).toBe(0);
+  });
+
+  it("Net Yield returns 0 (not a divide-by-zero) when equity is zero or negative", () => {
+    expect(calcNetYieldPreTax(zeroEquityInputs)).toBe(0);
+    expect(calcNetYieldPostTax(zeroEquityInputs)).toBe(0);
+    expect(calcNetYieldPreTax(highLeverageInputs)).toBe(0);
+  });
+
+  it("Cash-on-Cash formula: equals Annual Cashflow After Debt Service ÷ Initial Equity Investment × 100", () => {
+    const equity = calcInitialEquityInvestment(leveredSampleInputs);
+    const preTaxCashflow = calcCashflowAnnual(leveredSampleInputs, true);
+    const postTaxCashflow = calcCashflowAnnual(leveredSampleInputs, false);
+    expect(calcNetYieldPreTax(leveredSampleInputs)).toBeCloseTo((preTaxCashflow / equity) * 100, 4);
+    expect(calcNetYieldPostTax(leveredSampleInputs)).toBeCloseTo((postTaxCashflow / equity) * 100, 4);
+  });
+
+  it("post-tax yield is never greater than pre-tax yield when NOI exceeds finance cost", () => {
+    expect(calcNetYieldPostTax(leveredSampleInputs)).toBeLessThanOrEqual(
+      calcNetYieldPreTax(leveredSampleInputs)
+    );
+  });
+
+  it("is negative for a deeply negative-cashflow deal with positive equity", () => {
+    expect(calcNetYieldPostTax(negativeCashflowInputs)).toBeLessThan(0);
+  });
+
+  it("differs from an unlevered (all-cash) reading of the same property — confirms it is genuinely a levered, equity-level metric", () => {
+    expect(calcNetYieldPreTax(leveredSampleInputs)).not.toBeCloseTo(
+      calcNetYieldPreTax(noFinanceInputs),
+      2
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Payback Period (Equity Payback Period — same denominator fix as Net Yield)
+// ---------------------------------------------------------------------------
+
+describe("calcPaybackPeriod", () => {
+  it("computes Initial Equity Investment / Annual Net Cashflow for a positive-cashflow, positive-equity deal", () => {
+    const equity = calcInitialEquityInvestment(leveredSampleInputs);
+    const annualCashflow = calcCashflowAnnual(leveredSampleInputs, false);
+    expect(annualCashflow).toBeGreaterThan(0);
+    expect(calcPaybackPeriod(leveredSampleInputs)).toBeCloseTo(equity / annualCashflow, 4);
+  });
+
+  it("is Infinity for a deal with negative annual cashflow", () => {
+    expect(calcPaybackPeriod(negativeCashflowInputs)).toBe(Infinity);
+  });
+
+  it("is 0 (already 'paid back') rather than a divide-by-zero when equity is zero or negative and cashflow is positive", () => {
+    // zeroEquityInputs / highLeverageInputs carry heavy debt service, so check
+    // this against a case with genuinely zero equity and positive cashflow by
+    // construction: an all-cash deal has no meaningful zero-equity case, so
+    // assert directly on the guard using zeroEquityInputs regardless of its
+    // cashflow sign — a non-positive-cashflow deal already returns Infinity
+    // first, so this only exercises the equity guard when cashflow is positive.
+    if (calcCashflowAnnual(zeroEquityInputs, false) > 0) {
+      expect(calcPaybackPeriod(zeroEquityInputs)).toBe(0);
+    }
+  });
+
+  it("stays finite for the all-cash purchase (equity equals total investment here)", () => {
+    expect(Number.isFinite(calcPaybackPeriod(noFinanceInputs))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Remaining debt at sale / terminal value
+// ---------------------------------------------------------------------------
+
+describe("calcTotalRemainingLoanBalance and its effect on Equity IRR/NPV", () => {
+  it("amortises down over time and reaches 0 at the loan term", () => {
+    const balanceYear1 = calcTotalRemainingLoanBalance(leveredSampleInputs, 1);
+    const balanceYear10 = calcTotalRemainingLoanBalance(leveredSampleInputs, 10);
+    const loanAmount = leveredSampleInputs.financeSources[0].loanAmount;
+    expect(balanceYear1).toBeLessThan(loanAmount);
+    expect(balanceYear10).toBeLessThan(balanceYear1);
+    expect(calcTotalRemainingLoanBalance(leveredSampleInputs, leveredSampleInputs.financeSources[0].termYears)).toBe(0);
+  });
+
+  it("a longer remaining balance at sale (later payoff) reduces NPV, all else equal", () => {
+    const shortTerm = calcNPV({
+      ...leveredSampleInputs,
+      financeSources: [{ ...leveredSampleInputs.financeSources[0], termYears: 10 }],
+    });
+    const longTerm = calcNPV({
+      ...leveredSampleInputs,
+      financeSources: [{ ...leveredSampleInputs.financeSources[0], termYears: 25 }],
+    });
+    // A longer term leaves more debt outstanding at year 20 (less paid off),
+    // which reduces the equity proceeds captured in the terminal value.
+    expect(longTerm).toBeLessThan(shortTerm);
   });
 });

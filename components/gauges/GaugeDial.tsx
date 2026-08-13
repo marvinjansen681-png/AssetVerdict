@@ -2,7 +2,7 @@
 
 import Card from "@/components/ui/Card";
 import TooltipIcon from "@/components/ui/TooltipIcon";
-import { getGaugeColorForStrategy, type GaugeColor } from "@/lib/calculations/thresholds";
+import { getGaugeColorForStrategy, type GaugeColor, type GaugeVisualColor } from "@/lib/calculations/thresholds";
 import clsx from "clsx";
 
 export interface GaugeThresholds {
@@ -84,8 +84,12 @@ export default function GaugeDial({
   const cx = width / 2;
   const cy = height - 5;
 
-  const color: GaugeColor | "grey" =
-    value === null ? "grey" : getGaugeColorForStrategy(metricKey, value, strategyId);
+  // "neutral" means AssetVerdict has no calibrated benchmark for this metric
+  // on this strategy — a UI treatment, not a financial judgement, so it
+  // renders identically to "no data" (grey) rather than any red/amber/green
+  // shade (Phase 3.1: a missing threshold must never look like a judgement).
+  const visualColor: GaugeVisualColor | null = value === null ? null : getGaugeColorForStrategy(metricKey, value, strategyId);
+  const color: GaugeColor | "grey" = visualColor === null || visualColor === "neutral" ? "grey" : visualColor;
 
   const valueAngle = value === null ? 180 : valueToAngle(value, min, max);
   const backgroundPath = describeArc(cx, cy, radius, 180, 0);
@@ -152,7 +156,7 @@ export default function GaugeDial({
       <div
         className={clsx(
           "font-mono font-bold text-lg -mt-1",
-          value === null
+          value === null || color === "grey"
             ? "text-av-slate/50"
             : color === "green"
               ? "text-av-green"

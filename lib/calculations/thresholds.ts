@@ -73,7 +73,13 @@ const STR_THRESHOLDS: ThresholdSet = {
 
 const FIX_AND_FLIP_THRESHOLDS: ThresholdSet = {
   roi: range(25, 15),
-  annualisedRoi: range(40, 25),
+  // Phase 3.1 bug fix: this key previously read "annualisedRoi" (lowercase
+  // "oi"), which never matched the registry/DealMetrics field name
+  // "annualisedROI" used everywhere else (FlipDashboard's GaugeDial,
+  // buildDealCoachContext, interpretMetric, metricDefinitions). The lookup
+  // silently missed on every real call, so Annualised ROI fell through the
+  // "no rule" path — see the classification integrity fix below.
+  annualisedROI: range(40, 25),
   netProfit: (v) => (v > 0 ? "green" : "red"),
   holdingPeriod: inverseRange(6, 12),
 };
@@ -100,21 +106,109 @@ export function getStrategyThresholds(strategyId: string): ThresholdSet {
   return STRATEGY_THRESHOLDS[strategyId] ?? COMMERCIAL_THRESHOLDS;
 }
 
-/** Gauge colour using the generic (Commercial) threshold table. */
-export function getGaugeColor(metric: string, value: number): GaugeColor {
+/**
+ * Whether AssetVerdict has a calibrated threshold rule for `metric` on this
+ * strategy at all — the single source of truth for "does AssetVerdict have
+ * an opinion on this metric," used to keep an absent rule from ever
+ * masquerading as a real judgement (Phase 3.1).
+ */
+export function hasCalibratedThreshold(metric: string, strategyId: string): boolean {
+  return !!getStrategyThresholds(strategyId)[metric];
+}
+
+/**
+ * Plain-English judgement label for each gauge colour. This is the ONLY place
+ * that maps a colour to a word — the education layer and any future AI coach
+ * must call classifyMetricForStrategy() below rather than hard-coding this
+ * mapping (or the raw threshold numbers) a second time.
+ */
+const COLOR_JUDGEMENT_LABEL: Record<GaugeColor, "Strong" | "Caution" | "Weak"> = {
+  green: "Strong",
+  orange: "Caution",
+  red: "Weak",
+};
+
+/**
+ * Classification integrity (Phase 3.1): a metric's judgement is one of three
+ * DISTINCT states, never collapsed into each other —
+ *   - "classified":     a calibrated threshold rule exists and produced a
+ *                        real green/orange/red judgement.
+ *   - "unclassified":   the metric is applicable to this deal, but
+ *                        AssetVerdict has no calibrated rule for it (e.g.
+ *                        Gross Revenue, Total Investment) — there is no
+ *                        Strong/Caution/Weak judgement to give, and this must
+ *                        never silently present as "Caution."
+ *   - "not_applicable":  the metric doesn't apply to this deal at all (e.g.
+ *                        DSCR with no debt) — see applicability.ts.
+ * `reason` is optional/undefined on "classified" only so every branch can be
+ * read generically as `classification.reason` without narrowing first.
+ */
+export type MetricClassification =
+  | { status: "classified"; applicable: true; color: GaugeColor; label: "Strong" | "Caution" | "Weak"; reason?: string }
+  | { status: "unclassified"; applicable: true; color: null; label: null; reason: "no_threshold" }
+  | { status: "not_applicable"; applicable: false; color: null; label: null; reason: string };
+
+/**
+ * Combines a calculated value with the strategy-aware threshold table to
+ * produce a plain-English judgement — WITHOUT exposing or duplicating the
+ * underlying threshold numbers. This is what the education layer and Deal
+ * Coach should call to say things like "Your DSCR is 1.18x. For this
+ * strategy AssetVerdict currently classifies that as Caution," instead of
+ * re-encoding "1.25" / "1.0" anywhere outside this file.
+ *
+ * This is a CLASSIFICATION-FIRST primitive: it looks up whether a calibrated
+ * rule exists before producing anything visual. A missing rule is reported as
+ * "unclassified," never coerced into a colour — see hasCalibratedThreshold().
+ *
+ * Non-finite values (e.g. DSCR with no debt, an infinite payback period) are
+ * reported "not_applicable" rather than forced into a colour — a deal with
+ * no debt at all hasn't "failed" DSCR, the metric simply doesn't apply.
+ */
+export function classifyMetricForStrategy(
+  metric: string,
+  value: number | null | undefined,
+  strategyId: string
+): MetricClassification {
+  if (!isFiniteNumber(value)) {
+    return {
+      status: "not_applicable",
+      applicable: false,
+      color: null,
+      label: null,
+      reason: "No finite value is available for this metric",
+    };
+  }
+  const rule = getStrategyThresholds(strategyId)[metric];
+  if (!rule) {
+    return { status: "unclassified", applicable: true, color: null, label: null, reason: "no_threshold" };
+  }
+  const color = rule(value);
+  return { status: "classified", applicable: true, color, label: COLOR_JUDGEMENT_LABEL[color] };
+}
+
+/** Visual colour states a gauge/card can render — "neutral" is a UI treatment for "no calibrated benchmark," never a financial judgement. */
+export type GaugeVisualColor = GaugeColor | "neutral";
+
+/**
+ * Gauge colour using the generic (Commercial) threshold table — DERIVED from
+ * classification, never the reverse (section 6/7 of the Phase 3.1 brief).
+ */
+export function getGaugeColor(metric: string, value: number): GaugeVisualColor {
   return getGaugeColorForStrategy(metric, value, "commercial");
 }
 
-/** Gauge colour using the threshold table calibrated for the given strategy. */
+/**
+ * Gauge colour using the threshold table calibrated for the given strategy.
+ * Returns "neutral" — never "orange" — when no calibrated rule exists for
+ * this metric/strategy; callers (GaugeDial, the PDF) must render "neutral"
+ * as a neutral/grey state, not amber, since it carries no red/amber/green
+ * meaning.
+ */
 export function getGaugeColorForStrategy(
   metric: string,
   value: number,
   strategyId: string
-): GaugeColor {
-  const rule = getStrategyThresholds(strategyId)[metric];
-  if (!rule) return "orange";
-  // Infinity (e.g. an infinite payback period) and its JSON-over-the-wire
-  // form (null, since JSON has no Infinity) both fail this check.
-  if (!isFiniteNumber(value)) return "red";
-  return rule(value);
+): GaugeVisualColor {
+  const classification = classifyMetricForStrategy(metric, value, strategyId);
+  return classification.status === "classified" ? classification.color : "neutral";
 }
