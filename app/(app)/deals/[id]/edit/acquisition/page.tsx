@@ -11,7 +11,10 @@ import FormField from "@/components/ui/FormField";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import PercentInput from "@/components/ui/PercentInput";
 import Button from "@/components/ui/Button";
-import RenovationBudget, { STUDENT_FURNITURE_CATEGORIES } from "@/components/forms/RenovationBudget";
+import RenovationBudget, {
+  STUDENT_CATEGORIES,
+  STUDENT_FURNITURE_PRESETS,
+} from "@/components/forms/RenovationBudget";
 import PropertyValuationPanel from "@/components/forms/PropertyValuationPanel";
 
 interface AcquisitionForm {
@@ -189,9 +192,10 @@ export default function AcquisitionTab() {
             }}
             {...(strategy.id === "student"
               ? {
-                  categories: STUDENT_FURNITURE_CATEGORIES,
-                  title: "Furniture & Setup Budget",
-                  totalLabel: "Total Furniture & Setup Cost",
+                  categories: STUDENT_CATEGORIES,
+                  presets: STUDENT_FURNITURE_PRESETS,
+                  title: "Furniture, Setup & Renovation Budget",
+                  totalLabel: "Total Furniture, Setup & Renovation Cost",
                 }
               : {})}
           />
