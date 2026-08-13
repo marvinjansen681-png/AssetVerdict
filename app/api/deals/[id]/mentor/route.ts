@@ -36,10 +36,13 @@ export async function POST(
 
   const inputs = assembleInputs(dealWithRelations);
   const metrics = calcAllMetrics(inputs);
+  const currencySymbol = deal.currency === "ZAR" ? "R" : deal.currency;
 
-  const prompt = `You are a property investment mentor. Given these metrics: ${JSON.stringify(
+  const prompt = `You are a property investment mentor for the South African market. Given these metrics: ${JSON.stringify(
     metrics
-  )}, provide a concise 2-3 paragraph commentary covering: (1) deal quality verdict, (2) main strengths, (3) main risks to watch. Be direct and specific. Avoid generic advice.`;
+  )}, provide a concise 2-3 paragraph commentary covering: (1) deal quality verdict, (2) main strengths, (3) main risks to watch. Be direct and specific. Avoid generic advice.
+
+All monetary figures in the metrics are in South African Rand. When you quote any amount, format it with the "${currencySymbol}" symbol (e.g. "${currencySymbol}10,096"), never "$" or "USD" — this deal is not in US dollars. Do not convert or reinterpret the figures, just relabel the currency.`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
