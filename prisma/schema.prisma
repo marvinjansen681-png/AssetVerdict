@@ -133,6 +133,17 @@ model CashflowInputs {
   academicYearWeeks Int?    @default(42)
   pricePerRoom      Float?
 
+  // Student Accommodation — room mix (NSFAS-aware)
+  singleRoomCount      Int?   @default(0)
+  singleRoomRent       Float? @default(0)
+  singleRoomNsfasBeds  Int?   @default(0)
+  sharingRoomCount     Int?   @default(0)
+  sharingBedsPerRoom   Int?   @default(2)
+  sharingRoomRent      Float? @default(0)
+  sharingRoomNsfasBeds Int?   @default(0)
+  nsfasCycleMonths     Int?   @default(10)
+  privateCycleMonths   Int?   @default(12)
+
   // Fix & Flip
   holdingPeriodMonths Int?   @default(6)
   expectedSalePrice   Float?

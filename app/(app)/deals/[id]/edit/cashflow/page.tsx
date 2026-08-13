@@ -13,6 +13,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import PercentInput from "@/components/ui/PercentInput";
 import ToggleInput from "@/components/ui/ToggleInput";
 import Input from "@/components/ui/Input";
+import NsfasGradingLookup from "@/components/forms/NsfasGradingLookup";
 import clsx from "clsx";
 
 interface CashflowForm {
@@ -35,11 +36,20 @@ interface CashflowForm {
   nightlyRate: number;
   avgOccupiedNights: number;
   platformFeesPct: number;
-  // Student / Multi-Let
+  // Multi-Let
   billsIncluded: boolean;
-  academicYearWeeks: number;
   pricePerRoom: number;
   billsPerRoom: number;
+  // Student Accommodation (NSFAS-aware)
+  singleRoomCount: number;
+  singleRoomRent: number;
+  singleRoomNsfasBeds: number;
+  sharingRoomCount: number;
+  sharingBedsPerRoom: number;
+  sharingRoomRent: number;
+  sharingRoomNsfasBeds: number;
+  nsfasCycleMonths: number;
+  privateCycleMonths: number;
   // Fix & Flip
   holdingPeriodMonths: number;
   expectedSalePrice: number;
@@ -84,9 +94,17 @@ export default function CashflowTab() {
         avgOccupiedNights: cf?.avgOccupiedNights ?? 200,
         platformFeesPct: cf?.platformFeesPct ?? 15,
         billsIncluded: cf?.billsIncluded ?? false,
-        academicYearWeeks: cf?.academicYearWeeks ?? 42,
         pricePerRoom: cf?.pricePerRoom ?? 0,
         billsPerRoom: 0,
+        singleRoomCount: cf?.singleRoomCount ?? 0,
+        singleRoomRent: cf?.singleRoomRent ?? 0,
+        singleRoomNsfasBeds: cf?.singleRoomNsfasBeds ?? 0,
+        sharingRoomCount: cf?.sharingRoomCount ?? 0,
+        sharingBedsPerRoom: cf?.sharingBedsPerRoom ?? 2,
+        sharingRoomRent: cf?.sharingRoomRent ?? 0,
+        sharingRoomNsfasBeds: cf?.sharingRoomNsfasBeds ?? 0,
+        nsfasCycleMonths: cf?.nsfasCycleMonths ?? 10,
+        privateCycleMonths: cf?.privateCycleMonths ?? 12,
         holdingPeriodMonths: cf?.holdingPeriodMonths ?? 6,
         expectedSalePrice: cf?.expectedSalePrice ?? Math.round((deal.purchasePrice ?? 0) * 1.3),
         holdingCostPerMonth: cf?.holdingCostPerMonth ?? 0,
@@ -99,17 +117,28 @@ export default function CashflowTab() {
   const v = watch();
   const mode = strategy.cashflowMode;
 
+  // ---- Student room mix (mirrors lib/calculations/index.ts calcStudentAnnualRevenue) ----
+  const totalSingleBeds = Number(v.singleRoomCount) || 0;
+  const totalSharingBeds = (Number(v.sharingRoomCount) || 0) * (Number(v.sharingBedsPerRoom) || 0);
+  const nsfasSingleBeds = Math.min(Number(v.singleRoomNsfasBeds) || 0, totalSingleBeds);
+  const nsfasSharingBeds = Math.min(Number(v.sharingRoomNsfasBeds) || 0, totalSharingBeds);
+  const privateSingleBeds = totalSingleBeds - nsfasSingleBeds;
+  const privateSharingBeds = totalSharingBeds - nsfasSharingBeds;
+  const totalBeds = totalSingleBeds + totalSharingBeds;
+  const nsfasMonths = Number(v.nsfasCycleMonths) || 10;
+  const privateMonths = Number(v.privateCycleMonths) || 12;
+
   // ---- Base revenue (mirrors lib/calculations/index.ts calcBaseMonthlyRevenue) ----
   let baseMonthlyRevenue = 0;
   if (mode === "nightly") {
     baseMonthlyRevenue = ((Number(v.nightlyRate) || 0) * (Number(v.avgOccupiedNights) || 0)) / 12;
-  } else if (mode === "academic") {
-    baseMonthlyRevenue =
-      ((Number(v.pricePerRoom) || 0) *
-        numUnits *
-        (Number(v.academicYearWeeks) || 0) *
-        ((Number(v.occupancyRate) || 0) / 100)) /
-      12;
+  } else if (mode === "student") {
+    const studentAnnualRevenue =
+      nsfasSingleBeds * (Number(v.singleRoomRent) || 0) * nsfasMonths +
+      privateSingleBeds * (Number(v.singleRoomRent) || 0) * privateMonths +
+      nsfasSharingBeds * (Number(v.sharingRoomRent) || 0) * nsfasMonths +
+      privateSharingBeds * (Number(v.sharingRoomRent) || 0) * privateMonths;
+    baseMonthlyRevenue = (studentAnnualRevenue / 12) * ((Number(v.occupancyRate) || 0) / 100);
   } else if (mode === "per_room") {
     baseMonthlyRevenue =
       (Number(v.pricePerRoom) || 0) * numUnits * ((Number(v.occupancyRate) || 0) / 100);
@@ -137,9 +166,10 @@ export default function CashflowTab() {
   const grossRevenueMonthly = effectiveMonthlyRevenue;
   const badDebtsMonthly = grossRevenueMonthly * ((Number(v.badDebtsPct) || 0) / 100);
 
+  const billsUnitCount = mode === "student" ? totalBeds : numUnits;
   const billsFromRooms =
-    (mode === "per_room" || mode === "academic") && v.billsIncluded
-      ? (Number(v.billsPerRoom) || 0) * numUnits
+    (mode === "per_room" || mode === "student") && v.billsIncluded
+      ? (Number(v.billsPerRoom) || 0) * billsUnitCount
       : 0;
 
   const utilitiesMonthly =
@@ -178,8 +208,8 @@ export default function CashflowTab() {
     const payload = {
       ...rest,
       electricity:
-        (mode === "per_room" || mode === "academic") && data.billsIncluded
-          ? (Number(data.electricity) || 0) + (Number(billsPerRoom) || 0) * numUnits
+        (mode === "per_room" || mode === "student") && data.billsIncluded
+          ? (Number(data.electricity) || 0) + (Number(billsPerRoom) || 0) * billsUnitCount
           : data.electricity,
     };
 
@@ -301,7 +331,7 @@ export default function CashflowTab() {
     >
       <StrategyHint strategyId={strategy.id} icon={strategy.icon} />
 
-      {(mode === "standard" || mode === "per_room" || mode === "academic") && (
+      {(mode === "standard" || mode === "per_room") && (
         <MarketIntelligencePanel
           dealId={deal.id}
           strategy={strategy.id}
@@ -317,6 +347,105 @@ export default function CashflowTab() {
             }
           }}
         />
+      )}
+
+      {mode === "student" && (
+        <section>
+          <h2 className="font-display text-xl text-av-navy mb-4">Room Mix</h2>
+          <p className="font-body text-xs text-av-slate -mt-2 mb-4">
+            NSFAS pays a flat monthly amount over a {v.nsfasCycleMonths || 10}-month cycle,
+            regardless of the academic calendar. Private and bursary students outside NSFAS
+            typically pay over a {v.privateCycleMonths || 12}-month cycle. Split each room
+            type&apos;s beds between the two below.
+          </p>
+
+          <div className="rounded-lg border border-av-light-grey p-5 mb-4">
+            <h3 className="font-body text-sm font-semibold text-av-navy mb-3">Single Rooms</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <FormField label="Number of Single Rooms">
+                <Input type="number" min={0} {...register("singleRoomCount")} />
+              </FormField>
+              <FormField label="Rent Per Bed (monthly)">
+                <CurrencyInput {...register("singleRoomRent")} />
+              </FormField>
+              <FormField
+                label="NSFAS-Funded Beds"
+                helperText={`${Math.min(Number(v.singleRoomNsfasBeds) || 0, totalSingleBeds)} of ${totalSingleBeds} beds`}
+              >
+                <Input type="number" min={0} max={totalSingleBeds} {...register("singleRoomNsfasBeds")} />
+              </FormField>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-av-light-grey p-5 mb-4">
+            <h3 className="font-body text-sm font-semibold text-av-navy mb-3">Sharing Rooms</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <FormField label="Number of Sharing Rooms">
+                <Input type="number" min={0} {...register("sharingRoomCount")} />
+              </FormField>
+              <FormField label="Beds Per Sharing Room">
+                <Input type="number" min={2} max={3} {...register("sharingBedsPerRoom")} />
+              </FormField>
+              <FormField label="Rent Per Bed (monthly)">
+                <CurrencyInput {...register("sharingRoomRent")} />
+              </FormField>
+              <FormField
+                label="NSFAS-Funded Beds"
+                helperText={`${Math.min(Number(v.sharingRoomNsfasBeds) || 0, totalSharingBeds)} of ${totalSharingBeds} beds`}
+              >
+                <Input type="number" min={0} max={totalSharingBeds} {...register("sharingRoomNsfasBeds")} />
+              </FormField>
+            </div>
+          </div>
+
+          <NsfasGradingLookup
+            onApply={(roomType, rate) => {
+              if (roomType === "single") {
+                setValue("singleRoomRent", rate, { shouldDirty: true });
+              } else {
+                setValue("sharingRoomRent", rate, { shouldDirty: true });
+              }
+            }}
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+            <FormField label="NSFAS Cycle (months/year)">
+              <Input type="number" min={1} max={12} {...register("nsfasCycleMonths")} />
+            </FormField>
+            <FormField label="Private / Bursary Cycle (months/year)">
+              <Input type="number" min={1} max={12} {...register("privateCycleMonths")} />
+            </FormField>
+            <FormField label="Occupancy Rate">
+              <PercentInput {...register("occupancyRate")} />
+            </FormField>
+          </div>
+
+          <div className="flex items-center gap-2 mt-4">
+            <input
+              type="checkbox"
+              id="billsIncludedStudent"
+              {...register("billsIncluded")}
+              className="w-5 h-5 accent-av-gold"
+            />
+            <label htmlFor="billsIncludedStudent" className="text-sm font-body text-av-slate">
+              Bills Included?
+            </label>
+          </div>
+          {v.billsIncluded && (
+            <div className="mt-4 max-w-xs">
+              <FormField label="Estimated Monthly Bills Per Bed">
+                <CurrencyInput {...register("billsPerRoom")} />
+              </FormField>
+            </div>
+          )}
+
+          <div className="rounded-md bg-av-light-grey p-4 mt-4 font-body text-sm text-av-navy flex justify-between">
+            <span>Total Beds</span>
+            <span className="font-mono font-semibold">
+              {totalBeds} ({nsfasSingleBeds + nsfasSharingBeds} NSFAS / {privateSingleBeds + privateSharingBeds} Private)
+            </span>
+          </div>
+        </section>
       )}
 
       <section>
@@ -352,42 +481,6 @@ export default function CashflowTab() {
                   className="w-5 h-5 accent-av-gold"
                 />
                 <label htmlFor="billsIncluded" className="text-sm font-body text-av-slate">
-                  Bills Included?
-                </label>
-              </div>
-              {v.billsIncluded && (
-                <FormField label="Estimated Monthly Bills Per Room">
-                  <CurrencyInput {...register("billsPerRoom")} />
-                </FormField>
-              )}
-            </>
-          )}
-
-          {mode === "academic" && (
-            <>
-              <FormField label="Number of Rooms">
-                <Input type="number" readOnly value={numUnits} />
-              </FormField>
-              <FormField label="Rent Per Room Per Week">
-                <CurrencyInput {...register("pricePerRoom")} />
-              </FormField>
-              <FormField
-                label="Academic Year Length (weeks)"
-                helperText={`Effective annual occupancy: ${(((Number(v.academicYearWeeks) || 0) / 52) * 100).toFixed(0)}%`}
-              >
-                <Input type="number" min={1} max={52} {...register("academicYearWeeks")} />
-              </FormField>
-              <FormField label="Academic Year Occupancy">
-                <PercentInput {...register("occupancyRate")} />
-              </FormField>
-              <div className="flex items-center gap-2 pt-7">
-                <input
-                  type="checkbox"
-                  id="billsIncludedAcademic"
-                  {...register("billsIncluded")}
-                  className="w-5 h-5 accent-av-gold"
-                />
-                <label htmlFor="billsIncludedAcademic" className="text-sm font-body text-av-slate">
                   Bills Included?
                 </label>
               </div>

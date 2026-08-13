@@ -59,9 +59,20 @@ export function getMissingFields(deal: DealWithRelations): typeof REQUIRED_FIELD
       }
       break;
     case "multi_let":
-    case "student":
       if (!cf?.pricePerRoom) {
         missing.push({ key: "pricePerRoom", label: "Rent Per Room", tab: "cashflow" });
+      }
+      break;
+    case "student":
+      if (!cf?.singleRoomCount && !cf?.sharingRoomCount) {
+        missing.push({
+          key: "roomMix",
+          label: "Single or Sharing Room Count",
+          tab: "cashflow",
+        });
+      }
+      if (!cf?.singleRoomRent && !cf?.sharingRoomRent) {
+        missing.push({ key: "roomRent", label: "Room Rent", tab: "cashflow" });
       }
       break;
     default:
@@ -127,6 +138,16 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
     billsIncluded: cf?.billsIncluded ?? false,
     academicYearWeeks: cf?.academicYearWeeks ?? 42,
     pricePerRoom: cf?.pricePerRoom ?? 0,
+
+    singleRoomCount: cf?.singleRoomCount ?? 0,
+    singleRoomRent: cf?.singleRoomRent ?? 0,
+    singleRoomNsfasBeds: cf?.singleRoomNsfasBeds ?? 0,
+    sharingRoomCount: cf?.sharingRoomCount ?? 0,
+    sharingBedsPerRoom: cf?.sharingBedsPerRoom ?? 2,
+    sharingRoomRent: cf?.sharingRoomRent ?? 0,
+    sharingRoomNsfasBeds: cf?.sharingRoomNsfasBeds ?? 0,
+    nsfasCycleMonths: cf?.nsfasCycleMonths ?? 10,
+    privateCycleMonths: cf?.privateCycleMonths ?? 12,
 
     holdingPeriodMonths: cf?.holdingPeriodMonths ?? 6,
     expectedSalePrice: cf?.expectedSalePrice ?? 0,

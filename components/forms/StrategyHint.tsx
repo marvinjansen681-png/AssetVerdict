@@ -4,7 +4,7 @@ const HINTS: Partial<Record<StrategyId, string>> = {
   multi_let:
     "Multi-Let: Enter per-room rent. Management fees are typically higher (15–20%) due to tenant turnover and room management.",
   student:
-    "Student Accommodation: Income is based on academic year (typically 42 weeks). Bills-included models are common — factor these into your expense side.",
+    "Student Accommodation: NSFAS-funded beds pay a flat monthly rate over a 10-month cycle; private and bursary beds outside NSFAS typically pay over 12 months. Bills-included models are common — factor these into your expense side.",
   str: "Short-Term Rental: Revenue is driven by nightly rate × occupancy. Platform fees (Airbnb, etc.) typically run 15–20% of revenue.",
   fix_and_flip:
     "Fix & Flip: This tab calculates your profit at point of sale. Renovation quality and timeline are your biggest risk variables.",

@@ -69,10 +69,21 @@ export interface DealInputs {
   avgOccupiedNights: number;
   platformFeesPct: number;
 
-  // Student / Multi-Let
+  // Multi-Let (per-room)
   billsIncluded: boolean;
   academicYearWeeks: number;
   pricePerRoom: number;
+
+  // Student Accommodation — room mix (NSFAS-aware)
+  singleRoomCount: number;
+  singleRoomRent: number;
+  singleRoomNsfasBeds: number;
+  sharingRoomCount: number;
+  sharingBedsPerRoom: number;
+  sharingRoomRent: number;
+  sharingRoomNsfasBeds: number;
+  nsfasCycleMonths: number;
+  privateCycleMonths: number;
 
   // Fix & Flip
   holdingPeriodMonths: number;
@@ -189,6 +200,30 @@ export function calcDepositRequired(inputs: DealInputs): number {
 export { calcMonthlyRepayment };
 
 /**
+ * Student accommodation revenue: single and sharing rooms, each split between
+ * NSFAS-funded beds (paid over a fixed 10-month cycle at NSFAS grading rates)
+ * and private/bursary beds (paid over a 12-month cycle at market rent).
+ * NSFAS pays a flat monthly amount for 10 months regardless of the academic
+ * calendar's actual week count, so this is annualised by months, not weeks.
+ */
+export function calcStudentAnnualRevenue(inputs: DealInputs): number {
+  const totalSingleBeds = inputs.singleRoomCount;
+  const totalSharingBeds = inputs.sharingRoomCount * inputs.sharingBedsPerRoom;
+
+  const nsfasSingleBeds = Math.min(inputs.singleRoomNsfasBeds, totalSingleBeds);
+  const nsfasSharingBeds = Math.min(inputs.sharingRoomNsfasBeds, totalSharingBeds);
+  const privateSingleBeds = totalSingleBeds - nsfasSingleBeds;
+  const privateSharingBeds = totalSharingBeds - nsfasSharingBeds;
+
+  return (
+    nsfasSingleBeds * inputs.singleRoomRent * inputs.nsfasCycleMonths +
+    privateSingleBeds * inputs.singleRoomRent * inputs.privateCycleMonths +
+    nsfasSharingBeds * inputs.sharingRoomRent * inputs.nsfasCycleMonths +
+    privateSharingBeds * inputs.sharingRoomRent * inputs.privateCycleMonths
+  );
+}
+
+/**
  * Base rental/nightly/room revenue before additional income and recoveries,
  * branching on the deal's investment strategy (see /lib/strategies.ts).
  */
@@ -198,14 +233,9 @@ function calcBaseMonthlyRevenue(inputs: DealInputs): number {
       // Nightly rate x occupied nights/year, averaged to a monthly figure.
       return (inputs.nightlyRate * inputs.avgOccupiedNights) / 12;
     case "student":
-      // Per-room weekly rent x rooms x academic-year weeks x occupancy, annualised to monthly.
-      return (
-        (inputs.pricePerRoom *
-          inputs.numUnits *
-          inputs.academicYearWeeks *
-          (inputs.occupancyRate / 100)) /
-        12
-      );
+      // Blended NSFAS (10mo) / private (12mo) annual revenue across single and
+      // sharing rooms, averaged to a monthly figure, then occupancy-adjusted.
+      return (calcStudentAnnualRevenue(inputs) / 12) * (inputs.occupancyRate / 100);
     case "multi_let":
       // Per-room monthly rent x rooms x occupancy.
       return inputs.pricePerRoom * inputs.numUnits * (inputs.occupancyRate / 100);

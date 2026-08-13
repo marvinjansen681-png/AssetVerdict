@@ -11,7 +11,7 @@ import FormField from "@/components/ui/FormField";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import PercentInput from "@/components/ui/PercentInput";
 import Button from "@/components/ui/Button";
-import RenovationBudget from "@/components/forms/RenovationBudget";
+import RenovationBudget, { STUDENT_FURNITURE_CATEGORIES } from "@/components/forms/RenovationBudget";
 import PropertyValuationPanel from "@/components/forms/PropertyValuationPanel";
 
 interface AcquisitionForm {
@@ -26,7 +26,7 @@ interface AcquisitionForm {
 }
 
 export default function AcquisitionTab() {
-  const { deal, refreshDeal } = useDeal();
+  const { deal, refreshDeal, strategy } = useDeal();
   const { showToast } = useToast();
   const [showTransferDuty, setShowTransferDuty] = useState(false);
   const [renovationCost, setRenovationCost] = useState(deal.renovationCost ?? 0);
@@ -187,6 +187,13 @@ export default function AcquisitionTab() {
               setRenovationCost(total);
               refreshDeal({ renovationCost: total });
             }}
+            {...(strategy.id === "student"
+              ? {
+                  categories: STUDENT_FURNITURE_CATEGORIES,
+                  title: "Furniture & Setup Budget",
+                  totalLabel: "Total Furniture & Setup Cost",
+                }
+              : {})}
           />
         </div>
       </section>

@@ -3,6 +3,7 @@ import {
   calcAllMetrics,
   calcGrossRevenueAnnual,
   calcFlipProfit,
+  calcStudentAnnualRevenue,
   type DealInputs,
 } from "../index";
 
@@ -45,6 +46,15 @@ const baseInputs: DealInputs = {
   billsIncluded: false,
   academicYearWeeks: 42,
   pricePerRoom: 0,
+  singleRoomCount: 0,
+  singleRoomRent: 0,
+  singleRoomNsfasBeds: 0,
+  sharingRoomCount: 0,
+  sharingBedsPerRoom: 2,
+  sharingRoomRent: 0,
+  sharingRoomNsfasBeds: 0,
+  nsfasCycleMonths: 10,
+  privateCycleMonths: 12,
   holdingPeriodMonths: 6,
   expectedSalePrice: 0,
   holdingCostPerMonth: 0,
@@ -82,17 +92,38 @@ describe("strategy-specific revenue calculations", () => {
     expect(calcGrossRevenueAnnual(inputs)).toBeCloseTo(expected, 0);
   });
 
-  it("Student: annualRevenue = rooms x pricePerWeek x academicWeeks x occupancy", () => {
+  it("Student (NSFAS-aware): blends NSFAS 10-month beds with private 12-month beds, by room type", () => {
     const inputs: DealInputs = {
       ...baseInputs,
       strategy: "student",
-      numUnits: 10,
-      pricePerRoom: 3_500,
-      academicYearWeeks: 42,
-      occupancyRate: 95,
+      singleRoomCount: 4,
+      singleRoomRent: 4_500,
+      singleRoomNsfasBeds: 2, // 2 NSFAS, 2 private
+      sharingRoomCount: 3,
+      sharingBedsPerRoom: 2, // 6 beds total
+      sharingRoomRent: 3_500,
+      sharingRoomNsfasBeds: 4, // 4 NSFAS, 2 private
+      nsfasCycleMonths: 10,
+      privateCycleMonths: 12,
+      occupancyRate: 90,
     };
-    const expected = 10 * 3500 * 42 * 0.95;
-    expect(calcGrossRevenueAnnual(inputs)).toBeCloseTo(expected, -1);
+    // 2*4500*10 + 2*4500*12 + 4*3500*10 + 2*3500*12 = 422,000
+    const expectedAnnualRevenue = 422_000;
+    expect(calcStudentAnnualRevenue(inputs)).toBeCloseTo(expectedAnnualRevenue, 0);
+    expect(calcGrossRevenueAnnual(inputs)).toBeCloseTo(expectedAnnualRevenue * 0.9, 0);
+  });
+
+  it("Student: caps NSFAS bed counts at the room type's total available beds", () => {
+    const inputs: DealInputs = {
+      ...baseInputs,
+      strategy: "student",
+      singleRoomCount: 2,
+      singleRoomRent: 4_000,
+      singleRoomNsfasBeds: 10, // over-specified — should cap at 2
+      occupancyRate: 100,
+    };
+    // All 2 beds NSFAS (capped), 0 private: 2*4000*10 = 80,000
+    expect(calcStudentAnnualRevenue(inputs)).toBeCloseTo(80_000, 0);
   });
 
   it("STR: grossRevenue = nightlyRate x occupiedNights", () => {

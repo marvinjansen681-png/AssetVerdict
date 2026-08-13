@@ -9,7 +9,7 @@ import Input from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import type { RenovationItem } from "@/types";
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   "Structural",
   "Electrical",
   "Plumbing",
@@ -22,6 +22,22 @@ const CATEGORIES = [
   "HVAC / Solar / Geysers",
   "Compliance & Certs",
   "Professional Fees",
+  "Contingency",
+  "Other",
+];
+
+/**
+ * Student accommodation furniture/setup categories, derived from a real
+ * operator's cost model (bed & mattress, cupboards, desk & chair per bed;
+ * kitchen and common-area appliances; NSFAS accreditation and security).
+ */
+export const STUDENT_FURNITURE_CATEGORIES = [
+  "Bedroom Furniture",
+  "Kitchen Equipment",
+  "Lounge & Common Area",
+  "Appliances",
+  "Security & Access Control",
+  "NSFAS Compliance & Accreditation",
   "Contingency",
   "Other",
 ];
@@ -52,12 +68,18 @@ interface RenovationBudgetProps {
   dealId: string;
   initialItems: RenovationItem[];
   onTotalChange: (total: number) => void;
+  categories?: string[];
+  title?: string;
+  totalLabel?: string;
 }
 
 export default function RenovationBudget({
   dealId,
   initialItems,
   onTotalChange,
+  categories = DEFAULT_CATEGORIES,
+  title = "Renovation Budget",
+  totalLabel = "Total Renovation",
 }: RenovationBudgetProps) {
   const { showToast } = useToast();
   const [items, setItems] = useState<LocalItem[]>(initialItems.map(toLocal));
@@ -141,7 +163,7 @@ export default function RenovationBudget({
     <div>
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-body text-sm font-semibold text-av-navy">
-          Renovation Budget
+          {title}
         </h3>
         <span className="text-xs font-body text-av-slate">
           {saving ? "Saving..." : ""}
@@ -149,7 +171,7 @@ export default function RenovationBudget({
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat}
             type="button"
@@ -263,7 +285,7 @@ export default function RenovationBudget({
 
       <div className="rounded-lg bg-av-light-grey p-4 mt-4 flex items-center justify-between">
         <span className="font-body text-sm text-av-navy font-semibold">
-          Total Renovation
+          {totalLabel}
         </span>
         <span className="font-mono text-xl font-bold text-av-navy">
           R {total.toLocaleString("en-US", { maximumFractionDigits: 0 })}

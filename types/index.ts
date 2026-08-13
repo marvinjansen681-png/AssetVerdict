@@ -96,10 +96,21 @@ export interface CashflowInputs {
   avgOccupiedNights?: number | null;
   platformFeesPct?: number | null;
 
-  // Student / Multi-Let
+  // Multi-Let (per-room)
   billsIncluded: boolean;
   academicYearWeeks?: number | null;
   pricePerRoom?: number | null;
+
+  // Student Accommodation — room mix (NSFAS-aware)
+  singleRoomCount?: number | null;
+  singleRoomRent?: number | null;
+  singleRoomNsfasBeds?: number | null;
+  sharingRoomCount?: number | null;
+  sharingBedsPerRoom?: number | null;
+  sharingRoomRent?: number | null;
+  sharingRoomNsfasBeds?: number | null;
+  nsfasCycleMonths?: number | null;
+  privateCycleMonths?: number | null;
 
   // Fix & Flip
   holdingPeriodMonths?: number | null;

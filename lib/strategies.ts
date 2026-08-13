@@ -36,11 +36,11 @@ export const INVESTMENT_STRATEGIES = [
     label: "Student Accommodation",
     icon: "🎓",
     description:
-      "Academic-year tenancy. Bills often included. Room-by-room income.",
+      "Single and sharing rooms. NSFAS-funded beds (10-month cycle) alongside private/bursary beds (12-month cycle).",
     defaultOccupancy: 95,
     defaultManagementFee: 12,
     defaultBadDebt: 4,
-    cashflowMode: "academic",
+    cashflowMode: "student",
   },
   {
     id: "fix_and_flip",
