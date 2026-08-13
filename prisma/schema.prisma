@@ -144,6 +144,13 @@ model CashflowInputs {
   nsfasCycleMonths     Int?   @default(10)
   privateCycleMonths   Int?   @default(12)
 
+  // Student Accommodation — additional monthly expenses
+  houseParentCost  Float? @default(0)
+  internetCost     Float? @default(0)
+  netflixCost      Float? @default(0)
+  gasRefillCost    Float? @default(0)
+  wasteRemovalCost Float? @default(0)
+
   // Fix & Flip
   holdingPeriodMonths Int?   @default(6)
   expectedSalePrice   Float?

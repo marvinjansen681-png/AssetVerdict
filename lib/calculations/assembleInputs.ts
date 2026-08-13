@@ -149,6 +149,12 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
     nsfasCycleMonths: cf?.nsfasCycleMonths ?? 10,
     privateCycleMonths: cf?.privateCycleMonths ?? 12,
 
+    houseParentCost: cf?.houseParentCost ?? 0,
+    internetCost: cf?.internetCost ?? 0,
+    netflixCost: cf?.netflixCost ?? 0,
+    gasRefillCost: cf?.gasRefillCost ?? 0,
+    wasteRemovalCost: cf?.wasteRemovalCost ?? 0,
+
     holdingPeriodMonths: cf?.holdingPeriodMonths ?? 6,
     expectedSalePrice: cf?.expectedSalePrice ?? 0,
     holdingCostPerMonth: cf?.holdingCostPerMonth ?? 0,

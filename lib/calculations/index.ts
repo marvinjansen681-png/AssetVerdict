@@ -85,6 +85,13 @@ export interface DealInputs {
   nsfasCycleMonths: number;
   privateCycleMonths: number;
 
+  // Student Accommodation — additional monthly expenses
+  houseParentCost: number;
+  internetCost: number;
+  netflixCost: number;
+  gasRefillCost: number;
+  wasteRemovalCost: number;
+
   // Fix & Flip
   holdingPeriodMonths: number;
   expectedSalePrice: number;
@@ -304,9 +311,15 @@ export function calcTotalFinanceCostMonthly(inputs: DealInputs): number {
 export function calcOperatingCostsMonthly(inputs: DealInputs): OperatingCosts {
   const finance = calcTotalFinanceCostMonthly(inputs);
   const utilities =
-    inputs.waterSewerage + inputs.electricity + inputs.securityCleaning;
+    inputs.waterSewerage +
+    inputs.electricity +
+    inputs.securityCleaning +
+    inputs.internetCost +
+    inputs.netflixCost +
+    inputs.gasRefillCost +
+    inputs.wasteRemovalCost;
   const ratesInsuranceOther =
-    inputs.ratesAndTaxes + inputs.insurance + inputs.levies;
+    inputs.ratesAndTaxes + inputs.insurance + inputs.levies + inputs.houseParentCost;
   return {
     finance,
     utilities,

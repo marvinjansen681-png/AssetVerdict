@@ -112,6 +112,13 @@ export interface CashflowInputs {
   nsfasCycleMonths?: number | null;
   privateCycleMonths?: number | null;
 
+  // Student Accommodation — additional monthly expenses
+  houseParentCost?: number | null;
+  internetCost?: number | null;
+  netflixCost?: number | null;
+  gasRefillCost?: number | null;
+  wasteRemovalCost?: number | null;
+
   // Fix & Flip
   holdingPeriodMonths?: number | null;
   expectedSalePrice?: number | null;

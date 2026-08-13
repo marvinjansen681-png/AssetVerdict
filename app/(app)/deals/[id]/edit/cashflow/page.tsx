@@ -50,6 +50,12 @@ interface CashflowForm {
   sharingRoomNsfasBeds: number;
   nsfasCycleMonths: number;
   privateCycleMonths: number;
+  // Student Accommodation — additional monthly expenses
+  houseParentCost: number;
+  internetCost: number;
+  netflixCost: number;
+  gasRefillCost: number;
+  wasteRemovalCost: number;
   // Fix & Flip
   holdingPeriodMonths: number;
   expectedSalePrice: number;
@@ -105,6 +111,11 @@ export default function CashflowTab() {
         sharingRoomNsfasBeds: cf?.sharingRoomNsfasBeds ?? 0,
         nsfasCycleMonths: cf?.nsfasCycleMonths ?? 10,
         privateCycleMonths: cf?.privateCycleMonths ?? 12,
+        houseParentCost: cf?.houseParentCost ?? 0,
+        internetCost: cf?.internetCost ?? 0,
+        netflixCost: cf?.netflixCost ?? 0,
+        gasRefillCost: cf?.gasRefillCost ?? 0,
+        wasteRemovalCost: cf?.wasteRemovalCost ?? 0,
         holdingPeriodMonths: cf?.holdingPeriodMonths ?? 6,
         expectedSalePrice: cf?.expectedSalePrice ?? Math.round((deal.purchasePrice ?? 0) * 1.3),
         holdingCostPerMonth: cf?.holdingCostPerMonth ?? 0,
@@ -180,9 +191,21 @@ export default function CashflowTab() {
       : 0;
 
   const utilitiesMonthly =
-    (Number(v.waterSewerage) || 0) + (Number(v.electricity) || 0) + (Number(v.securityCleaning) || 0) + billsFromRooms;
+    (Number(v.waterSewerage) || 0) +
+    (Number(v.electricity) || 0) +
+    (Number(v.securityCleaning) || 0) +
+    billsFromRooms +
+    (mode === "student"
+      ? (Number(v.internetCost) || 0) +
+        (Number(v.netflixCost) || 0) +
+        (Number(v.gasRefillCost) || 0) +
+        (Number(v.wasteRemovalCost) || 0)
+      : 0);
   const ratesInsuranceOtherMonthly =
-    (Number(v.ratesAndTaxes) || 0) + (Number(v.insurance) || 0) + (Number(v.levies) || 0);
+    (Number(v.ratesAndTaxes) || 0) +
+    (Number(v.insurance) || 0) +
+    (Number(v.levies) || 0) +
+    (mode === "student" ? Number(v.houseParentCost) || 0 : 0);
 
   const operatingCostsMonthly = financeCostMonthly + utilitiesMonthly + ratesInsuranceOtherMonthly;
   const provisionsMonthly = managementFeeMonthly + maintenanceCostMonthly + badDebtsMonthly;
@@ -639,6 +662,25 @@ export default function CashflowTab() {
           <FormField label="Bad Debts Provision">
             <PercentInput {...register("badDebtsPct")} />
           </FormField>
+          {mode === "student" && (
+            <>
+              <FormField label="House Parent / Caretaker">
+                <CurrencyInput {...register("houseParentCost")} />
+              </FormField>
+              <FormField label="Internet Services">
+                <CurrencyInput {...register("internetCost")} />
+              </FormField>
+              <FormField label="Netflix">
+                <CurrencyInput {...register("netflixCost")} />
+              </FormField>
+              <FormField label="Gas Refill">
+                <CurrencyInput {...register("gasRefillCost")} />
+              </FormField>
+              <FormField label="Private Waste Removal">
+                <CurrencyInput {...register("wasteRemovalCost")} />
+              </FormField>
+            </>
+          )}
         </div>
       </section>
 
