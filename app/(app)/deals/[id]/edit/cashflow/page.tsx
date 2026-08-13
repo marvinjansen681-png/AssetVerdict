@@ -127,6 +127,13 @@ export default function CashflowTab() {
   const totalBeds = totalSingleBeds + totalSharingBeds;
   const nsfasMonths = Number(v.nsfasCycleMonths) || 10;
   const privateMonths = Number(v.privateCycleMonths) || 12;
+  // What you'd actually collect in a normal paying month — every bed occupied,
+  // no NSFAS payment gap factored in. Useful as a sanity-check against the
+  // sticker rent, but NOT what flows into annual metrics (see baseMonthlyRevenue).
+  const inTermMonthlyRevenue =
+    (totalSingleBeds * (Number(v.singleRoomRent) || 0) +
+      totalSharingBeds * (Number(v.sharingRoomRent) || 0)) *
+    ((Number(v.occupancyRate) || 0) / 100);
 
   // ---- Base revenue (mirrors lib/calculations/index.ts calcBaseMonthlyRevenue) ----
   let baseMonthlyRevenue = 0;
@@ -439,12 +446,36 @@ export default function CashflowTab() {
             </div>
           )}
 
-          <div className="rounded-md bg-av-light-grey p-4 mt-4 font-body text-sm text-av-navy flex justify-between">
-            <span>Total Beds</span>
-            <span className="font-mono font-semibold">
-              {totalBeds} ({nsfasSingleBeds + nsfasSharingBeds} NSFAS / {privateSingleBeds + privateSharingBeds} Private)
-            </span>
+          <div className="rounded-md bg-av-light-grey p-4 mt-4 font-body text-sm text-av-navy flex flex-col gap-2">
+            <div className="flex justify-between">
+              <span>Total Beds</span>
+              <span className="font-mono font-semibold">
+                {totalBeds} ({nsfasSingleBeds + nsfasSharingBeds} NSFAS / {privateSingleBeds + privateSharingBeds} Private)
+              </span>
+            </div>
+            <div className="flex justify-between border-t border-av-light-grey/70 pt-2">
+              <span>In-Term Monthly Collection</span>
+              <span className="font-mono font-semibold">
+                R {inTermMonthlyRevenue.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Effective Monthly Revenue (Annualised Average)</span>
+              <span className="font-mono font-semibold">
+                R {baseMonthlyRevenue.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+              </span>
+            </div>
           </div>
+          {(nsfasSingleBeds + nsfasSharingBeds > 0) && nsfasMonths < 12 && (
+            <p className="text-xs font-body text-av-slate mt-2">
+              These differ because NSFAS-funded beds pay for {nsfasMonths} of 12 months a year.
+              &quot;In-Term Monthly Collection&quot; is what you&apos;d receive during a paying
+              month. &quot;Effective Monthly Revenue&quot; spreads the true annual total evenly
+              across all 12 months — this is the figure used everywhere else on this page and in
+              your yield, IRR, and cashflow metrics, so those numbers reflect the real annual
+              income rather than overstating it by assuming every bed pays year-round.
+            </p>
+          )}
         </section>
       )}
 
