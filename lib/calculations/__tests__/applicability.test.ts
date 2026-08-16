@@ -146,6 +146,18 @@ describe("applicabilityContextFromInputs / applicabilityContextFromMetrics", () 
     expect(ctxFromMetrics.initialEquityInvestment).toBeCloseTo(ctxFromInputs.initialEquityInvestment!, 4);
     expect(ctxFromMetrics.annualDebtService).toBeCloseTo(ctxFromInputs.annualDebtService!, 4);
   });
+
+  it("threads discountRate through from DealInputs (Phase 4.1 — needed for target-relative IRR/Cash-on-Cash classification)", () => {
+    const ctx = applicabilityContextFromInputs(baseInputs);
+    expect(ctx.discountRate).toBe(10);
+  });
+
+  it("derives discountRate from DealMetrics.npvBreakdown.discountRate — the same value NPV was actually discounted at, not a second copy", () => {
+    const metrics = calcAllMetrics(baseInputs);
+    const ctx = applicabilityContextFromMetrics(metrics);
+    expect(ctx.discountRate).toBe(baseInputs.discountRate);
+    expect(ctx.discountRate).toBe(metrics.npvBreakdown.discountRate);
+  });
 });
 
 describe("classifyMetricForDeal", () => {
@@ -207,6 +219,40 @@ describe("classifyMetricForDeal", () => {
       expect(result.applicable, key).toBe(true);
       expect(result.color, key).toBeNull();
       expect(result.label, key).toBeNull();
+    }
+  });
+
+  it("classifies Equity IRR target-relative, using discountRate carried on the ApplicabilityContext (Phase 4.1, Decision 1) — end to end from real deal inputs", () => {
+    const metrics = calcAllMetrics(baseInputs);
+    const ctx = applicabilityContextFromInputs(baseInputs);
+    const result = classifyMetricForDeal("irr", metrics.irr, ctx, "commercial");
+    expect(result.status).toBe("classified");
+    if (result.status === "classified") {
+      expect(result.model).toBe("target_relative");
+      expect(result.category).toBe("investor_target");
+      // baseInputs.discountRate is 10; this deal's real IRR is well above it.
+      expect(result.label).toBe("Exceeds Target");
+    }
+  });
+
+  it("classifies Equity NPV zero-relative, using initialEquityInvestment carried on the ApplicabilityContext (Phase 4.1, Decision 2)", () => {
+    const metrics = calcAllMetrics(baseInputs);
+    const ctx = applicabilityContextFromInputs(baseInputs);
+    const result = classifyMetricForDeal("npv", metrics.npv, ctx, "commercial");
+    expect(result.status).toBe("classified");
+    if (result.status === "classified") {
+      expect(result.model).toBe("zero_relative");
+      expect(result.category).toBe("investor_target");
+    }
+  });
+
+  it("Payback Period, NOI Margin, and Fix & Flip Net Profit stay unclassified end to end from real deal metrics, never 'not_applicable' when they're genuinely applicable", () => {
+    const metrics = calcAllMetrics(baseInputs);
+    const ctx = applicabilityContextFromInputs(baseInputs);
+    for (const key of ["paybackPeriod", "noiMargin"] as const) {
+      const result = classifyMetricForDeal(key, metrics[key], ctx, "commercial");
+      expect(result.status, key).toBe("unclassified");
+      expect(result.applicable, key).toBe(true);
     }
   });
 });

@@ -12,6 +12,8 @@ interface UnderstandYourDealProps {
   dealSummary: AcquisitionSummary;
   strategyId: string;
   currency?: string;
+  /** The investor's required annual return, for display next to target-relative judgements (Equity IRR, Cash-on-Cash) — see MetricLearningCard. */
+  discountRate?: number;
   /** When supplied, each card renders an "Ask Deal Coach about this" action that hands the metric key off to the Deal Coach drawer (Phase 3). */
   onAskCoach?: (metricKey: string) => void;
 }
@@ -30,6 +32,7 @@ export default function UnderstandYourDeal({
   dealSummary,
   strategyId,
   currency = "R",
+  discountRate,
   onAskCoach,
 }: UnderstandYourDealProps) {
   const groups = getMetricGroupsForStrategy(strategyId);
@@ -72,6 +75,7 @@ export default function UnderstandYourDeal({
                 strategyId={strategyId}
                 applicabilityCtx={applicabilityCtx}
                 currency={currency}
+                discountRate={discountRate}
                 onAskCoach={onAskCoach}
               />
             ))}

@@ -15,10 +15,10 @@ export default function GaugeDevPage() {
           value={27}
           unit="%"
           label="IRR"
-          tooltipText="Equity IRR — the annualised return on the cash YOU invest in the deal, after financing and tax, over 20 years."
+          tooltipText="Equity IRR — the annualised return on the cash YOU invest in the deal, after financing and tax, over 20 years. Classified against your required return (discountRate)."
           metricKey="irr"
           max={40}
-          benchmarkValue={15}
+          discountRate={15}
         />
         <GaugeDial
           value={47.39}
@@ -27,7 +27,6 @@ export default function GaugeDevPage() {
           tooltipText="Operating expenses (excl. debt repayments) as a % of gross revenue. Lower is better."
           metricKey="operatingExpenseRatio"
           max={100}
-          benchmarkValue={40}
         />
         <GaugeDial
           value={0.88}
@@ -36,7 +35,6 @@ export default function GaugeDevPage() {
           tooltipText="Debt Service Coverage Ratio — how many times your NOI covers your annual debt repayments."
           metricKey="dscr"
           max={3}
-          benchmarkValue={1.25}
         />
         <GaugeDial
           value={null}

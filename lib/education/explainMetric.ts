@@ -26,25 +26,16 @@ export interface DealMetricExplanation {
   classification: MetricClassification;
   /** Plain-English reason when classification.applicable is false — e.g. "No debt financing is being used". */
   applicabilityReason?: MetricApplicability["reason"];
-  /** True when classification should be shown as an unverified benchmark rather than an authoritative judgement — see isJudgementProvisional(). */
+  /**
+   * True when classification should be shown as an unverified benchmark
+   * rather than an authoritative judgement. Read directly from the
+   * declarative threshold definition (`classification.provisional`,
+   * lib/calculations/thresholds.ts) — Phase 4.1 removed the separate
+   * hardcoded PROVISIONAL_JUDGEMENT_METRICS set this used to duplicate, so
+   * there's one source for "is this provisional," not two that could drift
+   * out of sync.
+   */
   judgementProvisional: boolean;
-}
-
-/**
- * Metrics whose threshold bands haven't been recalibrated against a recently
- * corrected formula. IRR's green/orange/red bands were tuned against the
- * pre-Phase-1.1 calculation, which used Total Investment (not the investor's
- * own equity) as its base — the corrected Equity IRR runs meaningfully
- * higher for a financed deal, so the old bands would over-state how "Strong"
- * a leveraged deal's IRR is. Per the Phase 2 owner decision, the bands
- * themselves are NOT changed here; the education layer instead marks the
- * judgement as provisional rather than presenting it as authoritative.
- */
-const PROVISIONAL_JUDGEMENT_METRICS = new Set(["irr"]);
-
-/** Whether `metricKey`'s strategy-aware judgement should be shown as an unverified benchmark rather than asserted outright. */
-export function isJudgementProvisional(metricKey: string): boolean {
-  return PROVISIONAL_JUDGEMENT_METRICS.has(metricKey);
 }
 
 /**
@@ -75,6 +66,6 @@ export function explainDealMetric(
     value: isFiniteNumber(calculatedValue) ? calculatedValue : null,
     classification,
     applicabilityReason: classification.reason,
-    judgementProvisional: isJudgementProvisional(key),
+    judgementProvisional: classification.status === "classified" && classification.provisional === true,
   };
 }

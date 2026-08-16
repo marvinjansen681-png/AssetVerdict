@@ -111,6 +111,8 @@ interface DealSummaryPDFProps {
   strategyId: string;
   activeScenario: "bear" | "base" | "bull";
   scenarios: Scenarios;
+  /** The investor's required annual return (DealInputs.discountRate) — needed to classify Equity IRR, Cash-on-Cash Return, and Equity NPV (Phase 4.1, target-/zero-relative models). */
+  discountRate: number;
   dealSummary: DealSummaryInputs;
   renovationItems?: RenovationItem[];
   propertyValuation?: PropertyValuation | null;
@@ -153,6 +155,7 @@ export default function DealSummaryPDF({
   strategyId,
   activeScenario,
   scenarios,
+  discountRate,
   dealSummary,
   renovationItems = [],
   propertyValuation = null,
@@ -171,9 +174,10 @@ export default function DealSummaryPDF({
   // not applicable for a fully/over-financed deal. Financing (and therefore
   // equity) doesn't change between bear/base/bull scenarios, so this is safe
   // to compute once. See lib/calculations/applicability.ts.
+  const metricsApplicabilityCtx = applicabilityContextFromMetrics(metrics);
   const equityApplicable = getMetricApplicability(
     "irr",
-    applicabilityContextFromMetrics(metrics)
+    metricsApplicabilityCtx
   ).applicable;
 
   const highlightYears = [1, 5, 10, 15, 20];
@@ -263,10 +267,8 @@ export default function DealSummaryPDF({
               {(["bear", "base", "bull"] as const).map((s) => {
                 const rowMetrics = scenarios[s].metrics;
                 const value = rowMetrics[row.key] as number;
-                const applicable = getMetricApplicability(
-                  row.metricKey,
-                  applicabilityContextFromMetrics(rowMetrics)
-                ).applicable;
+                const rowCtx = applicabilityContextFromMetrics(rowMetrics);
+                const applicable = getMetricApplicability(row.metricKey, rowCtx).applicable;
                 if (!applicable) {
                   return (
                     <Text key={s} style={[styles.tableCell, { color: COLORS.slate }]}>
@@ -274,7 +276,13 @@ export default function DealSummaryPDF({
                     </Text>
                   );
                 }
-                const color = GAUGE_COLOR_HEX[getGaugeColorForStrategy(row.metricKey, value, strategyId)];
+                const color =
+                  GAUGE_COLOR_HEX[
+                    getGaugeColorForStrategy(row.metricKey, value, strategyId, {
+                      discountRate,
+                      initialEquityInvestment: rowCtx.initialEquityInvestment,
+                    })
+                  ];
                 return (
                   <Text key={s} style={[styles.tableCell, { color }]}>
                     {formatMetricValue(value, row.unit, currencySymbol)}
@@ -315,13 +323,27 @@ export default function DealSummaryPDF({
         <View style={styles.metricGrid}>
           {metricBoxes.map((box) => {
             const numeric = parseFloat(box.value);
+            const isEquityBox = box.key === "npv" || box.key === "irr" || box.key === "netYieldPreTax";
+            // Net Profit and Total Cost are informational only — no
+            // standalone Strong/Weak judgement (Decision 4, Phase 4.1). NPV
+            // is genuinely classified (zero-relative, vs. the investor's
+            // required return) and IRR/Cash-on-Cash are target-relative —
+            // all three need discountRate/initialEquityInvestment, not a
+            // raw sign check, and must respect the same N/A state already
+            // shown in box.value ("N/A (no equity invested)") rather than
+            // colouring a raw solver output that's inapplicable.
             const color =
-              box.key === "npv" || box.key === "netProfit"
-                ? (isFlip ? metrics.flipMetrics!.netProfit : metrics.npv) >= 0
-                  ? COLORS.green
-                  : COLORS.red
-                : box.key === "totalCost"
-                  ? COLORS.slate
+              box.key === "netProfit" || box.key === "totalCost"
+                ? COLORS.slate
+                : isEquityBox
+                  ? !equityApplicable
+                    ? COLORS.slate
+                    : GAUGE_COLOR_HEX[
+                        getGaugeColorForStrategy(box.key, metrics[box.key as keyof DealMetrics] as number, strategyId, {
+                          discountRate,
+                          initialEquityInvestment: metricsApplicabilityCtx.initialEquityInvestment,
+                        })
+                      ]
                   : !isNaN(numeric)
                     ? GAUGE_COLOR_HEX[getGaugeColorForStrategy(box.key, numeric, strategyId)]
                     : COLORS.slate;

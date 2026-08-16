@@ -143,7 +143,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     metrics: activeMetrics,
     dealName: deal.name,
     address: deal.address,
-    currency: deal.currency,
+    currency: deal.currency === "ZAR" ? "R" : deal.currency,
     strategyId,
     activeScenario,
     selection,

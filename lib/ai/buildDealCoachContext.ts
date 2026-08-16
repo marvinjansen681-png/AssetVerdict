@@ -30,6 +30,7 @@ import {
   type ApplicabilityContext,
 } from "../calculations/applicability";
 import { explainDealMetric } from "../education/explainMetric";
+import { getIrrReferenceClassification } from "../calculations/thresholds";
 import {
   getMetricBreakdown,
   getMetricRawValue,
@@ -87,14 +88,40 @@ function buildMetricEntry(params: {
     applicabilityReason,
     // Phase 3.1: distinguish "AssetVerdict judged this X" from "AssetVerdict
     // has no calibrated benchmark for this metric" — never collapse the
-    // latter into a fake label. See MetricClassification in thresholds.ts.
+    // latter into a fake label. Phase 4.1 adds `category`/`model` so the
+    // coach always knows WHY a metric is being judged (financial safety vs.
+    // investor target), never just what colour it got. See
+    // MetricClassification in thresholds.ts.
     classification: !classification.applicable
       ? undefined
       : classification.status === "classified"
-        ? { status: "classified", label: classification.label, provisional: judgementProvisional }
-        : { status: "unclassified" },
+        ? { status: "classified", label: classification.label, provisional: judgementProvisional, category: classification.category, model: classification.model }
+        : { status: "unclassified", category: classification.category, reason: classification.reason },
     simpleExplanation: definition.simpleExplanation,
   };
+
+  if (classification.status === "classified") {
+    if (
+      (classification.model === "target_relative" || classification.model === "zero_relative") &&
+      typeof applicabilityCtx.discountRate === "number"
+    ) {
+      entry.targetContext = { requiredReturn: applicabilityCtx.discountRate };
+    }
+    // Only ever computed for an applicable, classified IRR — never for a
+    // not_applicable deal (e.g. over-financed, no positive equity), where
+    // the raw solver output is a finite but semantically meaningless number.
+    if (metricKey === "irr" && rawValue !== null) {
+      const ref = getIrrReferenceClassification(rawValue, strategyId);
+      if (ref) {
+        entry.secondaryReference = {
+          label: "reference range",
+          withinRange: ref.withinRange,
+          classificationLabel: ref.label,
+          provisional: true,
+        };
+      }
+    }
+  }
 
   if (!classification.applicable) return entry;
 

@@ -2,7 +2,7 @@
 
 import Card from "@/components/ui/Card";
 import TooltipIcon from "@/components/ui/TooltipIcon";
-import { getGaugeColorForStrategy, type GaugeColor, type GaugeVisualColor } from "@/lib/calculations/thresholds";
+import { getGaugeColorForStrategy, getMetricBenchmark, type GaugeColor, type GaugeVisualColor } from "@/lib/calculations/thresholds";
 import clsx from "clsx";
 
 export interface GaugeThresholds {
@@ -20,7 +20,12 @@ export interface GaugeDialProps {
   strategyId?: string;
   min?: number;
   max?: number;
-  benchmarkValue?: number;
+  /**
+   * The investor's required return (DealInputs.discountRate) — needed only
+   * for target-relative metrics (Equity IRR, Cash-on-Cash). Omit for every
+   * other gauge; it's a no-op for fixed-bands metrics.
+   */
+  discountRate?: number;
   size?: "sm" | "md" | "lg";
 }
 
@@ -77,19 +82,27 @@ export default function GaugeDial({
   strategyId = "commercial",
   min = 0,
   max = 30,
-  benchmarkValue,
+  discountRate,
   size = "md",
 }: GaugeDialProps) {
   const { width, height, radius, strokeWidth } = SIZE_CONFIG[size];
   const cx = width / 2;
   const cy = height - 5;
 
-  // "neutral" means AssetVerdict has no calibrated benchmark for this metric
-  // on this strategy — a UI treatment, not a financial judgement, so it
+  // "neutral" means AssetVerdict has no active judgement for this metric on
+  // this strategy — a UI treatment, not a financial judgement, so it
   // renders identically to "no data" (grey) rather than any red/amber/green
   // shade (Phase 3.1: a missing threshold must never look like a judgement).
-  const visualColor: GaugeVisualColor | null = value === null ? null : getGaugeColorForStrategy(metricKey, value, strategyId);
+  const visualColor: GaugeVisualColor | null =
+    value === null ? null : getGaugeColorForStrategy(metricKey, value, strategyId, { discountRate });
   const color: GaugeColor | "grey" = visualColor === null || visualColor === "neutral" ? "grey" : visualColor;
+
+  // Derived from the SAME definition driving the colour above (Decision 7)
+  // — never a separately hardcoded number, so the marker can't drift out of
+  // sync with the rule it's supposed to represent. Metrics with no single
+  // meaningful marker (e.g. Cap Rate PP's two-sided sweet spot) correctly
+  // get none, rather than an invented one.
+  const benchmarkValue = getMetricBenchmark({ metricKey, strategyId, discountRate });
 
   const valueAngle = value === null ? 180 : valueToAngle(value, min, max);
   const backgroundPath = describeArc(cx, cy, radius, 180, 0);

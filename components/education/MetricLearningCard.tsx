@@ -6,7 +6,7 @@ import clsx from "clsx";
 import Card from "@/components/ui/Card";
 import type { DealMetrics } from "@/lib/calculations";
 import type { ApplicabilityContext } from "@/lib/calculations/applicability";
-import type { GaugeColor } from "@/lib/calculations/thresholds";
+import { getIrrReferenceClassification, type GaugeColor } from "@/lib/calculations/thresholds";
 import { explainDealMetric } from "@/lib/education/explainMetric";
 import {
   getMetricBreakdown,
@@ -53,6 +53,14 @@ interface MetricLearningCardProps {
   applicabilityCtx: ApplicabilityContext;
   currency?: string;
   defaultOpen?: boolean;
+  /**
+   * The investor's required annual return (DealInputs.discountRate), for
+   * display only — target-relative metrics (Equity IRR, Cash-on-Cash) are
+   * already classified against the same number via `applicabilityCtx`
+   * (Phase 4.1); this is just so the card can show "vs your required
+   * return of X%" in plain text next to the judgement.
+   */
+  discountRate?: number;
   /** Renders "Ask Deal Coach about this" when supplied (Phase 3 hand-off — see components/DealCoachDrawer.tsx). */
   onAskCoach?: (metricKey: string) => void;
 }
@@ -72,6 +80,7 @@ export default function MetricLearningCard({
   applicabilityCtx,
   currency = "R",
   defaultOpen = false,
+  discountRate,
   onAskCoach,
 }: MetricLearningCardProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -124,28 +133,47 @@ export default function MetricLearningCard({
             {applicabilityReason ?? "This metric doesn't apply to this deal."}
           </p>
         ) : classification.status === "classified" ? (
-          judgementProvisional ? (
-            <p className="font-body text-xs text-av-slate">
-              <span className="font-semibold">AssetVerdict view:</span>{" "}
-              <span className="italic">
-                Provisional benchmark ({classification.label}) — thresholds
-                for this metric are being recalibrated and shouldn&apos;t be read as final.
+          <>
+            <p className="font-body text-xs flex items-center gap-1.5 flex-wrap">
+              <span className="text-av-slate font-semibold">
+                {classification.model === "fixed_bands" ? "AssetVerdict view:" : "vs. your target:"}
               </span>
-            </p>
-          ) : (
-            <p className="font-body text-xs flex items-center gap-1.5">
-              <span className="text-av-slate font-semibold">AssetVerdict view:</span>
               <span className={clsx("inline-block w-2 h-2 rounded-full", JUDGEMENT_DOT[classification.color])} aria-hidden="true" />
               <span className={clsx("font-semibold", JUDGEMENT_TEXT[classification.color])}>
                 {classification.label}
               </span>
+              {classification.model !== "fixed_bands" && typeof discountRate === "number" && (
+                <span className="text-av-slate">— your required return is {discountRate}%</span>
+              )}
             </p>
-          )
+            {judgementProvisional && (
+              <p className="font-body text-[11px] text-av-slate italic mt-1">
+                {classification.model === "fixed_bands"
+                  ? "Provisional benchmark — thresholds for this metric are being recalibrated and shouldn't be read as final."
+                  : "This comparison uses a small, explicitly provisional margin around your required return, not an externally calibrated figure."}
+              </p>
+            )}
+            {metricKey === "irr" && rawValue !== null && (
+              <p className="font-body text-[11px] text-av-slate mt-1">
+                AssetVerdict reference (provisional):{" "}
+                {(() => {
+                  const ref = getIrrReferenceClassification(rawValue, strategyId);
+                  return ref ? `${ref.withinRange ? "Within" : "Outside"} current reference range (${ref.label})` : "Not available";
+                })()}
+              </p>
+            )}
+          </>
         ) : (
-          // Phase 3.1: "unclassified" — applicable, but AssetVerdict has no
-          // calibrated benchmark for this metric. This must never fall back
-          // to a coloured "Caution" — a missing threshold is not a judgement.
-          <p className="font-body text-xs text-av-slate/70 italic">No AssetVerdict benchmark is currently applied to this metric.</p>
+          // "unclassified" — applicable, but AssetVerdict has no active
+          // judgement for this metric, either because no rule was ever
+          // defined or one was deliberately removed (Decisions 4/6/9). This
+          // must never fall back to a coloured "Caution" — a missing or
+          // removed threshold is not a judgement. `applicabilityReason`
+          // carries the specific, documented reason from the threshold
+          // definition itself rather than a generic message.
+          <p className="font-body text-xs text-av-slate/70 italic">
+            {applicabilityReason ?? "No AssetVerdict benchmark is currently applied to this metric."}
+          </p>
         )}
       </div>
 

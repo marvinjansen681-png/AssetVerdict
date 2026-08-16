@@ -53,6 +53,7 @@ export default function DealSummaryPage({
     address,
     currency,
     investmentStrategy,
+    discountRate,
     dealSummary,
     propertyValuation,
     suburbProfile,
@@ -90,6 +91,7 @@ export default function DealSummaryPage({
           strategyId={investmentStrategy ?? "commercial"}
           activeScenario={scenario}
           scenarios={scenarios}
+          discountRate={discountRate ?? 10}
           dealSummary={dealSummary}
           renovationItems={renovationItems}
           propertyValuation={propertyValuation}
@@ -203,7 +205,9 @@ export default function DealSummaryPage({
       </AccordionSection>
 
       <p className="font-body text-xs text-av-slate italic -mt-4">
-        ℹ️ Thresholds shown are calibrated for {strategyId.replace(/_/g, " ")} investments.
+        ℹ️ Safety and operating thresholds shown are calibrated for {strategyId.replace(/_/g, " ")} investments.
+        Investor-return metrics (IRR, Cash-on-Cash Return, NPV) are compared against your required return of{" "}
+        {discountRate ?? 10}% — set this on the Other Inputs tab.
       </p>
 
       <section className="rounded-lg border border-av-gold/40 bg-av-white p-5 md:p-6">
@@ -233,6 +237,7 @@ export default function DealSummaryPage({
               dealSummary={dealSummary}
               strategyId={strategyId}
               currency={currency === "ZAR" || !currency ? "R" : currency}
+              discountRate={discountRate ?? 10}
               onAskCoach={(metricKey) => setCoachSelection({ metricKey })}
             />
           </div>
@@ -253,53 +258,45 @@ export default function DealSummaryPage({
             value={showIrr}
             unit="%"
             label="IRR"
-            tooltipText="Equity IRR — the annualised return on the cash YOU invest in the deal (after debt financing and tax), over 20 years including the eventual sale. Above 15% is strong. Not applicable if the deal is fully or over-financed (no positive equity invested)."
+            tooltipText={`Equity IRR — the annualised return on the cash YOU invest in the deal (after debt financing and tax), over 20 years including the eventual sale. Compared against your required return of ${discountRate ?? 10}%. Not applicable if the deal is fully or over-financed (no positive equity invested).`}
             metricKey="irr"
             strategyId={strategyId}
             max={40}
-            benchmarkValue={15}
+            discountRate={discountRate ?? 10}
           />
           <GaugeDial
             value={showNetYieldPreTax}
             unit="%"
             label="Cash-on-Cash Return (Pre-Tax)"
-            tooltipText="A Cash-on-Cash Return: your first-year cashflow after debt service, before tax, as a % of your own cash invested (not the full purchase price)."
+            tooltipText={`A Cash-on-Cash Return: your first-year cashflow after debt service, before tax, as a % of your own cash invested (not the full purchase price). Compared against your required return of ${discountRate ?? 10}%.`}
             metricKey="netYieldPreTax"
             strategyId={strategyId}
             max={20}
-            benchmarkValue={8}
+            discountRate={discountRate ?? 10}
           />
           <GaugeDial
             value={activeMetrics.capRatePP}
             unit="%"
             label="Cap Rate (PP)"
-            tooltipText="Net Operating Income as a % of your purchase price — the property's own unlevered return, before financing. 8–12% is the typical commercial sweet spot."
+            tooltipText="Net Operating Income as a % of your purchase price — the property's own unlevered return, before financing, and AssetVerdict's primary acquisition cap-rate metric. 8–12% is AssetVerdict's own reference sweet spot."
             metricKey="capRatePP"
             strategyId={strategyId}
             max={20}
-            benchmarkValue={10}
           />
           <MetricCard
             label="NPV"
             value={showNpv !== null ? formatCurrency(showNpv) : "N/A"}
-            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest, discounted at your required equity return. Not applicable if the deal is fully or over-financed."
+            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest, discounted at your required equity return. Positive means the deal exceeds that required return. Not applicable if the deal is fully or over-financed."
             trend={showNpv === null ? "neutral" : showNpv >= 0 ? "positive" : "negative"}
           />
           <GaugeDial
             value={activeMetrics.capRateMV}
             unit="%"
             label="Cap Rate (MV)"
-            tooltipText="Net Operating Income as a % of market value. Helps assess if you bought below market."
+            tooltipText="Net Operating Income as a % of market value. Contextual only — this depends on your assumed market value, which AssetVerdict can't currently verify, so it isn't independently classified. Cap Rate (PP) is the primary acquisition cap-rate metric."
             metricKey="capRateMV"
             strategyId={strategyId}
             max={20}
-            // Phase 4 audit fix: the marker was hardcoded to 10, but the
-            // actual rule (COMMERCIAL_THRESHOLDS.capRateMV, thresholds.ts)
-            // has always coloured green at >8 — the arrow was pointing at
-            // the wrong spot relative to the arc it sits on. This corrects
-            // the marker to match the existing, unchanged rule; it does not
-            // change any classification.
-            benchmarkValue={8}
           />
           <GaugeDial
             value={isFiniteNumber(activeMetrics.dscr) ? activeMetrics.dscr : null}
@@ -309,7 +306,6 @@ export default function DealSummaryPage({
             metricKey="dscr"
             strategyId={strategyId}
             max={3}
-            benchmarkValue={1.25}
           />
           <GaugeDial
             value={activeMetrics.operatingExpenseRatio}
@@ -319,17 +315,12 @@ export default function DealSummaryPage({
             metricKey="operatingExpenseRatio"
             strategyId={strategyId}
             max={100}
-            benchmarkValue={40}
           />
-          <GaugeDial
-            value={showPaybackPeriod}
-            unit="Yrs"
+          <MetricCard
             label="Payback Period"
-            tooltipText="How many years before you recover the cash YOU invested, from after-debt-service cashflow alone. Not applicable if the deal is fully or over-financed."
-            metricKey="paybackPeriod"
-            strategyId={strategyId}
-            max={30}
-            benchmarkValue={8}
+            value={showPaybackPeriod !== null && isFiniteNumber(showPaybackPeriod) ? `${showPaybackPeriod.toFixed(1)} Yrs` : "N/A"}
+            tooltipText="How many years before you recover the cash YOU invested, from after-debt-service cashflow alone. Informational only — it ignores everything that happens after payback, so it isn't independently classified. Check IRR and NPV for the full picture. Not applicable if the deal is fully or over-financed."
+            trend="neutral"
           />
         </div>
       </section>
@@ -340,56 +331,51 @@ export default function DealSummaryPage({
             value={activeMetrics.grossYield}
             unit="%"
             label="Gross Yield"
-            tooltipText="Annual gross revenue as a % of purchase price."
+            tooltipText="Annual gross revenue as a % of purchase price. A preliminary screen only — it ignores expenses and financing entirely."
             metricKey="grossYield"
             strategyId={strategyId}
             max={40}
-            benchmarkValue={10}
           />
           <GaugeDial
             value={showNetYieldPreTax}
             unit="%"
             label="Cash-on-Cash Return (Pre-Tax)"
-            tooltipText="A Cash-on-Cash Return: your first-year cashflow after debt service, before tax, as a % of your own cash invested (not the full purchase price)."
+            tooltipText={`A Cash-on-Cash Return: your first-year cashflow after debt service, before tax, as a % of your own cash invested (not the full purchase price). Compared against your required return of ${discountRate ?? 10}%.`}
             metricKey="netYieldPreTax"
             strategyId={strategyId}
             max={20}
-            benchmarkValue={8}
+            discountRate={discountRate ?? 10}
           />
           <GaugeDial
             value={showNetYieldPostTax}
             unit="%"
             label="Cash-on-Cash Return (Post-Tax)"
-            tooltipText="A Cash-on-Cash Return: your first-year cashflow after debt service, after tax, as a % of your own cash invested (not the full purchase price)."
+            tooltipText={`A Cash-on-Cash Return: your first-year cashflow after debt service, after tax, as a % of your own cash invested (not the full purchase price). Compared against your required return of ${discountRate ?? 10}%.`}
             metricKey="netYieldPostTax"
             strategyId={strategyId}
             max={20}
-            benchmarkValue={6}
+            discountRate={discountRate ?? 10}
           />
           <GaugeDial
             value={showIrr}
             unit="%"
             label="IRR"
-            tooltipText="Equity IRR over 20 years — the annualised return on the cash YOU invest, after financing and tax."
+            tooltipText={`Equity IRR over 20 years — the annualised return on the cash YOU invest, after financing and tax. Compared against your required return of ${discountRate ?? 10}%.`}
             metricKey="irr"
             strategyId={strategyId}
             max={40}
-            benchmarkValue={15}
+            discountRate={discountRate ?? 10}
           />
-          <GaugeDial
-            value={activeMetrics.noiMargin}
-            unit="%"
+          <MetricCard
             label="NOI Margin"
-            tooltipText="NOI as a % of gross revenue. Shows operational efficiency."
-            metricKey="noiMargin"
-            strategyId={strategyId}
-            max={100}
-            benchmarkValue={60}
+            value={isFiniteNumber(activeMetrics.noiMargin) ? `${activeMetrics.noiMargin.toFixed(1)}%` : "N/A"}
+            tooltipText="NOI as a % of gross revenue. Informational only — it's the mathematical complement of Operating Expense Ratio, so classifying both would double-count one operating-efficiency signal. See Operating Expense Ratio for the classified version."
+            trend="neutral"
           />
           <MetricCard
             label="NPV"
             value={showNpv !== null ? formatCurrency(showNpv) : "N/A"}
-            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest."
+            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest. Positive means the deal exceeds your required return."
             trend={showNpv === null ? "neutral" : showNpv >= 0 ? "positive" : "negative"}
           />
         </div>
@@ -413,17 +399,15 @@ export default function DealSummaryPage({
             metricKey="dscr"
             strategyId={strategyId}
             max={3}
-            benchmarkValue={1.25}
           />
           <GaugeDial
             value={activeMetrics.ltv}
             unit="%"
             label="LTV"
-            tooltipText="Loan-to-Value ratio — your total debt as a % of purchase price."
+            tooltipText="Loan-to-Value ratio — your total debt as a % of purchase price. Describes leverage risk, not overall deal quality — lower leverage is lower risk, not automatically a better investment."
             metricKey="ltv"
             strategyId={strategyId}
             max={100}
-            benchmarkValue={60}
           />
           <GaugeDial
             value={activeMetrics.breakEvenRatio}
@@ -433,7 +417,6 @@ export default function DealSummaryPage({
             metricKey="breakEvenRatio"
             strategyId={strategyId}
             max={100}
-            benchmarkValue={75}
           />
         </div>
       </AccordionSection>
@@ -448,7 +431,6 @@ export default function DealSummaryPage({
             metricKey="utilitiesRatio"
             strategyId={strategyId}
             max={50}
-            benchmarkValue={15}
           />
           <GaugeDial
             value={activeMetrics.operatingExpenseRatio}
@@ -458,7 +440,6 @@ export default function DealSummaryPage({
             metricKey="operatingExpenseRatio"
             strategyId={strategyId}
             max={100}
-            benchmarkValue={40}
           />
         </div>
       </AccordionSection>
@@ -469,22 +450,17 @@ export default function DealSummaryPage({
             value={activeMetrics.capRateSpread}
             unit="%"
             label="Cap Rate Spread"
-            tooltipText="How much better your deal is vs the market — more than 2% above market is strong, showing you bought below value."
+            tooltipText="How much better your deal's cap rate is than your assumed market cap rate — more than 2 points above is strong. Based on the market cap rate you entered, not verified market data."
             metricKey="capRateSpread"
             strategyId={strategyId}
             min={-5}
             max={10}
-            benchmarkValue={2}
           />
-          <GaugeDial
-            value={showPaybackPeriod}
-            unit="Yrs"
+          <MetricCard
             label="Payback Period"
-            tooltipText="The amount of time it takes to recover the cash YOU invested, from after-debt-service cashflow."
-            metricKey="paybackPeriod"
-            strategyId={strategyId}
-            max={30}
-            benchmarkValue={8}
+            value={showPaybackPeriod !== null && isFiniteNumber(showPaybackPeriod) ? `${showPaybackPeriod.toFixed(1)} Yrs` : "N/A"}
+            tooltipText="The amount of time it takes to recover the cash YOU invested, from after-debt-service cashflow. Informational only — it ignores everything that happens after payback, so it isn't independently classified. Check IRR and NPV for the full picture."
+            trend="neutral"
           />
         </div>
       </AccordionSection>

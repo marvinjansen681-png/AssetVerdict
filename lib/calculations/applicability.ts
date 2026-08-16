@@ -38,6 +38,14 @@ export interface ApplicabilityContext {
   /** Total Investment less Total Loan Amount — see calcInitialEquityInvestment(). */
   initialEquityInvestment?: number;
   annualDebtService?: number;
+  /**
+   * The investor's required annual return, as a plain percentage (e.g. 12 =
+   * 12%) — DealInputs.discountRate. Not used by any applicability rule
+   * itself; carried here so classifyMetricForDeal can forward it straight
+   * into classifyMetricForStrategy's target_relative/zero_relative models
+   * (Phase 4.1) without every caller building a second context object.
+   */
+  discountRate?: number;
 }
 
 /**
@@ -96,6 +104,7 @@ export function applicabilityContextFromInputs(inputs: DealInputs): Applicabilit
     marketValue: inputs.marketValue,
     initialEquityInvestment: calcInitialEquityInvestment(inputs),
     annualDebtService: calcTotalFinanceCostMonthly(inputs) * 12,
+    discountRate: inputs.discountRate,
   };
 }
 
@@ -104,15 +113,19 @@ export function applicabilityContextFromInputs(inputs: DealInputs): Applicabilit
  * callers (the dashboard, the PDF) that only have the API response, not raw
  * DealInputs. depositRequired is numerically identical to
  * calcInitialEquityInvestment() (see that function's doc comment).
- * purchasePrice/marketValue aren't on DealMetrics, so those two rules can't
- * be evaluated from this context alone — pass a fuller context if needed.
+ * discountRate is read from npvBreakdown.discountRate (the same value NPV
+ * was actually discounted at) rather than requiring a separate prop — it's
+ * already on DealMetrics, just nested. purchasePrice/marketValue aren't on
+ * DealMetrics, so those two rules can't be evaluated from this context
+ * alone — pass a fuller context if needed.
  */
 export function applicabilityContextFromMetrics(
-  metrics: Pick<DealMetrics, "depositRequired" | "operatingCostsMonthly">
+  metrics: Pick<DealMetrics, "depositRequired" | "operatingCostsMonthly" | "npvBreakdown">
 ): ApplicabilityContext {
   return {
     initialEquityInvestment: metrics.depositRequired,
     annualDebtService: metrics.operatingCostsMonthly.finance * 12,
+    discountRate: metrics.npvBreakdown?.discountRate,
   };
 }
 
@@ -143,5 +156,8 @@ export function classifyMetricForDeal(
       reason: applicability.reason ?? "Not applicable to this deal",
     };
   }
-  return classifyMetricForStrategy(metricKey, value, strategyId);
+  return classifyMetricForStrategy(metricKey, value, strategyId, {
+    discountRate: ctx.discountRate,
+    initialEquityInvestment: ctx.initialEquityInvestment,
+  });
 }

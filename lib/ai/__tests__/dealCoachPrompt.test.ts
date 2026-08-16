@@ -15,7 +15,7 @@ const baseContext: DealCoachContext = {
       value: 1.31,
       formattedValue: "1.31x",
       applicable: true,
-      classification: { status: "classified", label: "Strong", provisional: false },
+      classification: { status: "classified", label: "Strong", provisional: false, category: "financial_safety", model: "fixed_bands" },
       simpleExplanation: "Tells you whether the property produces enough operating income to comfortably pay its debt.",
     },
   ],
@@ -71,7 +71,27 @@ describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
     const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
     expect(lower).toContain("without a calibrated assetverdict threshold");
     expect(lower).toContain("classification: none");
-    expect(DEAL_COACH_SYSTEM_INSTRUCTIONS).toContain("Strong, Caution, Weak, Good, Bad, Healthy or Poor");
+    expect(DEAL_COACH_SYSTEM_INSTRUCTIONS).toContain("Strong, Caution, Weak, Exceeds Target, Near Target, Below Target, Good, Bad, Healthy or Poor");
+  });
+
+  it("distinguishes the two label vocabularies (Strong/Caution/Weak vs. Exceeds/Near/Below Target) by category — Phase 4.1, Decision 11", () => {
+    const text = DEAL_COACH_SYSTEM_INSTRUCTIONS;
+    expect(text).toContain("financial_safety");
+    expect(text).toContain("investor_target");
+    expect(text).toContain("Exceeds Target/Near Target/Below Target");
+    expect(text.toLowerCase()).toContain("never let one category's result stand in for another's");
+  });
+
+  it("guards against collapsing investor-target results into an overall safety verdict, and vice versa — Decision 17", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("exceeding an investor's return target is never proof a deal is financially safe");
+    expect(lower).toContain("a safe financing profile is never proof a deal meets the investor's return objectives");
+  });
+
+  it("distinguishes Cap Rate on Purchase Price (primary) from Cap Rate on Market Value (contextual) — Decision 5", () => {
+    const text = DEAL_COACH_SYSTEM_INSTRUCTIONS;
+    expect(text).toContain("Cap Rate on Purchase Price is AssetVerdict's primary acquisition cap-rate metric");
+    expect(text.toLowerCase()).toContain("cap rate on market value is contextual");
   });
 
   it("distinguishes 'AssetVerdict does not currently use this metric' from 'this concept does not exist' for Fix & Flip", () => {

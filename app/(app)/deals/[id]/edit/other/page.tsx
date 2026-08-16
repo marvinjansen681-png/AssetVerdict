@@ -141,8 +141,8 @@ export default function OtherInputsTab() {
             <PercentInput {...register("sustainableGrowthRate")} />
           </FormField>
           <FormField
-            label="Discount Rate"
-            helperText="The minimum annual return you require from the cash you invest in the deal — used to discount future equity cashflows for NPV."
+            label="Required Return"
+            helperText="The minimum annual return you want your invested cash to achieve. AssetVerdict uses this target when evaluating Equity IRR, Equity NPV and Cash-on-Cash Return."
           >
             <PercentInput {...register("discountRate")} />
           </FormField>

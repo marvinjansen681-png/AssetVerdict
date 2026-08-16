@@ -334,7 +334,10 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     expect(explanation!.judgementProvisional).toBe(true);
   });
 
-  it("Fix & Flip: Total Cost, Holding Costs, Gross Profit, and Profit Margin are unclassified (no calibrated rule) — not auto-labelled Caution", () => {
+  it("Fix & Flip: Total Cost, Holding Costs, Gross Profit, Profit Margin, and Net Profit are unclassified — not auto-labelled Caution", () => {
+    // Net Profit moved here in Phase 4.1 (Decision 4): an absolute rand
+    // amount has no meaning without deal size, so it's demoted alongside
+    // its siblings, consistent rather than a special case.
     const flipInputs: DealInputs = {
       ...sampleInputs,
       strategy: "fix_and_flip",
@@ -346,7 +349,7 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     };
     const metrics = calcAllMetrics(flipInputs);
     const flip = metrics.flipMetrics!;
-    for (const key of ["totalCost", "holdingCosts", "grossProfit", "profitMargin"] as const) {
+    for (const key of ["totalCost", "holdingCosts", "grossProfit", "profitMargin", "netProfit"] as const) {
       const explanation = explainDealMetric(key, flip[key], "fix_and_flip");
       expect(explanation, key).toBeDefined();
       expect(explanation!.classification.status, key).toBe("unclassified");
@@ -354,7 +357,7 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     }
   });
 
-  it("Fix & Flip: ROI, Annualised ROI, and Net Profit remain genuinely classified (regression + the annualisedROI key-casing bug fix)", () => {
+  it("Fix & Flip: ROI and Annualised ROI remain genuinely classified (regression + the annualisedROI key-casing bug fix)", () => {
     const flipInputs: DealInputs = {
       ...sampleInputs,
       strategy: "fix_and_flip",
@@ -366,12 +369,65 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     };
     const metrics = calcAllMetrics(flipInputs);
     const flip = metrics.flipMetrics!;
-    for (const key of ["roi", "annualisedROI", "netProfit"] as const) {
+    for (const key of ["roi", "annualisedROI"] as const) {
       const explanation = explainDealMetric(key, flip[key], "fix_and_flip");
       expect(explanation, key).toBeDefined();
       expect(explanation!.classification.status, key).toBe("classified");
       expect(["Strong", "Caution", "Weak"]).toContain(explanation!.classification.label);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 4.1 — target-/zero-relative classification through explainDealMetric,
+  // and the metrics deliberately demoted to unclassified (Decisions 1-2, 6, 9).
+  // -------------------------------------------------------------------------
+
+  it("Equity IRR classifies target-relative (vs. discountRate) end to end through explainDealMetric, not the old fixed 15% band", () => {
+    const metrics = calcAllMetrics(sampleInputs);
+    const ctx = { ...applicabilityContextFromInputs(sampleInputs), discountRate: sampleInputs.discountRate };
+    const explanation = explainDealMetric("irr", metrics.irr, "commercial", ctx);
+    expect(explanation!.classification.status).toBe("classified");
+    if (explanation!.classification.status === "classified") {
+      expect(explanation!.classification.model).toBe("target_relative");
+      expect(explanation!.classification.category).toBe("investor_target");
+      expect(["Exceeds Target", "Near Target", "Below Target"]).toContain(explanation!.classification.label);
+    }
+    expect(explanation!.judgementProvisional).toBe(true);
+  });
+
+  it("Equity NPV classifies zero-relative end to end through explainDealMetric", () => {
+    const metrics = calcAllMetrics(sampleInputs);
+    const ctx = applicabilityContextFromInputs(sampleInputs);
+    const explanation = explainDealMetric("npv", metrics.npv, "commercial", ctx);
+    expect(explanation!.classification.status).toBe("classified");
+    if (explanation!.classification.status === "classified") {
+      expect(explanation!.classification.model).toBe("zero_relative");
+      expect(["Exceeds Target", "Near Target", "Below Target"]).toContain(explanation!.classification.label);
+    }
+  });
+
+  it("Payback Period, NOI Margin, and Cap Rate (MV) are unclassified for a rental deal — applicable, but no standalone judgement", () => {
+    const metrics = calcAllMetrics(sampleInputs);
+    const ctx = applicabilityContextFromInputs(sampleInputs);
+    for (const key of ["paybackPeriod", "noiMargin", "capRateMV"] as const) {
+      const explanation = explainDealMetric(key, metrics[key], "commercial", ctx);
+      expect(explanation, key).toBeDefined();
+      expect(explanation!.classification.status, key).toBe("unclassified");
+      expect(explanation!.classification.label, key).toBeNull();
+      expect(explanation!.applicabilityReason, key).toBeTruthy();
+    }
+  });
+
+  it("judgementProvisional now derives from the declarative threshold definition, not a separate hardcoded list — it's true for every investor-target metric, not just IRR", () => {
+    const metrics = calcAllMetrics(sampleInputs);
+    const ctx = { ...applicabilityContextFromInputs(sampleInputs), discountRate: sampleInputs.discountRate };
+    for (const key of ["irr", "npv", "netYieldPreTax", "netYieldPostTax"] as const) {
+      const explanation = explainDealMetric(key, metrics[key], "commercial", ctx);
+      expect(explanation!.judgementProvisional, key).toBe(true);
+    }
+    // DSCR is a normal fixed_bands metric, not provisional.
+    const dscrExplanation = explainDealMetric("dscr", metrics.dscr, "commercial", ctx);
+    expect(dscrExplanation!.judgementProvisional).toBe(false);
   });
 });
 

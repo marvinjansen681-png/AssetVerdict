@@ -50,8 +50,8 @@ export function interpretMetricValue(metricKey: string, value: number): string |
 
     case "capRateSpread":
       return value >= 0
-        ? `This deal's cap rate is about ${pct(Math.abs(value))} percentage points ABOVE the market cap rate you entered — a signal you may be buying below what the market typically pays for this income.`
-        : `This deal's cap rate is about ${pct(Math.abs(value))} percentage points BELOW the market cap rate you entered — a signal you may be paying above what the market typically pays for this income.`;
+        ? `Based on your assumed market cap rate, this deal's cap rate is about ${pct(Math.abs(value))} percentage points ABOVE it — a signal you may be buying below what you've assumed the market typically pays for this income.`
+        : `Based on your assumed market cap rate, this deal's cap rate is about ${pct(Math.abs(value))} percentage points BELOW it — a signal you may be paying above what you've assumed the market typically pays for this income.`;
 
     case "grossYield":
       return `Before any costs, this property's rent equals about ${pct(value)}% of the purchase price each year.`;

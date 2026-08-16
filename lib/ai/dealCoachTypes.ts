@@ -61,10 +61,40 @@ export interface DealCoachMetricEntry {
    * "AssetVerdict has no calibrated benchmark for this metric at all."
    * Undefined only when `applicable` is false (not_applicable is already
    * conveyed by `applicable`/`applicabilityReason`).
+   *
+   * `category` (Phase 4.1, Decision 16) tells the coach WHY a metric is
+   * being judged — financial safety, operating quality, property
+   * performance, or investor target — so it can never present an
+   * investor-target result as proof of financial safety or vice versa (see
+   * the system-prompt guardrail in dealCoachPrompt.ts). `label` uses one of
+   * two vocabularies depending on `model`: fixed-bands metrics keep
+   * Strong/Caution/Weak; target-/zero-relative metrics (Equity IRR, Equity
+   * NPV, Cash-on-Cash) use Exceeds/Near/Below Target instead, since those
+   * are judged against the investor's own goal, not an absolute standard.
    */
   classification?:
-    | { status: "classified"; label: "Strong" | "Caution" | "Weak"; provisional: boolean }
-    | { status: "unclassified"; provisional?: undefined };
+    | {
+        status: "classified";
+        label: "Strong" | "Caution" | "Weak" | "Exceeds Target" | "Near Target" | "Below Target";
+        provisional: boolean;
+        category: "financial_safety" | "operating_quality" | "property_performance" | "investor_target" | "strategy_specific";
+        model: "fixed_bands" | "target_relative" | "zero_relative";
+      }
+    | { status: "unclassified"; provisional?: undefined; category?: string; reason?: string };
+  /**
+   * Only present for target_relative/zero_relative metrics — the exact
+   * number the classification above was compared against, so the coach can
+   * say "your IRR of 21% vs. your required return of 18%" instead of
+   * describing the comparison in the abstract.
+   */
+  targetContext?: { requiredReturn: number };
+  /**
+   * Only present for Equity IRR — AssetVerdict's previous strategy-specific
+   * fixed bands, retained solely as secondary reference context (Decision
+   * 1/6). Never the primary judgement; the coach must present this as
+   * "AssetVerdict reference," clearly distinct from the target comparison.
+   */
+  secondaryReference?: { label: "reference range"; withinRange: boolean; classificationLabel: "Strong" | "Caution" | "Weak"; provisional: true };
   simpleExplanation: string;
   whyItMatters?: string;
   /** Only populated for a single selected metric or a small "closely related" set — never for every metric in a broad context, to keep payloads bounded. */

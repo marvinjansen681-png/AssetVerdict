@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import MetricCard from "@/components/gauges/MetricCard";
 import GaugeDial from "@/components/gauges/GaugeDial";
 import FlipWaterfallChart from "@/components/charts/FlipWaterfallChart";
@@ -21,8 +20,8 @@ export default function FlipDashboard({ flipMetrics, currency = "R" }: FlipDashb
         <MetricCard
           label="Net Profit"
           value={fmt(flipMetrics.netProfit, currency)}
-          tooltipText="Profit after all costs, agent commission, and capital gains tax."
-          trend={flipMetrics.netProfit >= 0 ? "positive" : "negative"}
+          tooltipText="Profit after all costs, agent commission, and capital gains tax. An absolute rand amount has no meaning without deal size, so it isn't independently classified — see ROI and Annualised ROI for the size-normalized judgement (Decision 4)."
+          trend="neutral"
         />
         <GaugeDial
           value={flipMetrics.roi}
@@ -32,7 +31,6 @@ export default function FlipDashboard({ flipMetrics, currency = "R" }: FlipDashb
           metricKey="roi"
           strategyId="fix_and_flip"
           max={60}
-          benchmarkValue={25}
         />
         <GaugeDial
           value={flipMetrics.annualisedROI}
@@ -42,7 +40,6 @@ export default function FlipDashboard({ flipMetrics, currency = "R" }: FlipDashb
           metricKey="annualisedROI"
           strategyId="fix_and_flip"
           max={100}
-          benchmarkValue={40}
         />
       </div>
 
@@ -81,9 +78,9 @@ export default function FlipDashboard({ flipMetrics, currency = "R" }: FlipDashb
         </div>
         <div className="flex justify-between py-2 text-base font-bold">
           <span>NET PROFIT</span>
-          <span className={clsx("font-mono", flipMetrics.netProfit >= 0 ? "text-av-green" : "text-av-red")}>
-            {fmt(flipMetrics.netProfit, currency)}
-          </span>
+          {/* Informational only, no colour judgement — an absolute rand
+              amount isn't independently classified (Decision 4). */}
+          <span className="font-mono text-av-navy">{fmt(flipMetrics.netProfit, currency)}</span>
         </div>
       </div>
 

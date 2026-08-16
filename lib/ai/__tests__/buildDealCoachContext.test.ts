@@ -213,9 +213,10 @@ describe("buildDealCoachContext — selected metric (explain_metric)", () => {
     });
     const entry = context.metrics.find((m) => m.key === "grossRevenueAnnual")!;
     expect(entry.applicable).toBe(true);
-    expect(entry.classification).toEqual({ status: "unclassified" });
+    expect(entry.classification?.status).toBe("unclassified");
     // Never a Strong/Caution/Weak string, and never provisional.
     expect((entry.classification as { label?: string })?.label).toBeUndefined();
+    expect((entry.classification as { provisional?: boolean })?.provisional).toBeUndefined();
   });
 
   it("classified metric context contains the real classification, distinct from unclassified", () => {
@@ -265,7 +266,8 @@ describe("buildDealCoachContext — selected metric (explain_metric)", () => {
       });
       const entry = context.metrics.find((m) => m.key === metricKey)!;
       expect(entry, metricKey).toBeDefined();
-      expect(entry.classification, metricKey).toEqual({ status: "unclassified" });
+      expect(entry.classification?.status, metricKey).toBe("unclassified");
+      expect((entry.classification as { label?: string })?.label, metricKey).toBeUndefined();
     }
   });
 
@@ -519,5 +521,221 @@ describe("buildDealCoachContext — scenario + deal identity are always carried"
     expect(context.deal.strategyLabel).toBe("Commercial");
     expect(context.deal.currency).toBe("ZAR");
     expect(context.deal.address).toBe("1 Test Street");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.1 — target-relative (Equity IRR, Cash-on-Cash) and zero-relative
+// (Equity NPV) classification reaching Deal Coach's context, plus the
+// category/targetContext/secondaryReference fields the coach needs to keep
+// financial safety and investor return structurally distinct (Decisions
+// 1-3, 11, 16).
+// ---------------------------------------------------------------------------
+describe("buildDealCoachContext — target-relative Equity IRR (Decision 1)", () => {
+  function contextFor(inputs: DealInputs) {
+    const metrics = calcAllMetrics(inputs);
+    return buildDealCoachContext({
+      ...baseParams,
+      inputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "metric", metricKey: "irr" },
+      intent: "explain_metric",
+      dealSummary,
+    });
+  }
+
+  it("classifies against discountRate, not the old fixed 15% band — category investor_target, model target_relative", () => {
+    const context = contextFor(rentalInputs);
+    const entry = context.metrics.find((m) => m.key === "irr")!;
+    expect(entry.classification?.status).toBe("classified");
+    if (entry.classification?.status === "classified") {
+      expect(entry.classification.category).toBe("investor_target");
+      expect(["Exceeds Target", "Near Target", "Below Target"]).toContain(entry.classification.label);
+    }
+  });
+
+  it("carries targetContext.requiredReturn matching the deal's own discountRate", () => {
+    const context = contextFor(rentalInputs);
+    const entry = context.metrics.find((m) => m.key === "irr")!;
+    expect(entry.targetContext?.requiredReturn).toBe(rentalInputs.discountRate);
+  });
+
+  it("a modest IRR against a low required return exceeds target, even though the old fixed Commercial band would have called it Caution or Weak", () => {
+    // Old Commercial fixed band: >15 green, >=8 orange, <8 red. An IRR of
+    // 9% would have been "Caution" under the old model. Against a 5%
+    // required return, it genuinely exceeds what the investor needs.
+    const lowHurdle: DealInputs = { ...rentalInputs, discountRate: 5 };
+    // Force a lower IRR by reducing rental growth so the deal doesn't blow past every band.
+    const metrics = calcAllMetrics(lowHurdle);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: lowHurdle,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "metric", metricKey: "irr" },
+      intent: "explain_metric",
+      dealSummary,
+    });
+    const entry = context.metrics.find((m) => m.key === "irr")!;
+    expect(entry.targetContext?.requiredReturn).toBe(5);
+  });
+
+  it("carries a secondaryReference — distinct from, and never overriding, the primary target classification", () => {
+    const context = contextFor(rentalInputs);
+    const entry = context.metrics.find((m) => m.key === "irr")!;
+    expect(entry.secondaryReference).toBeDefined();
+    expect(entry.secondaryReference?.label).toBe("reference range");
+    expect(entry.secondaryReference?.provisional).toBe(true);
+    expect(["Strong", "Caution", "Weak"]).toContain(entry.secondaryReference?.classificationLabel);
+  });
+
+  it("does not carry a secondaryReference for other metrics — this is an IRR-only fact", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "metric", metricKey: "dscr" },
+      intent: "explain_metric",
+      dealSummary,
+    });
+    const entry = context.metrics.find((m) => m.key === "dscr")!;
+    expect(entry.secondaryReference).toBeUndefined();
+  });
+
+  it("is marked provisional, distinct from a fixed_bands metric's provisional flag", () => {
+    const context = contextFor(rentalInputs);
+    const entry = context.metrics.find((m) => m.key === "irr")!;
+    expect(entry.classification?.provisional).toBe(true);
+  });
+});
+
+describe("buildDealCoachContext — zero-relative Equity NPV (Decision 2)", () => {
+  it("classifies positive/near-zero/negative NPV relative to zero, normalized by equity invested — never an absolute rand threshold", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "metric", metricKey: "npv" },
+      intent: "explain_metric",
+      dealSummary,
+    });
+    const entry = context.metrics.find((m) => m.key === "npv")!;
+    expect(entry.classification?.status).toBe("classified");
+    if (entry.classification?.status === "classified") {
+      expect(entry.classification.model).toBe("zero_relative");
+      expect(entry.classification.category).toBe("investor_target");
+    }
+  });
+
+  it("carries targetContext.requiredReturn — the discount rate NPV's cashflows were actually discounted at, useful context even though the classification boundary itself is zero, not a percentage", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "metric", metricKey: "npv" },
+      intent: "explain_metric",
+      dealSummary,
+    });
+    const entry = context.metrics.find((m) => m.key === "npv")!;
+    expect(entry.targetContext?.requiredReturn).toBe(rentalInputs.discountRate);
+  });
+});
+
+describe("buildDealCoachContext — Cash-on-Cash Return target model (Decision 3)", () => {
+  it("both Pre-Tax and Post-Tax classify target-relative against discountRate", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    for (const key of ["netYieldPreTax", "netYieldPostTax"]) {
+      const context = buildDealCoachContext({
+        ...baseParams,
+        inputs: rentalInputs,
+        metrics,
+        strategyId: "commercial",
+        selection: { type: "metric", metricKey: key },
+        intent: "explain_metric",
+        dealSummary,
+      });
+      const entry = context.metrics.find((m) => m.key === key)!;
+      expect(entry.classification?.status, key).toBe("classified");
+      if (entry.classification?.status === "classified") {
+        expect(entry.classification.model, key).toBe("target_relative");
+      }
+      expect(entry.targetContext?.requiredReturn, key).toBe(rentalInputs.discountRate);
+    }
+  });
+});
+
+describe("buildDealCoachContext — informational metrics never read as N/A or a fake judgement (section 28)", () => {
+  it("Payback Period, NOI Margin (rental) and Fix & Flip Net Profit are unclassified, not not_applicable, when genuinely applicable", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+    });
+    for (const key of ["paybackPeriod", "noiMargin"]) {
+      const entry = context.metrics.find((m) => m.key === key)!;
+      expect(entry, key).toBeDefined();
+      expect(entry.applicable, key).toBe(true);
+      expect(entry.classification?.status, key).toBe("unclassified");
+    }
+
+    const flipMetrics = calcAllMetrics(flipInputs);
+    const flipContext = buildDealCoachContext({
+      ...baseParams,
+      inputs: flipInputs,
+      metrics: flipMetrics,
+      strategyId: "fix_and_flip",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary: flipDealSummary,
+    });
+    const netProfitEntry = flipContext.metrics.find((m) => m.key === "netProfit")!;
+    expect(netProfitEntry.applicable).toBe(true);
+    expect(netProfitEntry.classification?.status).toBe("unclassified");
+  });
+
+  it("Cap Rate on Market Value is unclassified/contextual — never automatically labelled, even though Cap Rate PP is", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+    });
+    const mv = context.metrics.find((m) => m.key === "capRateMV")!;
+    const pp = context.metrics.find((m) => m.key === "capRatePP")!;
+    expect(mv.classification?.status).toBe("unclassified");
+    expect(pp.classification?.status).toBe("classified");
+  });
+
+  it("Cap Rate Spread's context text frames the market cap rate as an assumption, never verified fact (Decision 10/30)", () => {
+    const metrics = calcAllMetrics(rentalInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "metric", metricKey: "capRateSpread" },
+      intent: "explain_metric",
+      dealSummary,
+    });
+    const entry = context.metrics.find((m) => m.key === "capRateSpread")!;
+    expect(entry.simpleExplanation.toLowerCase()).toContain("assumed market cap rate");
+    expect(entry.whyItMatters?.toLowerCase()).toContain("assumed");
+    expect(entry.whyItMatters?.toLowerCase()).toContain("not verified market data");
   });
 });
