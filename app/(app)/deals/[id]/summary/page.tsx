@@ -16,6 +16,7 @@ import StrategyBadge from "@/components/StrategyBadge";
 import FlipDashboard from "@/components/FlipDashboard";
 import FallbackAnalysisCard from "@/components/FallbackAnalysisCard";
 import ExitAnalysisCard from "@/components/ExitAnalysisCard";
+import { hasFallbackAnalysisContent, hasExitAnalysisContent } from "@/lib/areaIntelligence";
 import UnderstandYourDeal from "@/components/education/UnderstandYourDeal";
 import type { StrategyId } from "@/lib/strategies";
 import Link from "next/link";
@@ -526,7 +527,13 @@ export default function DealSummaryPage({
         />
       </AccordionSection>
 
-      {dealSummary && (
+      {dealSummary &&
+        (hasFallbackAnalysisContent(strategyId as StrategyId) ||
+          hasExitAnalysisContent({
+            propertyValuation: propertyValuation ?? null,
+            suburbProfile: suburbProfile ?? null,
+            exitSummary: activeMetrics.exitSummary,
+          })) && (
         <AccordionSection title="Area Intelligence">
           <div className="flex flex-col gap-4">
             <FallbackAnalysisCard

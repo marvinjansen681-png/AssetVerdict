@@ -3,6 +3,7 @@
 import type { PropertyValuation, SuburbProfile } from "@/types";
 import type { ExitSummary } from "@/lib/calculations";
 import { hasMeaningfulPropertyValuation } from "@/lib/propertyValuation";
+import { hasExitAnalysisContent } from "@/lib/areaIntelligence";
 
 interface ExitAnalysisCardProps {
   purchasePrice: number | null;
@@ -28,14 +29,14 @@ export default function ExitAnalysisCard({
   propertyValuation,
   suburbProfile,
 }: ExitAnalysisCardProps) {
-  // A PropertyValuation row exists the moment the panel is opened, every
-  // field still null — object presence alone would make an empty stub read
-  // as "evidence." hasMeaningfulPropertyValuation checks the fields that
-  // actually carry evidence instead. exitSummary is independent of this —
-  // it's the deal's own deterministic assumptions, not valuation evidence,
-  // so it must never be hidden merely because valuation context is empty.
+  // hasExitAnalysisContent is the single source of truth for this
+  // early-return, shared with the parent Area Intelligence accordion so the
+  // two can never drift apart. hasValuationEvidence below is narrower — it
+  // excludes exitSummary — and drives the "add a valuation" hint further
+  // down, which must still show even when exitSummary alone kept this card
+  // from returning null.
+  if (!hasExitAnalysisContent({ propertyValuation, suburbProfile, exitSummary })) return null;
   const hasValuationEvidence = hasMeaningfulPropertyValuation(propertyValuation) || !!suburbProfile;
-  if (!hasValuationEvidence && !exitSummary) return null;
 
   const dealPricePerSqm =
     purchasePrice && floorSize && floorSize > 0 ? purchasePrice / floorSize : null;

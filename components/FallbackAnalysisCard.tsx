@@ -1,6 +1,7 @@
 "use client";
 
 import { calcRentSuggestion } from "@/lib/area-suggestions";
+import { hasFallbackAnalysisContent } from "@/lib/areaIntelligence";
 import type { StrategyId } from "@/lib/strategies";
 import type { SuburbProfile } from "@/types";
 
@@ -15,8 +16,6 @@ interface FallbackAnalysisCardProps {
   suburbProfile: SuburbProfile | null;
 }
 
-const STRATEGIES_WITH_FALLBACK_RISK: StrategyId[] = ["str", "multi_let", "student"];
-
 export default function FallbackAnalysisCard({
   strategyId,
   isSectionalTitle,
@@ -27,7 +26,7 @@ export default function FallbackAnalysisCard({
   financeCostMonthly,
   suburbProfile,
 }: FallbackAnalysisCardProps) {
-  if (!STRATEGIES_WITH_FALLBACK_RISK.includes(strategyId)) return null;
+  if (!hasFallbackAnalysisContent(strategyId)) return null;
 
   const suggestion = calcRentSuggestion({
     strategy: strategyId,
