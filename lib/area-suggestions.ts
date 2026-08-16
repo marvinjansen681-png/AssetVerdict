@@ -1,5 +1,6 @@
 import type { StrategyId } from "@/lib/strategies";
 import type { SuburbProfile } from "@/types";
+import { calcStudentCapacity } from "@/lib/calculations";
 
 export type Confidence = "high" | "medium" | "low";
 
@@ -78,7 +79,10 @@ interface CalcRentSuggestionInput {
   strategy: StrategyId;
   isSectionalTitle: boolean;
   bedrooms: number | null;
+  /** Multi-Let room count only — see calcStudentCapacity for Student, which has its own room/bed structure and must not fall back to this. */
   numUnits: number | null;
+  /** Student's own room mix (single/sharing rooms and beds per sharing room) — the deterministic capacity source for Student deals. */
+  studentRoomMix?: { singleRoomCount: number; sharingRoomCount: number; sharingBedsPerRoom: number } | null;
   suburbProfile: SuburbProfile | null;
   currentMonthlyRent?: number | null;
 }
@@ -88,6 +92,7 @@ export function calcRentSuggestion({
   isSectionalTitle,
   bedrooms,
   numUnits,
+  studentRoomMix,
   suburbProfile,
   currentMonthlyRent,
 }: CalcRentSuggestionInput): RentSuggestion {
@@ -114,11 +119,24 @@ export function calcRentSuggestion({
   let primaryLabel = "Primary Income Estimate";
 
   switch (strategy) {
-    case "multi_let":
-    case "student": {
+    case "multi_let": {
+      // Multi-Let rent is charged per room (pricePerRoom × numUnits in the
+      // real revenue engine — see calcBaseMonthlyRevenue) — numUnits IS the
+      // deterministic room count for this strategy.
       const rooms = Math.max(numUnits ?? ROOM_COUNT_FALLBACK, ROOM_COUNT_FALLBACK);
       primaryEstimate = band.avg !== null ? band.avg * MULTI_LET_PREMIUM * (rooms / Math.max(bedrooms ?? rooms, 1)) : null;
       primaryLabel = "Per-Room Aggregate Estimate";
+      break;
+    }
+    case "student": {
+      // Student rent is charged per BED, not per room (a sharing room holds
+      // several separately-paying beds — see calcStudentAnnualRevenue).
+      // numUnits has no defined meaning for Student and must never stand in
+      // for its real room/bed structure.
+      const capacity = studentRoomMix ? calcStudentCapacity(studentRoomMix) : null;
+      const beds = Math.max(capacity?.bedCount ?? ROOM_COUNT_FALLBACK, ROOM_COUNT_FALLBACK);
+      primaryEstimate = band.avg !== null ? band.avg * MULTI_LET_PREMIUM * (beds / Math.max(bedrooms ?? beds, 1)) : null;
+      primaryLabel = "Per-Bed Aggregate Estimate";
       break;
     }
     case "str":

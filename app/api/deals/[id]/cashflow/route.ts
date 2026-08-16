@@ -20,7 +20,7 @@ const CASHFLOW_NUMERIC_FIELDS = [
   "nightlyRate",
   "avgOccupiedNights",
   "platformFeesPct",
-  "academicYearWeeks",
+  "billsIncludedAmount",
   "pricePerRoom",
   "singleRoomCount",
   "singleRoomRent",

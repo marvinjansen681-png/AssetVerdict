@@ -9,6 +9,7 @@ interface FallbackAnalysisCardProps {
   isSectionalTitle: boolean;
   bedrooms: number | null;
   numUnits: number | null;
+  studentRoomMix?: { singleRoomCount: number; sharingRoomCount: number; sharingBedsPerRoom: number } | null;
   currentMonthlyRent: number | null;
   financeCostMonthly: number;
   suburbProfile: SuburbProfile | null;
@@ -21,6 +22,7 @@ export default function FallbackAnalysisCard({
   isSectionalTitle,
   bedrooms,
   numUnits,
+  studentRoomMix,
   currentMonthlyRent,
   financeCostMonthly,
   suburbProfile,
@@ -32,6 +34,7 @@ export default function FallbackAnalysisCard({
     isSectionalTitle,
     bedrooms,
     numUnits,
+    studentRoomMix,
     suburbProfile,
     currentMonthlyRent,
   });

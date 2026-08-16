@@ -44,7 +44,7 @@ const baseInputs: DealInputs = {
   avgOccupiedNights: 200,
   platformFeesPct: 15,
   billsIncluded: false,
-  academicYearWeeks: 42,
+  billsIncludedAmount: null,
   pricePerRoom: 0,
   singleRoomCount: 0,
   singleRoomRent: 0,

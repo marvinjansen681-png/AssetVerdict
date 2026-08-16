@@ -166,6 +166,15 @@ export default function DealSummaryPage({
   // R0. See lib/calculations/applicability.ts.
   const applicabilityCtx = applicabilityContextFromMetrics(activeMetrics);
   const equityMetricsApplicable = getMetricApplicability("irr", applicabilityCtx).applicable;
+  const holdPeriodYears = activeMetrics.irrSummary.holdPeriodYears;
+  const isPlannedSale = activeMetrics.exitSummary?.isPlannedSale ?? false;
+  // Section 8/9: a planned sale is the user's own assumption ("you sell in
+  // Year N"); with no sale entered, this is AssetVerdict's own 20-year
+  // analysis horizon, not a prediction that the user sells in Year 20 — the
+  // wording must never blur that distinction.
+  const holdPeriodPhrase = isPlannedSale
+    ? `over your assumed ${holdPeriodYears}-year hold (a sale in Year ${holdPeriodYears})`
+    : `over AssetVerdict's ${holdPeriodYears}-year analysis horizon (no planned sale year is entered)`;
   const showIrr = equityMetricsApplicable ? activeMetrics.irr : null;
   const showNpv = equityMetricsApplicable ? activeMetrics.npv : null;
   const showNetYieldPreTax = equityMetricsApplicable ? activeMetrics.netYieldPreTax : null;
@@ -258,7 +267,7 @@ export default function DealSummaryPage({
             value={showIrr}
             unit="%"
             label="IRR"
-            tooltipText={`Equity IRR — the annualised return on the cash YOU invest in the deal (after debt financing and tax), over 20 years including the eventual sale. Compared against your required return of ${discountRate ?? 10}%. Not applicable if the deal is fully or over-financed (no positive equity invested).`}
+            tooltipText={`Equity IRR — the annualised return on the cash YOU invest in the deal (after debt financing and tax), ${holdPeriodPhrase} including the eventual sale. Compared against your required return of ${discountRate ?? 10}%. Not applicable if the deal is fully or over-financed (no positive equity invested).`}
             metricKey="irr"
             strategyId={strategyId}
             max={40}
@@ -286,7 +295,7 @@ export default function DealSummaryPage({
           <MetricCard
             label="NPV"
             value={showNpv !== null ? formatCurrency(showNpv) : "N/A"}
-            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest, discounted at your required equity return. Positive means the deal exceeds that required return. Not applicable if the deal is fully or over-financed."
+            tooltipText={`Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest, discounted at your required equity return, ${holdPeriodPhrase}. Positive means the deal exceeds that required return. Not applicable if the deal is fully or over-financed.`}
             trend={showNpv === null ? "neutral" : showNpv >= 0 ? "positive" : "negative"}
           />
           <GaugeDial
@@ -360,7 +369,7 @@ export default function DealSummaryPage({
             value={showIrr}
             unit="%"
             label="IRR"
-            tooltipText={`Equity IRR over 20 years — the annualised return on the cash YOU invest, after financing and tax. Compared against your required return of ${discountRate ?? 10}%.`}
+            tooltipText={`Equity IRR ${holdPeriodPhrase} — the annualised return on the cash YOU invest, after financing and tax. Compared against your required return of ${discountRate ?? 10}%.`}
             metricKey="irr"
             strategyId={strategyId}
             max={40}
@@ -375,7 +384,7 @@ export default function DealSummaryPage({
           <MetricCard
             label="NPV"
             value={showNpv !== null ? formatCurrency(showNpv) : "N/A"}
-            tooltipText="Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest. Positive means the deal exceeds your required return."
+            tooltipText={`Equity NPV — the value this deal creates today, in today's money, on the cash YOU invest, ${holdPeriodPhrase}. Positive means the deal exceeds your required return.`}
             trend={showNpv === null ? "neutral" : showNpv >= 0 ? "positive" : "negative"}
           />
         </div>
@@ -525,6 +534,17 @@ export default function DealSummaryPage({
               isSectionalTitle={dealSummary.isSectionalTitle}
               bedrooms={dealSummary.bedrooms}
               numUnits={dealSummary.numUnits}
+              studentRoomMix={
+                dealSummary.singleRoomCount !== null &&
+                dealSummary.sharingRoomCount !== null &&
+                dealSummary.sharingBedsPerRoom !== null
+                  ? {
+                      singleRoomCount: dealSummary.singleRoomCount,
+                      sharingRoomCount: dealSummary.sharingRoomCount,
+                      sharingBedsPerRoom: dealSummary.sharingBedsPerRoom,
+                    }
+                  : null
+              }
               currentMonthlyRent={dealSummary.monthlyRent}
               financeCostMonthly={dealSummary.financeSources.reduce(
                 (sum, f) => sum + (f.repaymentAmount ?? 0),
@@ -534,12 +554,9 @@ export default function DealSummaryPage({
             />
             <ExitAnalysisCard
               purchasePrice={dealSummary.purchasePrice}
-              marketValue={dealSummary.marketValue}
               floorSize={dealSummary.floorSize}
               isSectionalTitle={dealSummary.isSectionalTitle}
-              capitalGrowthRate={dealSummary.capitalGrowthRate}
-              saleYear={dealSummary.saleYear}
-              wantToSell={dealSummary.wantToSell}
+              exitSummary={activeMetrics.exitSummary}
               propertyValuation={propertyValuation ?? null}
               suburbProfile={suburbProfile ?? null}
             />

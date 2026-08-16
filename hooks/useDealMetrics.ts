@@ -21,6 +21,9 @@ export interface DealSummaryInputs {
   }[];
   monthlyRent: number | null;
   occupancyRate: number | null;
+  singleRoomCount: number | null;
+  sharingRoomCount: number | null;
+  sharingBedsPerRoom: number | null;
   erfNumber: string | null;
   erfSize: number | null;
   floorSize: number | null;

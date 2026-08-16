@@ -97,4 +97,53 @@ describe("calcRentSuggestion", () => {
     });
     expect(result.deltaVsCurrentPct).toBeCloseTo(16, 0);
   });
+
+  // Phase 4.4: Student's real capacity is its own room/bed structure, not
+  // numUnits — a field with no defined meaning for that strategy.
+  describe("student capacity", () => {
+    it("uses bed capacity (calcStudentCapacity), not numUnits, for the primary estimate", () => {
+      const withRealCapacity = calcRentSuggestion({
+        strategy: "student",
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: 999, // deliberately unrelated — must be ignored
+        studentRoomMix: { singleRoomCount: 4, sharingRoomCount: 3, sharingBedsPerRoom: 2 },
+        suburbProfile: makeProfile(),
+      });
+      const withOnlyNumUnits = calcRentSuggestion({
+        strategy: "student",
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: 999,
+        suburbProfile: makeProfile(),
+      });
+      // 10 real beds vs. the 1-unit fallback used when no room mix is supplied.
+      expect(withRealCapacity.primaryEstimate).not.toBeNull();
+      expect(withOnlyNumUnits.primaryEstimate).not.toBeNull();
+      expect(withRealCapacity.primaryEstimate!).toBeGreaterThan(withOnlyNumUnits.primaryEstimate!);
+    });
+
+    it("labels the estimate as bed-based, not room-based", () => {
+      const result = calcRentSuggestion({
+        strategy: "student",
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: 1,
+        studentRoomMix: { singleRoomCount: 4, sharingRoomCount: 3, sharingBedsPerRoom: 2 },
+        suburbProfile: makeProfile(),
+      });
+      expect(result.primaryLabel).toBe("Per-Bed Aggregate Estimate");
+    });
+
+    it("multi_let keeps using numUnits (its real per-room capacity) unaffected by the student fix", () => {
+      const result = calcRentSuggestion({
+        strategy: "multi_let",
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: 4,
+        suburbProfile: makeProfile(),
+      });
+      expect(result.primaryLabel).toBe("Per-Room Aggregate Estimate");
+    });
+  });
 });

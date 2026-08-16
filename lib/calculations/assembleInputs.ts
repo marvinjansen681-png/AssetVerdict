@@ -97,6 +97,9 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
     sourcingFee: deal.sourcingFee ?? 0,
     agentCommission: deal.agentCommission ?? 0,
 
+    wantToSell: deal.wantToSell ?? false,
+    saleYear: deal.saleYear ?? null,
+
     financeSources: deal.financeSources.map((f) => ({
       loanAmount: f.loanAmount ?? 0,
       interestRate: f.interestRate ?? 0,
@@ -136,7 +139,7 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
     platformFeesPct: cf?.platformFeesPct ?? 15,
 
     billsIncluded: cf?.billsIncluded ?? false,
-    academicYearWeeks: cf?.academicYearWeeks ?? 42,
+    billsIncludedAmount: cf?.billsIncludedAmount ?? null,
     pricePerRoom: cf?.pricePerRoom ?? 0,
 
     singleRoomCount: cf?.singleRoomCount ?? 0,

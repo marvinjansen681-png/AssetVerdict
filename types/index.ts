@@ -98,6 +98,9 @@ export interface CashflowInputs {
 
   // Multi-Let (per-room)
   billsIncluded: boolean;
+  /** Null = not separately recorded (legacy deal, or never entered) — see lib/calculations/index.ts calcBillsIncludedMonthly. */
+  billsIncludedAmount?: number | null;
+  /** @deprecated Legacy column, unused by any calculation and unexposed in any form — retained in the DB for historical rows only, not part of the active input contract. */
   academicYearWeeks?: number | null;
   pricePerRoom?: number | null;
 

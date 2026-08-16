@@ -15,8 +15,18 @@ const pct = (value: number, decimals = 1) => round(value, decimals);
  * Returns a plain-English sentence translating `value` for `metricKey`, or
  * undefined if this metric has no template (or the value isn't a real,
  * applicable number — callers should check applicability before calling).
+ * `context.holdPeriodYears`/`isPlannedSale` let the IRR sentence name the
+ * deal's actual exit year and say whether it's the user's own planned sale or
+ * AssetVerdict's 20-year analysis-horizon default (see calcExitSummary in
+ * lib/calculations) — never implying a default horizon is a sale prediction.
  */
-export function interpretMetricValue(metricKey: string, value: number): string | undefined {
+export function interpretMetricValue(
+  metricKey: string,
+  value: number,
+  context?: { holdPeriodYears?: number; isPlannedSale?: boolean }
+): string | undefined {
+  const holdPeriodYears = context?.holdPeriodYears ?? 20;
+  const isPlannedSale = context?.isPlannedSale ?? false;
   switch (metricKey) {
     case "dscr":
       return `The property currently produces R${round(value, 2).toFixed(2)} of operating income for every R1.00 required for debt payments.`;
@@ -60,7 +70,9 @@ export function interpretMetricValue(metricKey: string, value: number): string |
       return `At the current cash flow, it would take about ${pct(value, 1)} years to recover the cash you personally invested.`;
 
     case "irr":
-      return `Over the full 20-year projection — including the eventual sale — this deal is projected to return about ${pct(value)}% a year on the cash you invest.`;
+      return isPlannedSale
+        ? `Over your assumed ${holdPeriodYears}-year hold — including your planned sale in Year ${holdPeriodYears} — this deal is projected to return about ${pct(value)}% a year on the cash you invest.`
+        : `Over AssetVerdict's ${holdPeriodYears}-year analysis horizon — including an assumed sale at that point, since no planned sale year is entered — this deal is projected to return about ${pct(value)}% a year on the cash you invest.`;
 
     case "npv":
       return value >= 0

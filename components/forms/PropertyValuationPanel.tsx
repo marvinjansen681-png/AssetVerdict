@@ -9,6 +9,7 @@ import FormField from "@/components/ui/FormField";
 import { useToast } from "@/components/ui/Toast";
 import ReportImportButton, { type ExtractedReport } from "@/components/forms/ReportImportButton";
 import type { PropertyValuation } from "@/types";
+import { hasMeaningfulPropertyValuation } from "@/lib/propertyValuation";
 
 interface TxnLocal {
   id: string;
@@ -58,7 +59,10 @@ export default function PropertyValuationPanel({
   purchasePrice,
 }: PropertyValuationPanelProps) {
   const { showToast } = useToast();
-  const [expanded, setExpanded] = useState(!!initial);
+  // Start expanded only when the row actually carries evidence — an empty
+  // stub (created the moment this panel was first opened) shouldn't look
+  // like there's something here to review.
+  const [expanded, setExpanded] = useState(hasMeaningfulPropertyValuation(initial));
   const [saving, setSaving] = useState(false);
 
   const [estimatedValue, setEstimatedValue] = useState<number | null>(initial?.estimatedValue ?? null);
@@ -273,7 +277,7 @@ export default function PropertyValuationPanel({
                 onChange={(e) => setEstimatedValue(e.target.value === "" ? null : Number(e.target.value))}
               />
             </FormField>
-            <FormField label="Confidence" highlight={avmVsAsking !== null ? (avmVsAsking >= 0 ? "green" : "red") : undefined}>
+            <FormField label="Confidence">
               <select
                 value={valuationConfidence}
                 onChange={(e) => setValuationConfidence(e.target.value)}
@@ -335,7 +339,7 @@ export default function PropertyValuationPanel({
           {avmVsAsking !== null && (
             <div className="rounded-md bg-av-light-grey p-4 font-body text-sm text-av-navy flex justify-between">
               <span>AVM vs. Purchase Price</span>
-              <span className={`font-mono font-semibold ${avmVsAsking >= 0 ? "text-av-green" : "text-av-red"}`}>
+              <span className="font-mono font-semibold text-av-navy">
                 {avmVsAsking >= 0 ? "+" : ""}
                 {avmVsAsking.toFixed(1)}%
               </span>

@@ -19,6 +19,7 @@ interface MarketIntelligencePanelProps {
   isSectionalTitle: boolean;
   bedrooms: number | null;
   numUnits: number | null;
+  studentRoomMix?: { singleRoomCount: number; sharingRoomCount: number; sharingBedsPerRoom: number } | null;
   currentMonthlyRent?: number | null;
   onApplyRent?: (rent: number) => void;
 }
@@ -29,6 +30,7 @@ export default function MarketIntelligencePanel({
   isSectionalTitle,
   bedrooms,
   numUnits,
+  studentRoomMix,
   currentMonthlyRent,
   onApplyRent,
 }: MarketIntelligencePanelProps) {
@@ -126,9 +128,19 @@ export default function MarketIntelligencePanel({
     isSectionalTitle,
     bedrooms,
     numUnits,
+    studentRoomMix,
     suburbProfile: primarySuburb,
     currentMonthlyRent,
   });
+
+  const capacityBasisNote =
+    strategy === "student" && studentRoomMix
+      ? `Based on the ${
+          studentRoomMix.singleRoomCount + studentRoomMix.sharingRoomCount * studentRoomMix.sharingBedsPerRoom
+        }-bed capacity entered for this deal.`
+      : strategy === "multi_let" && numUnits
+        ? `Based on the ${numUnits}-room capacity entered for this deal.`
+        : null;
 
   return (
     <div className="rounded-lg border border-av-light-grey p-5">
@@ -143,6 +155,11 @@ export default function MarketIntelligencePanel({
         </span>
       </div>
 
+      <p className="text-xs font-body text-av-slate/80 mb-3">
+        AssetVerdict&apos;s own estimate, based on the available suburb-level area data — not
+        verified market research.
+      </p>
+
       {suggestion.band && (
         <p className="text-xs font-body text-av-slate mb-4">
           Matched band: {suggestion.band.label}
@@ -150,6 +167,15 @@ export default function MarketIntelligencePanel({
             ? ` · report is ${suggestion.reportAgeMonths} month(s) old`
             : ""}
         </p>
+      )}
+
+      {currentMonthlyRent !== null && currentMonthlyRent !== undefined && currentMonthlyRent > 0 && (
+        <div className="rounded-md bg-av-light-grey/30 p-3 mb-4 flex justify-between items-center font-body text-sm">
+          <span className="text-av-slate">Your Assumption</span>
+          <span className="font-mono text-av-navy">
+            R {currentMonthlyRent.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          </span>
+        </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-body text-sm">
@@ -161,10 +187,13 @@ export default function MarketIntelligencePanel({
               : "Not available"}
           </div>
           {suggestion.deltaVsCurrentPct !== null && (
-            <div className={`text-xs mt-1 ${suggestion.deltaVsCurrentPct >= 0 ? "text-av-green" : "text-av-red"}`}>
+            <div className="text-xs mt-1 text-av-slate">
               {suggestion.deltaVsCurrentPct >= 0 ? "+" : ""}
               {suggestion.deltaVsCurrentPct.toFixed(1)}% vs. current input
             </div>
+          )}
+          {capacityBasisNote && (
+            <div className="text-xs mt-1 text-av-slate">{capacityBasisNote}</div>
           )}
         </div>
         <div className="rounded-md bg-av-light-grey/50 p-3">

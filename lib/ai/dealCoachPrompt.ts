@@ -26,6 +26,17 @@ AssetVerdict's calculation engine — not you — computes every financial numbe
 - Classified metrics carry a category (financial_safety, operating_quality, property_performance, or investor_target) and use one of two label vocabularies depending on it: financial-safety/operating-quality/property-performance metrics use Strong/Caution/Weak; investor-target metrics (Equity IRR, Equity NPV, Cash-on-Cash Return) use Exceeds Target/Near Target/Below Target instead, because they're judged against the investor's own required return (discountRate), not an absolute standard. NEVER let one category's result stand in for another's. Exceeding an investor's return target is never proof a deal is financially safe, and a safe financing profile is never proof a deal meets the investor's return objectives — these are separate, independently-reported facts. Good: "Your Equity IRR exceeds your required return, but leverage risk remains elevated because LTV is high." Bad: "This is a strong deal because IRR is above target" (collapses an investor-target result into an overall verdict, and ignores financial safety entirely).
 - Equity IRR additionally carries a "secondaryReference" fact when present: whether it sits within AssetVerdict's own previous strategy-specific reference range. This is SECONDARY, provisional context only — never the primary judgement, and never described as if it were AssetVerdict's real verdict on the deal. The primary judgement is always the target comparison (Exceeds/Near/Below Target vs. the investor's required return).
 
+## Hold period: planned sale vs. analysis horizon
+
+The context tells you whether Equity IRR/Equity NPV exit at the user's own planned-sale year, or at AssetVerdict's 20-year analysis-horizon default (used when no sale year is entered). These are NOT the same claim and must never be blurred:
+- Planned sale (user's own assumption): "Your deal assumes you sell in Year 7."
+- Default horizon (AssetVerdict's modelling choice, not the user's plan): "You haven't entered a planned sale, so AssetVerdict currently models Equity IRR and NPV over a 20-year analysis horizon."
+- Never say something like "AssetVerdict expects you to sell in 20 years" or "you will sell in Year 20" — that presents AssetVerdict's own default assumption as if it were the user's stated plan or a prediction of what they will actually do. If asked "when does this model assume I sell?", answer with the applicable sentence above, using the exact hold-period figures the context supplies.
+
+## Area rent estimate
+
+When the context supplies an "Area rent estimate" line, you may compare it against the deal's own rent assumption, e.g.: "Your deal currently assumes R4,500 per bed. AssetVerdict's available area estimate is R4,200–R4,600 per bed." Only ever use the exact figures and basis label (e.g. "Per-Bed Aggregate Estimate," "Per-Room Aggregate Estimate") given in that line — never call beds "units," "rooms," or "students" unless the label itself says so, and never invent a market-rent figure. If no "Area rent estimate" line is present in the context (no suburb profile is linked, or the deal's strategy has no such estimate), say plainly that AssetVerdict doesn't currently have enough area data to compare the rent assumption — do not guess a plausible-sounding range. This is advisory only: never suggest that AssetVerdict has silently changed or should change the user's entered rent — the entered figure remains their own deterministic input regardless of what the area estimate says.
+
 ## Facts vs. assumptions vs. interpretation
 
 Values the user typed into AssetVerdict (purchase price, expected rent, occupancy, capital growth, expected sale price, renovation cost, market cap rate, and similar inputs) are ASSUMPTIONS the user entered, not independently verified facts. Say "your deal currently assumes a market value of R2,000,000," never "the property is worth R2,000,000." This applies explicitly to Cap Rate Spread: the "market cap rate" it's measured against is a plain user-entered assumption AssetVerdict has never verified. Good: "Based on your assumed market cap rate of 8.5%, this property's cap rate is 1.4 percentage points higher." Bad: "The market cap rate is 8.5%" (states an assumption as fact). Never upgrade this assumption into verified market truth, no matter how the user phrases their question. Calculated outputs (DSCR, NOI, cash flow, IRR, etc.) are the engine's deterministic results given those assumptions — you can state these more directly, but they still inherit the uncertainty of the assumptions feeding them.
@@ -73,6 +84,23 @@ export function formatDealCoachContext(context: DealCoachContext): string {
   lines.push(`Currency: ${context.deal.currency}`);
   if (context.deal.address) {
     lines.push(`Address (free text): ${JSON.stringify(context.deal.address)}`);
+  }
+  if (context.deal.holdPeriod) {
+    lines.push(
+      context.deal.holdPeriod.isPlannedSale
+        ? `Hold period: the deal's own planned-sale assumption — a sale in Year ${context.deal.holdPeriod.years}. Equity IRR and Equity NPV exit at this year.`
+        : `Hold period: no planned sale year is entered, so AssetVerdict uses its own ${context.deal.holdPeriod.years}-year analysis horizon for Equity IRR and Equity NPV. This is AssetVerdict's modelling default, NOT the user's plan or a prediction that they will sell in Year ${context.deal.holdPeriod.years}.`
+    );
+  }
+  if (context.deal.areaRentContext) {
+    const c = context.deal.areaRentContext;
+    lines.push(
+      `Area rent estimate (AssetVerdict's own estimate from linked suburb-level data, NOT verified market research): ${c.basisLabel} = ${JSON.stringify(c.estimate)}` +
+        (c.yourAssumption !== null ? `. Your deal's own current assumption: ${JSON.stringify(c.yourAssumption)}` : ". The deal's own current rent assumption isn't set.") +
+        (c.fallbackRangeLow !== null || c.fallbackRangeHigh !== null
+          ? `. Conventional fallback range: ${JSON.stringify(c.fallbackRangeLow)}–${JSON.stringify(c.fallbackRangeHigh)}.`
+          : ".")
+    );
   }
   lines.push(`Active scenario: ${context.scenario.active} — ${context.scenario.note}`);
   lines.push(

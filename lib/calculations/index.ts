@@ -34,6 +34,14 @@ export interface DealInputs {
 
   financeSources: FinanceSourceInput[];
 
+  // Exit assumption — when set, Equity IRR/NPV exit at this year instead of
+  // the 20-year default. Optional (rather than required) so the many literal
+  // DealInputs fixtures across the test suite that predate this field don't
+  // all need updating; calcHoldPeriodYears() treats an absent value the same
+  // as wantToSell: false.
+  wantToSell?: boolean;
+  saleYear?: number | null;
+
   // Cashflow (monthly inputs)
   monthlyRent: number;
   occupancyRate: number; // %
@@ -75,7 +83,10 @@ export interface DealInputs {
 
   // Multi-Let (per-room)
   billsIncluded: boolean;
-  academicYearWeeks: number;
+  // The user's own estimate of the monthly bills-included amount per
+  // room/bed. Null = not separately recorded (legacy deal, or the toggle
+  // is off) — never treated as a confirmed zero. See calcBillsIncludedMonthly.
+  billsIncludedAmount: number | null;
   pricePerRoom: number;
 
   // Student Accommodation — room mix (NSFAS-aware)
@@ -111,6 +122,7 @@ export interface OperatingCosts {
   finance: number;
   utilities: number;
   ratesInsuranceOther: number;
+  billsIncludedMonthly: number;
   total: number;
 }
 
@@ -172,6 +184,8 @@ export interface NPVBreakdown {
   presentValueOfOperatingCashflows: number;
   presentValueOfTerminalValue: number;
   discountRate: number;
+  /** Years to exit — see calcHoldPeriodYears(). 20 unless wantToSell + saleYear are set. */
+  holdPeriodYears: number;
   npv: number;
 }
 
@@ -185,7 +199,10 @@ export interface NPVBreakdown {
 export interface IRRSummary {
   initialEquityInvestment: number;
   totalProjectedCashflow: number;
-  terminalValueYear20: number;
+  /** Terminal value at the actual exit year — see calcHoldPeriodYears(). Named "AtExit", not "Year20": the exit year is only 20 by default. */
+  terminalValueAtExit: number;
+  /** Years to exit — see calcHoldPeriodYears(). 20 unless wantToSell + saleYear are set. */
+  holdPeriodYears: number;
   irr: number;
 }
 
@@ -225,6 +242,8 @@ export interface DealMetrics {
   npvBreakdown: NPVBreakdown;
   irrSummary: IRRSummary;
   flipMetrics?: FlipMetrics;
+  /** Undefined for Fix & Flip — see calcExitSummary() doc comment for why. */
+  exitSummary?: ExitSummary;
 }
 
 /** Total upfront investment: purchase price + all buying costs. */
@@ -266,6 +285,33 @@ export function calcInitialEquityInvestment(inputs: DealInputs): number {
 }
 
 export { calcMonthlyRepayment };
+
+/**
+ * The deterministic student-property capacity concepts — rooms and beds are
+ * NOT interchangeable (a sharing room is one physical room with multiple
+ * beds), and neither is the same as numUnits (a generic per-strategy field
+ * that means "rooms" for multi_let but has no defined meaning for student,
+ * where the real capacity truth is this room/bed structure). This is the ONE
+ * place that structure gets read from — both calcStudentAnnualRevenue-derived
+ * financial calculations and advisory features (e.g. Area Intelligence) must
+ * source capacity from here rather than each reconstructing it independently
+ * or falling back to numUnits.
+ */
+export interface StudentCapacity {
+  /** Physical rooms: single rooms + sharing rooms, each counted once regardless of beds inside. */
+  roomCount: number;
+  /** Total beds: single rooms (1 bed each) + sharing rooms × beds per sharing room. */
+  bedCount: number;
+}
+
+export function calcStudentCapacity(
+  inputs: Pick<DealInputs, "singleRoomCount" | "sharingRoomCount" | "sharingBedsPerRoom">
+): StudentCapacity {
+  return {
+    roomCount: inputs.singleRoomCount + inputs.sharingRoomCount,
+    bedCount: inputs.singleRoomCount + inputs.sharingRoomCount * inputs.sharingBedsPerRoom,
+  };
+}
 
 /**
  * Student accommodation revenue: single and sharing rooms, each split between
@@ -374,8 +420,34 @@ export function calcAnnualDebtService(inputs: DealInputs): number {
   return calcTotalFinanceCostMonthly(inputs) * 12;
 }
 
+/**
+ * Number of rooms/beds the bills-included amount is charged per, mirroring
+ * the same strategy-specific unit count used for base revenue (per_room:
+ * numUnits, student: single + sharing beds).
+ */
+export function calcBillsIncludedUnitCount(inputs: DealInputs): number {
+  if (inputs.strategy === "student") {
+    return calcStudentCapacity(inputs).bedCount;
+  }
+  return inputs.numUnits;
+}
+
+/**
+ * Monthly utilities cost contributed by the user's own bills-included
+ * estimate. Zero when the toggle is off or the amount was never recorded —
+ * a null/absent amount is never treated as a confirmed zero being "added",
+ * it simply contributes nothing extra (see billsIncludedAmount on DealInputs).
+ */
+export function calcBillsIncludedMonthly(inputs: DealInputs): number {
+  if (!inputs.billsIncluded || !isFiniteNumber(inputs.billsIncludedAmount) || inputs.billsIncludedAmount <= 0) {
+    return 0;
+  }
+  return inputs.billsIncludedAmount * calcBillsIncludedUnitCount(inputs);
+}
+
 export function calcOperatingCostsMonthly(inputs: DealInputs): OperatingCosts {
   const finance = calcTotalFinanceCostMonthly(inputs);
+  const billsIncludedMonthly = calcBillsIncludedMonthly(inputs);
   const utilities =
     inputs.waterSewerage +
     inputs.electricity +
@@ -383,13 +455,15 @@ export function calcOperatingCostsMonthly(inputs: DealInputs): OperatingCosts {
     inputs.internetCost +
     inputs.netflixCost +
     inputs.gasRefillCost +
-    inputs.wasteRemovalCost;
+    inputs.wasteRemovalCost +
+    billsIncludedMonthly;
   const ratesInsuranceOther =
     inputs.ratesAndTaxes + inputs.insurance + inputs.levies + inputs.houseParentCost;
   return {
     finance,
     utilities,
     ratesInsuranceOther,
+    billsIncludedMonthly,
     total: finance + utilities + ratesInsuranceOther,
   };
 }
@@ -701,19 +775,101 @@ export function calcTotalRemainingLoanBalance(inputs: DealInputs, yearsElapsed: 
 }
 
 /**
- * Terminal (exit) value at the end of year 20: property value less remaining
- * debt and the capital gains tax due on sale. Shared by calcIRR and calcNPV so
- * both solvers discount the exact same year-20 cashflow — if this diverged
- * between the two, IRR and NPV would disagree about what "break-even" means.
+ * Years until exit for equity-return purposes: the deal's own planned-sale
+ * assumption (wantToSell + saleYear) if set, otherwise the 20-year default.
+ * Clamped to the 20-year projection table — calc20YearProjection() never
+ * generates rows beyond that, and the Projected Sale Year input itself is
+ * capped at 20 in the Acquisition tab UI.
  */
-export function calcTerminalValue(inputs: DealInputs, projection: YearlyProjection[]): number {
-  const remainingDebtYear20 = calcTotalRemainingLoanBalance(inputs, PROJECTION_YEARS);
-  const terminalPropertyValue = projection[PROJECTION_YEARS - 1].propertyValue;
-  const capitalGainsTax = Math.max(
+export function calcHoldPeriodYears(inputs: DealInputs): number {
+  if (inputs.wantToSell && isFiniteNumber(inputs.saleYear) && inputs.saleYear > 0) {
+    return Math.min(Math.round(inputs.saleYear), PROJECTION_YEARS);
+  }
+  return PROJECTION_YEARS;
+}
+
+/**
+ * The three components behind terminal (exit) value, decomposed. Both
+ * calcTerminalValue (the number IRR/NPV actually discount) and calcExitSummary
+ * (the breakdown Exit Analysis and education display) are thin views onto this
+ * single computation, so they can never disagree about what "exit" means for
+ * a given holdYear.
+ */
+function calcTerminalValueBreakdown(
+  inputs: DealInputs,
+  projection: YearlyProjection[],
+  holdYear: number
+): {
+  projectedPropertyValueAtExit: number;
+  remainingDebtAtExit: number;
+  capitalGainsTaxAtExit: number;
+  terminalEquityValue: number;
+} {
+  const remainingDebtAtExit = calcTotalRemainingLoanBalance(inputs, holdYear);
+  const projectedPropertyValueAtExit = projection[holdYear - 1].propertyValue;
+  const capitalGainsTaxAtExit = Math.max(
     0,
-    (terminalPropertyValue - inputs.marketValue) * (inputs.capitalGainsTaxRate / 100)
+    (projectedPropertyValueAtExit - inputs.marketValue) * (inputs.capitalGainsTaxRate / 100)
   );
-  return terminalPropertyValue - remainingDebtYear20 - capitalGainsTax;
+  return {
+    projectedPropertyValueAtExit,
+    remainingDebtAtExit,
+    capitalGainsTaxAtExit,
+    terminalEquityValue: projectedPropertyValueAtExit - remainingDebtAtExit - capitalGainsTaxAtExit,
+  };
+}
+
+/**
+ * Terminal (exit) value at `holdYear`: property value less remaining debt and
+ * the capital gains tax due on sale. Shared by calcIRR and calcNPV (both via
+ * buildEquityCashflows) so both solvers discount the exact same exit-year
+ * cashflow — if this diverged between the two, IRR and NPV would disagree
+ * about what "break-even" means. `holdYear` is always calcHoldPeriodYears(inputs)
+ * in practice; passed explicitly (not re-derived here) so every caller is
+ * forced to source it from the one function that decides the exit year.
+ */
+export function calcTerminalValue(
+  inputs: DealInputs,
+  projection: YearlyProjection[],
+  holdYear: number
+): number {
+  return calcTerminalValueBreakdown(inputs, projection, holdYear).terminalEquityValue;
+}
+
+/**
+ * The decomposed exit picture for Exit Analysis / education / Deal Coach —
+ * the same three components calcTerminalValue nets together, plus the hold
+ * period and whether it comes from a planned sale or the 20-year default
+ * (see calcHoldPeriodYears). This is the ONE place any advisory surface
+ * should get exit figures from; nothing outside lib/calculations should ever
+ * recompute a projected sale price, remaining debt, or CGT itself.
+ *
+ * Not meaningful for Fix & Flip — that strategy's exit economics (holding
+ * period in months, sale price, CGT) are entirely separate and already fully
+ * captured by calcFlipProfit()/FlipMetrics; calcAllMetrics omits this field
+ * for fix_and_flip deals rather than forcing a 20-year rental read on a
+ * short-hold flip.
+ */
+export interface ExitSummary {
+  holdPeriodYears: number;
+  /** True when this hold period comes from the deal's own wantToSell/saleYear assumption, false when it's AssetVerdict's 20-year default analysis horizon. */
+  isPlannedSale: boolean;
+  projectedPropertyValueAtExit: number;
+  remainingDebtAtExit: number;
+  capitalGainsTaxAtExit: number;
+  terminalEquityValue: number;
+}
+
+export function calcExitSummary(inputs: DealInputs): ExitSummary {
+  const projection = calc20YearProjection(inputs);
+  const holdPeriodYears = calcHoldPeriodYears(inputs);
+  const isPlannedSale = Boolean(inputs.wantToSell) && isFiniteNumber(inputs.saleYear) && inputs.saleYear > 0;
+  const breakdown = calcTerminalValueBreakdown(inputs, projection, holdPeriodYears);
+  return {
+    holdPeriodYears,
+    isPlannedSale,
+    ...breakdown,
+  };
 }
 
 /**
@@ -722,28 +878,33 @@ export function calcTerminalValue(inputs: DealInputs, projection: YearlyProjecti
  * return on the investor's own cash, not on the property's full purchase
  * price.
  *
- * Index 0 (t=0)   = -Initial Equity Investment (the investor's own cash — see
- *                    calcInitialEquityInvestment). NOT total investment: that
- *                    would count debt-financed cost as the investor's own
- *                    outlay while years 1-20 already treat that same debt as
- *                    a cost to be serviced, double-counting it.
- * Index 1-20 (t=1..20) = calc20YearProjection's cashflowForPeriod, which is
- *                    already after debt service and tax (levered) — sourced
- *                    from calcCashflowAnnual/calc20YearProjection.
- * Index 20 (t=20) additionally includes the terminal (exit) value: property
- *                    value less remaining debt less capital gains tax — also
- *                    already levered (net of what's owed to the lender).
+ * Index 0 (t=0)      = -Initial Equity Investment (the investor's own cash —
+ *                    see calcInitialEquityInvestment). NOT total investment:
+ *                    that would count debt-financed cost as the investor's
+ *                    own outlay while the exit years already treat that same
+ *                    debt as a cost to be serviced, double-counting it.
+ * Index 1..holdYears = calc20YearProjection's cashflowForPeriod (sliced to the
+ *                    hold period — see calcHoldPeriodYears), already after
+ *                    debt service and tax (levered).
+ * Index holdYears additionally includes the terminal (exit) value: property
+ *                    value less remaining debt less capital gains tax at that
+ *                    year — also already levered.
  *
  * Building this once and having both calcIRR and calcNPV consume it is what
- * guarantees they can never drift onto different cash-flow conventions.
+ * guarantees they can never drift onto different cash-flow conventions, and
+ * that both always agree on the same exit year.
  */
 export function buildEquityCashflows(inputs: DealInputs): number[] {
   const initialEquity = calcInitialEquityInvestment(inputs);
   const projection = calc20YearProjection(inputs);
-  const terminalValue = calcTerminalValue(inputs, projection);
+  const holdYears = calcHoldPeriodYears(inputs);
+  const terminalValue = calcTerminalValue(inputs, projection, holdYears);
 
-  const cashflows = [-initialEquity, ...projection.map((p) => p.cashflowForPeriod)];
-  cashflows[PROJECTION_YEARS] += terminalValue;
+  const cashflows = [
+    -initialEquity,
+    ...projection.slice(0, holdYears).map((p) => p.cashflowForPeriod),
+  ];
+  cashflows[holdYears] += terminalValue;
   return cashflows;
 }
 
@@ -812,21 +973,23 @@ export function calcNPV(inputs: DealInputs): number {
 export function calcNPVBreakdown(inputs: DealInputs): NPVBreakdown {
   const initialEquityInvestment = calcInitialEquityInvestment(inputs);
   const projection = calc20YearProjection(inputs);
-  const terminalValue = calcTerminalValue(inputs, projection);
+  const holdYears = calcHoldPeriodYears(inputs);
+  const terminalValue = calcTerminalValue(inputs, projection, holdYears);
   const rate = inputs.discountRate / 100;
 
   let presentValueOfOperatingCashflows = 0;
-  projection.forEach((p, index) => {
+  projection.slice(0, holdYears).forEach((p, index) => {
     const t = index + 1;
     presentValueOfOperatingCashflows += p.cashflowForPeriod / Math.pow(1 + rate, t);
   });
-  const presentValueOfTerminalValue = terminalValue / Math.pow(1 + rate, PROJECTION_YEARS);
+  const presentValueOfTerminalValue = terminalValue / Math.pow(1 + rate, holdYears);
 
   return {
     initialEquityInvestment,
     presentValueOfOperatingCashflows,
     presentValueOfTerminalValue,
     discountRate: inputs.discountRate,
+    holdPeriodYears: holdYears,
     npv: presentValueOfOperatingCashflows + presentValueOfTerminalValue - initialEquityInvestment,
   };
 }
@@ -840,13 +1003,17 @@ export function calcNPVBreakdown(inputs: DealInputs): NPVBreakdown {
 export function calcIRRSummary(inputs: DealInputs): IRRSummary {
   const initialEquityInvestment = calcInitialEquityInvestment(inputs);
   const projection = calc20YearProjection(inputs);
-  const terminalValueYear20 = calcTerminalValue(inputs, projection);
-  const totalProjectedCashflow = projection.reduce((sum, p) => sum + p.cashflowForPeriod, 0);
+  const holdYears = calcHoldPeriodYears(inputs);
+  const terminalValueAtExit = calcTerminalValue(inputs, projection, holdYears);
+  const totalProjectedCashflow = projection
+    .slice(0, holdYears)
+    .reduce((sum, p) => sum + p.cashflowForPeriod, 0);
 
   return {
     initialEquityInvestment,
     totalProjectedCashflow,
-    terminalValueYear20,
+    terminalValueAtExit,
+    holdPeriodYears: holdYears,
     irr: calcIRR(inputs),
   };
 }
@@ -856,6 +1023,8 @@ export function calcAllMetrics(inputs: DealInputs): DealMetrics {
   return {
     flipMetrics:
       inputs.strategy === "fix_and_flip" ? calcFlipProfit(inputs) : undefined,
+    exitSummary:
+      inputs.strategy === "fix_and_flip" ? undefined : calcExitSummary(inputs),
     totalInvestment: calcTotalInvestment(inputs),
     totalLoanAmount: calcTotalLoanAmount(inputs),
     depositRequired: calcDepositRequired(inputs),

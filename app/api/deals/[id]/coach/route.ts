@@ -134,6 +134,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     marketValue: deal.marketValue ?? null,
   };
 
+  // Same primary-suburb resolution as /calculate — first profile flagged
+  // isPrimary, else the first linked profile, else none.
+  const primaryDealSuburb =
+    dealWithRelations.dealSuburbs.find((ds) => ds.isPrimary) ?? dealWithRelations.dealSuburbs[0] ?? null;
+
   const selection: DealCoachSelection = body.selectedMetric
     ? { type: "metric", metricKey: body.selectedMetric }
     : { type: "deal" };
@@ -150,6 +155,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     intent,
     dealSummary,
     scenarios: intent === "compare_scenarios" ? scenarios : undefined,
+    areaSuggestionInputs: {
+      suburbProfile: primaryDealSuburb?.suburbProfile ?? null,
+      isSectionalTitle: deal.isSectionalTitle,
+      bedrooms: deal.bedrooms ?? null,
+      numUnits: deal.numUnits ?? null,
+    },
   });
 
   const system = buildDealCoachSystemPrompt(context);

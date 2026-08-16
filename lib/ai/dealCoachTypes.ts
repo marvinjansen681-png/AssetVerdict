@@ -116,6 +116,30 @@ export interface DealCoachContext {
     strategyLabel: string;
     currency: string;
     address?: string | null;
+    /**
+     * The hold period Equity IRR/NPV are computed over, and whether it comes
+     * from the deal's own planned-sale assumption or AssetVerdict's 20-year
+     * analysis-horizon default (see calcExitSummary in lib/calculations).
+     * Undefined for Fix & Flip, which has no hold period/IRR/NPV concept.
+     */
+    holdPeriod?: { years: number; isPlannedSale: boolean };
+    /**
+     * The deal's own area-based rent estimate (lib/area-suggestions.ts,
+     * calcRentSuggestion) — only present when a suburb profile is linked AND
+     * the strategy-specific estimate actually resolved to a real number.
+     * `basisLabel` names the capacity concept driving it verbatim (e.g.
+     * "Per-Bed Aggregate Estimate" for Student, "Per-Room Aggregate Estimate"
+     * for Multi-Let) so the coach can never call beds "units" or "rooms".
+     * Never populated from an invented figure — absent, not guessed, when no
+     * suburb profile is linked or the deal's own rent assumption isn't set.
+     */
+    areaRentContext?: {
+      basisLabel: string;
+      estimate: number;
+      yourAssumption: number | null;
+      fallbackRangeLow: number | null;
+      fallbackRangeHigh: number | null;
+    };
   };
   scenario: {
     active: ScenarioKey;

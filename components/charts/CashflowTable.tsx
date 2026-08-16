@@ -158,12 +158,7 @@ export default function CashflowTable({
             </div>
             <div className="p-4 font-body text-sm">
               <span className="text-av-slate">Cashflow: </span>
-              <span
-                className={clsx(
-                  "font-mono font-semibold",
-                  metrics.cashflowMonthly >= 0 ? "text-av-green" : "text-av-red"
-                )}
-              >
+              <span className="font-mono font-semibold text-av-navy">
                 {fmt(metrics.cashflowMonthly * mult)}
               </span>
             </div>

@@ -130,6 +130,18 @@ model CashflowInputs {
 
   // Student / Multi-Let (HMO)
   billsIncluded     Boolean @default(false)
+  // Phase 4.3: the user's own estimate of the monthly bills-included amount
+  // per room/bed, persisted under its own meaning — previously this value
+  // was folded into `electricity` at form-submit time and discarded, so it
+  // silently reset to unrecorded on every re-edit (see the calculation-engine
+  // side, calcBillsIncludedMonthly). Null means "not separately recorded" —
+  // for a deal saved before this fix, NOT "confirmed zero" — its effect (if
+  // any) may already be embedded in `electricity` from the old behaviour, so
+  // null deliberately contributes nothing extra rather than double-counting.
+  billsIncludedAmount Float?
+  // Phase 4.3: never exposed in any form and never read by any calculation
+  // (a vestige of a planned "academic" cashflow mode that was never built).
+  // Left in place non-destructively; not part of the DealInputs contract.
   academicYearWeeks Int?    @default(42)
   pricePerRoom      Float?
 

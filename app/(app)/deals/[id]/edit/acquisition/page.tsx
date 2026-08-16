@@ -65,9 +65,6 @@ export default function AcquisitionTab() {
   const discountToMarket =
     marketValue > 0 ? ((marketValue - purchasePrice) / marketValue) * 100 : 0;
 
-  const marketValueHighlight =
-    discountToMarket > 15 ? "green" : discountToMarket >= 5 ? "orange" : "red";
-
   const transferDuty = useMemo(
     () => calcTransferDuty(purchasePrice),
     [purchasePrice]
@@ -123,10 +120,7 @@ export default function AcquisitionTab() {
           <FormField label="Discount to Asking Price">
             <PercentInput readOnly value={discountToAsking.toFixed(2)} />
           </FormField>
-          <FormField
-            label="Discount to Market Value"
-            highlight={marketValueHighlight}
-          >
+          <FormField label="Discount to Market Value">
             <PercentInput readOnly value={discountToMarket.toFixed(2)} />
           </FormField>
         </div>

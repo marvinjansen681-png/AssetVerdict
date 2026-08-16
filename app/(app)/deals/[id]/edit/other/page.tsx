@@ -14,7 +14,6 @@ interface OtherInputsForm {
   capitalGrowthRate: number;
   rentalGrowthRate: number;
   costInflation: number;
-  sustainableGrowthRate: number;
   discountRate: number;
   marketCapRate: number;
   realGrowthFactor: number;
@@ -33,7 +32,6 @@ export default function OtherInputsTab() {
         capitalGrowthRate: deal.capitalGrowthRate ?? 3,
         rentalGrowthRate: deal.rentalGrowthRate ?? 8,
         costInflation: deal.costInflation ?? 5,
-        sustainableGrowthRate: deal.sustainableGrowthRate ?? 5,
         discountRate: deal.discountRate ?? 10,
         marketCapRate: deal.marketCapRate ?? 10,
         realGrowthFactor: deal.realGrowthFactor ?? 10,
@@ -133,12 +131,6 @@ export default function OtherInputsTab() {
             helperText="Annual expense growth — compounds operating costs over the projection."
           >
             <PercentInput {...register("costInflation")} />
-          </FormField>
-          <FormField
-            label="Sustainable Growth Rate"
-            helperText="Long-run growth ceiling used for terminal value sanity checks."
-          >
-            <PercentInput {...register("sustainableGrowthRate")} />
           </FormField>
           <FormField
             label="Required Return"

@@ -97,7 +97,12 @@ export default function MetricLearningCard({
 
   const breakdown = applicable ? getMetricBreakdown({ metricKey, metrics, dealSummary }) : undefined;
   const interpretation =
-    applicable && rawValue !== null ? interpretMetricValue(metricKey, rawValue) : undefined;
+    applicable && rawValue !== null
+      ? interpretMetricValue(metricKey, rawValue, {
+          holdPeriodYears: metrics.irrSummary.holdPeriodYears,
+          isPlannedSale: metrics.exitSummary?.isPlannedSale ?? false,
+        })
+      : undefined;
 
   const perspectiveLabel = PERSPECTIVE_LABEL[definition.perspective];
   const perspectiveStyle = PERSPECTIVE_STYLE[definition.perspective];

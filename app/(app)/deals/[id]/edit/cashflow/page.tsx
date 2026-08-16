@@ -39,7 +39,7 @@ interface CashflowForm {
   // Multi-Let
   billsIncluded: boolean;
   pricePerRoom: number;
-  billsPerRoom: number;
+  billsIncludedAmount: number | null;
   // Student Accommodation (NSFAS-aware)
   singleRoomCount: number;
   singleRoomRent: number;
@@ -73,6 +73,10 @@ export default function CashflowTab() {
 
   const cf = deal.cashflowInputs;
   const numUnits = deal.numUnits ?? 1;
+  // Bills Included was toggled on before billsIncludedAmount existed as its own
+  // field — its effect (if any) is already embedded in Electricity from the old
+  // behaviour, so this is not a confirmed R0 and shouldn't be presented as one.
+  const legacyBillsUnrecorded = Boolean(cf?.billsIncluded) && (cf?.billsIncludedAmount === null || cf?.billsIncludedAmount === undefined);
   const financeCostMonthly = deal.financeSources.reduce(
     (sum, f) => sum + (f.repaymentAmount ?? 0),
     0
@@ -101,7 +105,7 @@ export default function CashflowTab() {
         platformFeesPct: cf?.platformFeesPct ?? 15,
         billsIncluded: cf?.billsIncluded ?? false,
         pricePerRoom: cf?.pricePerRoom ?? 0,
-        billsPerRoom: 0,
+        billsIncludedAmount: cf?.billsIncludedAmount ?? null,
         singleRoomCount: cf?.singleRoomCount ?? 0,
         singleRoomRent: cf?.singleRoomRent ?? 0,
         singleRoomNsfasBeds: cf?.singleRoomNsfasBeds ?? 0,
@@ -187,7 +191,7 @@ export default function CashflowTab() {
   const billsUnitCount = mode === "student" ? totalBeds : numUnits;
   const billsFromRooms =
     (mode === "per_room" || mode === "student") && v.billsIncluded
-      ? (Number(v.billsPerRoom) || 0) * billsUnitCount
+      ? (Number(v.billsIncludedAmount) || 0) * billsUnitCount
       : 0;
 
   const utilitiesMonthly =
@@ -234,19 +238,10 @@ export default function CashflowTab() {
   const instalmentPrincipalComponent = (Number(v.instalmentAmount) || 0) - instalmentInterestComponent;
 
   async function onSubmit(data: CashflowForm) {
-    const { billsPerRoom, ...rest } = data;
-    const payload = {
-      ...rest,
-      electricity:
-        (mode === "per_room" || mode === "student") && data.billsIncluded
-          ? (Number(data.electricity) || 0) + (Number(billsPerRoom) || 0) * billsUnitCount
-          : data.electricity,
-    };
-
     const res = await fetch(`/api/deals/${deal.id}/cashflow`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
 
     if (!res.ok) {
@@ -332,7 +327,7 @@ export default function CashflowTab() {
           </div>
           <div className="flex justify-between py-2 text-base font-bold">
             <span>NET PROFIT</span>
-            <span className={clsx("font-mono", flipNetProfit >= 0 ? "text-av-green" : "text-av-red")}>
+            <span className="font-mono text-av-navy">
               R {flipNetProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}
             </span>
           </div>
@@ -464,8 +459,18 @@ export default function CashflowTab() {
           {v.billsIncluded && (
             <div className="mt-4 max-w-xs">
               <FormField label="Estimated Monthly Bills Per Bed">
-                <CurrencyInput {...register("billsPerRoom")} />
+                <CurrencyInput
+                  {...register("billsIncludedAmount")}
+                  placeholder={legacyBillsUnrecorded ? "Not separately recorded" : undefined}
+                />
               </FormField>
+              {legacyBillsUnrecorded && (
+                <p className="text-xs font-body text-av-slate mt-2">
+                  This deal had Bills Included switched on before this field existed. Any effect
+                  is already reflected in Electricity above — enter an amount here to track it
+                  separately going forward.
+                </p>
+              )}
             </div>
           )}
 
@@ -499,6 +504,27 @@ export default function CashflowTab() {
               income rather than overstating it by assuming every bed pays year-round.
             </p>
           )}
+
+          <div className="mt-4">
+            <MarketIntelligencePanel
+              dealId={deal.id}
+              strategy={strategy.id}
+              isSectionalTitle={deal.isSectionalTitle}
+              bedrooms={deal.bedrooms ?? null}
+              numUnits={numUnits}
+              studentRoomMix={{
+                singleRoomCount: totalSingleBeds,
+                sharingRoomCount: Number(v.sharingRoomCount) || 0,
+                sharingBedsPerRoom: Number(v.sharingBedsPerRoom) || 0,
+              }}
+              currentMonthlyRent={
+                totalBeds > 0
+                  ? totalSingleBeds * (Number(v.singleRoomRent) || 0) +
+                    totalSharingBeds * (Number(v.sharingRoomRent) || 0)
+                  : null
+              }
+            />
+          </div>
         </section>
       )}
 
@@ -539,9 +565,21 @@ export default function CashflowTab() {
                 </label>
               </div>
               {v.billsIncluded && (
-                <FormField label="Estimated Monthly Bills Per Room">
-                  <CurrencyInput {...register("billsPerRoom")} />
-                </FormField>
+                <div>
+                  <FormField label="Estimated Monthly Bills Per Room">
+                    <CurrencyInput
+                      {...register("billsIncludedAmount")}
+                      placeholder={legacyBillsUnrecorded ? "Not separately recorded" : undefined}
+                    />
+                  </FormField>
+                  {legacyBillsUnrecorded && (
+                    <p className="text-xs font-body text-av-slate mt-2">
+                      This deal had Bills Included switched on before this field existed. Any
+                      effect is already reflected in Electricity above — enter an amount here to
+                      track it separately going forward.
+                    </p>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -764,12 +802,7 @@ export default function CashflowTab() {
           </div>
           <div className="flex justify-between">
             <span className="text-av-slate">Cashflow</span>
-            <span
-              className={clsx(
-                "font-mono font-semibold",
-                cashflowMonthly >= 0 ? "text-av-green" : "text-av-red"
-              )}
-            >
+            <span className="font-mono font-semibold text-av-navy">
               {fmt(cashflowMonthly)}
             </span>
           </div>

@@ -47,7 +47,7 @@ const rentalInputs: DealInputs = {
   avgOccupiedNights: 200,
   platformFeesPct: 15,
   billsIncluded: false,
-  academicYearWeeks: 42,
+  billsIncludedAmount: null,
   pricePerRoom: 0,
   singleRoomCount: 0,
   singleRoomRent: 0,
@@ -737,5 +737,135 @@ describe("buildDealCoachContext — informational metrics never read as N/A or a
     expect(entry.simpleExplanation.toLowerCase()).toContain("assumed market cap rate");
     expect(entry.whyItMatters?.toLowerCase()).toContain("assumed");
     expect(entry.whyItMatters?.toLowerCase()).toContain("not verified market data");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.5: areaRentContext — bounded, strategy-aware, never invented.
+// ---------------------------------------------------------------------------
+
+function makeSuburbProfile(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "sp1",
+    userId: "u1",
+    suburbName: "Observatory",
+    city: "Cape Town",
+    province: "Western Cape",
+    reportType: "suburb",
+    reportDate: new Date().toISOString(),
+    reportYear: new Date().getFullYear(),
+    reportSource: "TPN Investor Report",
+    notes: null,
+    fh3BedLow: 4_000,
+    fh3BedAvg: 4_400,
+    fh3BedHigh: 4_800,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  } as never;
+}
+
+const studentInputs: DealInputs = {
+  ...rentalInputs,
+  strategy: "student",
+  monthlyRent: 0,
+  singleRoomCount: 4,
+  singleRoomRent: 3_500,
+  sharingRoomCount: 3,
+  sharingBedsPerRoom: 2,
+  sharingRoomRent: 3_000,
+};
+
+const multiLetInputs: DealInputs = {
+  ...rentalInputs,
+  strategy: "multi_let",
+  monthlyRent: 0,
+  numUnits: 6,
+  pricePerRoom: 4_000,
+};
+
+describe("buildDealCoachContext — areaRentContext (Phase 4.5)", () => {
+  it("is absent when no suburb profile is linked", () => {
+    const metrics = calcAllMetrics(studentInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: studentInputs,
+      metrics,
+      strategyId: "student",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      areaSuggestionInputs: { suburbProfile: null, isSectionalTitle: false, bedrooms: null, numUnits: null },
+    });
+    expect(context.deal.areaRentContext).toBeUndefined();
+  });
+
+  it("Student: uses bed capacity (10 beds), not numUnits, and never invents a rent figure", () => {
+    const metrics = calcAllMetrics(studentInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: studentInputs,
+      metrics,
+      strategyId: "student",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      areaSuggestionInputs: {
+        suburbProfile: makeSuburbProfile(),
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: 999, // deliberately unrelated — must be ignored for Student
+      },
+    });
+    const area = context.deal.areaRentContext;
+    expect(area).toBeDefined();
+    expect(area!.basisLabel).toBe("Per-Bed Aggregate Estimate");
+    // Your assumption: 4 single beds x R3,500 + 6 sharing beds x R3,000 = R32,000
+    expect(area!.yourAssumption).toBe(4 * 3_500 + 6 * 3_000);
+    expect(typeof area!.estimate).toBe("number");
+  });
+
+  it("Multi-Let: uses room count (numUnits) and labels the estimate per-room", () => {
+    const metrics = calcAllMetrics(multiLetInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: multiLetInputs,
+      metrics,
+      strategyId: "multi_let",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      areaSuggestionInputs: {
+        suburbProfile: makeSuburbProfile(),
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: 6,
+      },
+    });
+    const area = context.deal.areaRentContext;
+    expect(area).toBeDefined();
+    expect(area!.basisLabel).toBe("Per-Room Aggregate Estimate");
+    expect(area!.yourAssumption).toBe(6 * 4_000);
+  });
+
+  it("carries a null yourAssumption (not a guessed number) when the deal's own rent isn't set", () => {
+    const zeroRentStudent: DealInputs = { ...studentInputs, singleRoomRent: 0, sharingRoomRent: 0 };
+    const metrics = calcAllMetrics(zeroRentStudent);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: zeroRentStudent,
+      metrics,
+      strategyId: "student",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      areaSuggestionInputs: {
+        suburbProfile: makeSuburbProfile(),
+        isSectionalTitle: false,
+        bedrooms: 3,
+        numUnits: null,
+      },
+    });
+    expect(context.deal.areaRentContext?.yourAssumption).toBeNull();
   });
 });

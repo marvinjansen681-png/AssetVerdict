@@ -46,7 +46,10 @@ const RESIDENTIAL_STRATEGIES: StrategyId[] = [
   "str",
   "fix_and_flip",
 ];
-const UNIT_COUNT_STRATEGIES: StrategyId[] = ["multi_let", "student", "commercial"];
+// "commercial" deliberately excluded: numUnits is not consumed anywhere in the
+// calculation engine or market-suggestion logic for that strategy, so showing
+// an editable field here would imply it affects the deal when it doesn't.
+const UNIT_COUNT_STRATEGIES: StrategyId[] = ["multi_let", "student"];
 
 interface IntroForm {
   name: string;

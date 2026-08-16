@@ -22,6 +22,7 @@
  * breakdowns) to keep the payload bounded.
  */
 import type { DealInputs, DealMetrics } from "../calculations";
+import { calcHoldPeriodYears, isFiniteNumber } from "../calculations";
 import type { Scenarios } from "../calculations/scenarios";
 import {
   getMetricApplicability,
@@ -41,7 +42,9 @@ import { interpretMetricValue } from "../education/interpretMetric";
 import { formatMetricValue } from "../education/format";
 import { getMetricGroupsForStrategy, getMetricDefinition } from "../education/metricDefinitions";
 import { getKeyLabel } from "../education/relationshipChains";
-import { getStrategy } from "../strategies";
+import { getStrategy, type StrategyId } from "../strategies";
+import { calcRentSuggestion } from "../area-suggestions";
+import type { SuburbProfile } from "../../types";
 import type {
   DealCoachContext,
   DealCoachIntent,
@@ -126,7 +129,10 @@ function buildMetricEntry(params: {
   if (!classification.applicable) return entry;
 
   if (rawValue !== null) {
-    entry.interpretation = interpretMetricValue(metricKey, rawValue);
+    entry.interpretation = interpretMetricValue(metricKey, rawValue, {
+      holdPeriodYears: metrics.irrSummary.holdPeriodYears,
+      isPlannedSale: metrics.exitSummary?.isPlannedSale ?? false,
+    });
   }
 
   if (detail === "full") {
@@ -182,6 +188,14 @@ function buildAssumptionFlags(inputs: DealInputs, strategyId: string): { field: 
     }
   }
 
+  if (inputs.wantToSell && isFiniteNumber(inputs.saleYear) && inputs.saleYear > 0) {
+    flags.push({
+      field: "saleYear",
+      value: `Year ${calcHoldPeriodYears(inputs)}`,
+      note: "Your deal currently assumes a sale in this year — IRR and NPV exit and discount at this point rather than the 20-year default. Treat this as an assumption to verify, not a confirmed exit plan.",
+    });
+  }
+
   if (inputs.marketValue > 0 && inputs.purchasePrice > 0 && inputs.marketValue > inputs.purchasePrice * 1.05) {
     const premiumPct = Math.round(((inputs.marketValue - inputs.purchasePrice) / inputs.purchasePrice) * 100);
     flags.push({
@@ -192,10 +206,11 @@ function buildAssumptionFlags(inputs: DealInputs, strategyId: string): { field: 
   }
 
   if (inputs.capitalGrowthRate > 6) {
+    const holdYears = calcHoldPeriodYears(inputs);
     flags.push({
       field: "capitalGrowthRate",
       value: `${inputs.capitalGrowthRate}%/yr`,
-      note: "Long-run capital growth is assumed above 6% a year — a materially optimistic assumption to hold for 20 years.",
+      note: `Long-run capital growth is assumed above 6% a year — a materially optimistic assumption to hold for ${holdYears} years.`,
     });
   }
 
@@ -252,14 +267,77 @@ export interface BuildDealCoachContextParams {
   dealSummary: AcquisitionSummary;
   /** Only required (and only used) when intent is "compare_scenarios". */
   scenarios?: Scenarios;
+  /**
+   * Raw ingredients for the area-based rent estimate (lib/area-suggestions.ts)
+   * — property-description fields that live on the Deal, not DealInputs, so
+   * the caller must supply them. Omit entirely (or pass suburbProfile: null)
+   * when no suburb profile is linked; the coach then simply has no area
+   * estimate to reference, rather than one built from a stale/empty guess.
+   */
+  areaSuggestionInputs?: {
+    suburbProfile: SuburbProfile | null;
+    isSectionalTitle: boolean;
+    bedrooms: number | null;
+    numUnits: number | null;
+  } | null;
 }
 
 export function buildDealCoachContext(params: BuildDealCoachContextParams): DealCoachContext {
-  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, scenarios } = params;
+  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, scenarios, areaSuggestionInputs } = params;
   const strategy = getStrategy(strategyId);
   const applicabilityCtx: ApplicabilityContext = {
     ...applicabilityContextFromInputs(inputs),
   };
+
+  // ---- Area rent context: only when a suburb is linked AND the deal's own
+  // assumption is known AND the strategy-specific estimate actually resolved
+  // — never an invented figure (section 10/27).
+  let areaRentContext: DealCoachContext["deal"]["areaRentContext"];
+  if (areaSuggestionInputs?.suburbProfile) {
+    const totalSingleBeds = inputs.singleRoomCount;
+    const totalSharingBeds = inputs.sharingRoomCount * inputs.sharingBedsPerRoom;
+
+    const studentRentAggregate = totalSingleBeds * inputs.singleRoomRent + totalSharingBeds * inputs.sharingRoomRent;
+    const yourAssumption: number | null =
+      strategyId === "student"
+        ? studentRentAggregate > 0
+          ? studentRentAggregate
+          : null
+        : strategyId === "multi_let"
+          ? inputs.pricePerRoom > 0
+            ? inputs.pricePerRoom * inputs.numUnits
+            : null
+          : inputs.monthlyRent > 0
+            ? inputs.monthlyRent
+            : null;
+
+    const suggestion = calcRentSuggestion({
+      strategy: strategyId as StrategyId,
+      isSectionalTitle: areaSuggestionInputs.isSectionalTitle,
+      bedrooms: areaSuggestionInputs.bedrooms,
+      numUnits: areaSuggestionInputs.numUnits,
+      studentRoomMix:
+        strategyId === "student"
+          ? {
+              singleRoomCount: inputs.singleRoomCount,
+              sharingRoomCount: inputs.sharingRoomCount,
+              sharingBedsPerRoom: inputs.sharingBedsPerRoom,
+            }
+          : undefined,
+      suburbProfile: areaSuggestionInputs.suburbProfile,
+      currentMonthlyRent: yourAssumption,
+    });
+
+    if (suggestion.available && suggestion.primaryEstimate !== null) {
+      areaRentContext = {
+        basisLabel: suggestion.primaryLabel,
+        estimate: suggestion.primaryEstimate,
+        yourAssumption,
+        fallbackRangeLow: suggestion.band?.low ?? null,
+        fallbackRangeHigh: suggestion.band?.high ?? null,
+      };
+    }
+  }
 
   const deal: DealCoachContext["deal"] = {
     name: dealName,
@@ -267,6 +345,10 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     strategyLabel: strategy.label,
     currency,
     address,
+    holdPeriod: metrics.exitSummary
+      ? { years: metrics.exitSummary.holdPeriodYears, isPlannedSale: metrics.exitSummary.isPlannedSale }
+      : undefined,
+    areaRentContext,
   };
   const scenario: DealCoachContext["scenario"] = { active: activeScenario, note: SCENARIO_NOTE[activeScenario] };
 

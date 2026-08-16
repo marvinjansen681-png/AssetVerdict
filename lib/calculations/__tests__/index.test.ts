@@ -30,6 +30,12 @@ import {
   calcAnnualDebtService,
   calcTerminalValue,
   calc20YearProjection,
+  calcHoldPeriodYears,
+  calcBillsIncludedMonthly,
+  calcBillsIncludedUnitCount,
+  calcOperatingCostsMonthly,
+  calcExitSummary,
+  calcStudentCapacity,
   isFiniteNumber,
   type DealInputs,
 } from "../index";
@@ -85,7 +91,7 @@ const sampleInputs: DealInputs = {
   avgOccupiedNights: 200,
   platformFeesPct: 15,
   billsIncluded: false,
-  academicYearWeeks: 42,
+  billsIncludedAmount: null,
   pricePerRoom: 0,
   singleRoomCount: 0,
   singleRoomRent: 0,
@@ -340,10 +346,14 @@ describe("calcIRRSummary", () => {
     expect(summary.totalProjectedCashflow).toBeCloseTo(expected, 4);
   });
 
-  it("terminalValueYear20 matches calcTerminalValue() for the same 20-year projection", () => {
+  it("terminalValueAtExit matches calcTerminalValue() for the same 20-year projection", () => {
     const summary = calcIRRSummary(leveredSampleInputs);
     const projection = calc20YearProjection(leveredSampleInputs);
-    expect(summary.terminalValueYear20).toBeCloseTo(calcTerminalValue(leveredSampleInputs, projection), 4);
+    expect(summary.terminalValueAtExit).toBeCloseTo(calcTerminalValue(leveredSampleInputs, projection, 20), 4);
+  });
+
+  it("holdPeriodYears defaults to 20 when wantToSell is not set", () => {
+    expect(calcIRRSummary(leveredSampleInputs).holdPeriodYears).toBe(20);
   });
 });
 
@@ -715,5 +725,253 @@ describe("calcTotalRemainingLoanBalance and its effect on Equity IRR/NPV", () =>
     // A longer term leaves more debt outstanding at year 20 (less paid off),
     // which reduces the equity proceeds captured in the terminal value.
     expect(longTerm).toBeLessThan(shortTerm);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.3: Bills Included — the user's own per-room/bed estimate, folded
+// into utilities by the calculation engine (not the form) so raw inputs stay
+// raw and there is exactly one place the economic total gets computed.
+// ---------------------------------------------------------------------------
+
+describe("calcBillsIncludedMonthly / calcBillsIncludedUnitCount", () => {
+  const multiLetInputs: DealInputs = {
+    ...sampleInputs,
+    strategy: "multi_let",
+    numUnits: 6,
+    pricePerRoom: 4_000,
+    billsIncluded: true,
+    billsIncludedAmount: 500,
+  };
+
+  const studentInputs: DealInputs = {
+    ...sampleInputs,
+    strategy: "student",
+    singleRoomCount: 4,
+    sharingRoomCount: 3,
+    sharingBedsPerRoom: 2,
+    billsIncluded: true,
+    billsIncludedAmount: 350,
+  };
+
+  it("is 0 when billsIncluded is off, regardless of a stored amount", () => {
+    expect(calcBillsIncludedMonthly({ ...multiLetInputs, billsIncluded: false })).toBe(0);
+  });
+
+  it("is 0 when billsIncluded is on but the amount was never recorded (null, not 0)", () => {
+    expect(calcBillsIncludedMonthly({ ...multiLetInputs, billsIncludedAmount: null })).toBe(0);
+  });
+
+  it("multi_let: unit count is numUnits, and the monthly total is amount x numUnits", () => {
+    expect(calcBillsIncludedUnitCount(multiLetInputs)).toBe(6);
+    expect(calcBillsIncludedMonthly(multiLetInputs)).toBe(500 * 6);
+  });
+
+  it("student: unit count is single beds + (sharing rooms x beds/room), not numUnits", () => {
+    // 4 single beds + 3 sharing rooms x 2 beds/room = 10 beds, independent of numUnits.
+    expect(calcBillsIncludedUnitCount(studentInputs)).toBe(10);
+    expect(calcBillsIncludedMonthly(studentInputs)).toBe(350 * 10);
+  });
+
+  it("flows into calcOperatingCostsMonthly's utilities total and its own billsIncludedMonthly field", () => {
+    const withBills = calcOperatingCostsMonthly(multiLetInputs);
+    const withoutBills = calcOperatingCostsMonthly({ ...multiLetInputs, billsIncluded: false });
+    expect(withBills.billsIncludedMonthly).toBe(3_000);
+    expect(withBills.utilities - withoutBills.utilities).toBeCloseTo(3_000, 4);
+    expect(withBills.total - withoutBills.total).toBeCloseTo(3_000, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.3: Hold Period — wantToSell/saleYear now drive the actual exit year
+// for Equity IRR/NPV via calcHoldPeriodYears(), replacing the hardcoded
+// 20-year horizon. buildEquityCashflows() remains the single stream behind
+// both, sliced consistently, so the NPV-at-IRR≈0 invariant must still hold at
+// any hold period.
+// ---------------------------------------------------------------------------
+
+describe("calcHoldPeriodYears", () => {
+  it("defaults to 20 when wantToSell is not set", () => {
+    expect(calcHoldPeriodYears(leveredSampleInputs)).toBe(20);
+  });
+
+  it("defaults to 20 when wantToSell is true but saleYear is not set", () => {
+    expect(calcHoldPeriodYears({ ...leveredSampleInputs, wantToSell: true, saleYear: null })).toBe(20);
+  });
+
+  it("uses saleYear when wantToSell is true", () => {
+    expect(calcHoldPeriodYears({ ...leveredSampleInputs, wantToSell: true, saleYear: 7 })).toBe(7);
+  });
+
+  it("ignores saleYear when wantToSell is false", () => {
+    expect(calcHoldPeriodYears({ ...leveredSampleInputs, wantToSell: false, saleYear: 7 })).toBe(20);
+  });
+
+  it("clamps to the 20-year projection table", () => {
+    expect(calcHoldPeriodYears({ ...leveredSampleInputs, wantToSell: true, saleYear: 45 })).toBe(20);
+  });
+});
+
+describe("hold period wired into buildEquityCashflows / calcIRR / calcNPV", () => {
+  it("a shorter hold period produces a shorter cash-flow stream, exiting at that year", () => {
+    const year7 = buildEquityCashflows({ ...leveredSampleInputs, wantToSell: true, saleYear: 7 });
+    const year20 = buildEquityCashflows({ ...leveredSampleInputs, wantToSell: false, saleYear: null });
+    expect(year7).toHaveLength(8); // t=0..7
+    expect(year20).toHaveLength(21); // t=0..20
+  });
+
+  it("year-0 outflow (initial equity) is unaffected by hold period", () => {
+    const year7 = buildEquityCashflows({ ...leveredSampleInputs, wantToSell: true, saleYear: 7 });
+    const year20 = buildEquityCashflows({ ...leveredSampleInputs, wantToSell: false, saleYear: null });
+    expect(year7[0]).toBeCloseTo(year20[0], 4);
+  });
+
+  it("exiting earlier changes IRR and NPV relative to the 20-year default", () => {
+    const inputs7 = { ...leveredSampleInputs, wantToSell: true, saleYear: 7 };
+    const inputs20 = { ...leveredSampleInputs, wantToSell: false, saleYear: null };
+    expect(calcIRR(inputs7)).not.toBeCloseTo(calcIRR(inputs20), 2);
+    expect(calcNPV(inputs7)).not.toBeCloseTo(calcNPV(inputs20), 2);
+  });
+
+  it("NPV-at-IRR≈0 invariant holds at a shorter hold period, not just at 20 years", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 12 };
+    const irr = calcIRR(inputs);
+    const npvAtIrr = calcNPV({ ...inputs, discountRate: irr });
+    expect(npvAtIrr).toBeCloseTo(0, -1);
+  });
+
+  it("calcIRRSummary and calcNPVBreakdown report the same holdPeriodYears and reconcile to calcIRR/calcNPV", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 12 };
+    const irrSummary = calcIRRSummary(inputs);
+    const npvBreakdown = calcNPVBreakdown(inputs);
+    expect(irrSummary.holdPeriodYears).toBe(12);
+    expect(npvBreakdown.holdPeriodYears).toBe(12);
+    expect(irrSummary.irr).toBeCloseTo(calcIRR(inputs), 6);
+    expect(npvBreakdown.npv).toBeCloseTo(calcNPV(inputs), 4);
+  });
+
+  it("calcTerminalValue at the hold year matches the terminal value baked into buildEquityCashflows", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 12 };
+    const holdYears = calcHoldPeriodYears(inputs);
+    const projection = calc20YearProjection(inputs);
+    const terminalValue = calcTerminalValue(inputs, projection, holdYears);
+    const cashflows = buildEquityCashflows(inputs);
+    const operatingCashflowAtExit = projection[holdYears - 1].cashflowForPeriod;
+    expect(cashflows[holdYears]).toBeCloseTo(operatingCashflowAtExit + terminalValue, 4);
+  });
+
+  it("existing deals (wantToSell false) are byte-for-byte unaffected: same IRR/NPV as before this change", () => {
+    // Regression guard for the migration-safety requirement: historical
+    // financial outputs for existing deals must not silently change.
+    const inputs = { ...leveredSampleInputs }; // wantToSell/saleYear both undefined
+    expect(calcHoldPeriodYears(inputs)).toBe(20);
+    expect(buildEquityCashflows(inputs)).toHaveLength(21);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.4: calcExitSummary — the single decomposed exit truth Exit
+// Analysis, education, and Deal Coach must all read from, rather than each
+// re-deriving a projected sale price independently.
+// ---------------------------------------------------------------------------
+
+describe("calcExitSummary", () => {
+  it("saleYear = 7: holdPeriodYears and isPlannedSale reflect the planned sale", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 7 };
+    const summary = calcExitSummary(inputs);
+    expect(summary.holdPeriodYears).toBe(7);
+    expect(summary.isPlannedSale).toBe(true);
+  });
+
+  it("saleYear = 12: holdPeriodYears and isPlannedSale reflect the planned sale", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 12 };
+    const summary = calcExitSummary(inputs);
+    expect(summary.holdPeriodYears).toBe(12);
+    expect(summary.isPlannedSale).toBe(true);
+  });
+
+  it("no planned sale: holdPeriodYears is the 20-year analysis horizon default, isPlannedSale is false", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: false, saleYear: null };
+    const summary = calcExitSummary(inputs);
+    expect(summary.holdPeriodYears).toBe(20);
+    expect(summary.isPlannedSale).toBe(false);
+  });
+
+  it("the three decomposed components net to exactly terminalEquityValue", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 7 };
+    const summary = calcExitSummary(inputs);
+    expect(
+      summary.projectedPropertyValueAtExit - summary.remainingDebtAtExit - summary.capitalGainsTaxAtExit
+    ).toBeCloseTo(summary.terminalEquityValue, 4);
+  });
+
+  it("terminalEquityValue matches calcTerminalValue for the same hold year — one shared exit truth", () => {
+    for (const saleYear of [7, 12]) {
+      const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear };
+      const summary = calcExitSummary(inputs);
+      const projection = calc20YearProjection(inputs);
+      expect(summary.terminalEquityValue).toBeCloseTo(calcTerminalValue(inputs, projection, saleYear), 4);
+    }
+  });
+
+  it("projectedPropertyValueAtExit matches the projection table's own propertyValue at that year", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 12 };
+    const summary = calcExitSummary(inputs);
+    const projection = calc20YearProjection(inputs);
+    expect(summary.projectedPropertyValueAtExit).toBeCloseTo(projection[11].propertyValue, 4);
+  });
+
+  it("calcAllMetrics exposes exitSummary for a rental deal", () => {
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 7 };
+    const metrics = calcAllMetrics(inputs);
+    expect(metrics.exitSummary).toBeDefined();
+    expect(metrics.exitSummary!.holdPeriodYears).toBe(7);
+  });
+
+  it("calcAllMetrics omits exitSummary for Fix & Flip — that strategy's exit economics are calcFlipProfit's, not a rental hold-period read", () => {
+    const inputs = { ...leveredSampleInputs, strategy: "fix_and_flip" };
+    const metrics = calcAllMetrics(inputs);
+    expect(metrics.exitSummary).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.4: calcStudentCapacity — the one deterministic source of Student
+// room/bed structure. Financial calculations (calcBillsIncludedUnitCount)
+// and advisory features (Area Intelligence) must both read from here rather
+// than reconstructing their own count or falling back to numUnits.
+// ---------------------------------------------------------------------------
+
+describe("calcStudentCapacity", () => {
+  it("4 single rooms + 3 sharing rooms x 2 beds = 7 rooms, 10 beds", () => {
+    const capacity = calcStudentCapacity({
+      singleRoomCount: 4,
+      sharingRoomCount: 3,
+      sharingBedsPerRoom: 2,
+    });
+    expect(capacity.roomCount).toBe(7);
+    expect(capacity.bedCount).toBe(10);
+  });
+
+  it("rooms and beds are not interchangeable when sharing rooms hold 3 beds", () => {
+    const capacity = calcStudentCapacity({
+      singleRoomCount: 0,
+      sharingRoomCount: 2,
+      sharingBedsPerRoom: 3,
+    });
+    expect(capacity.roomCount).toBe(2);
+    expect(capacity.bedCount).toBe(6);
+  });
+
+  it("calcBillsIncludedUnitCount for a student deal uses bedCount, not numUnits", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      strategy: "student",
+      numUnits: 999, // deliberately unrelated — must be ignored for student
+      singleRoomCount: 4,
+      sharingRoomCount: 3,
+      sharingBedsPerRoom: 2,
+    };
+    expect(calcBillsIncludedUnitCount(inputs)).toBe(10);
   });
 });

@@ -320,6 +320,13 @@ export default function DealSummaryPDF({
       {/* PAGE 3 — Base Case Key Metrics */}
       <Page size="A4" style={styles.page}>
         <Text style={styles.h1}>{scenarioLabel} — Key Metrics</Text>
+        {!isFlip && metrics.exitSummary && (
+          <Text style={styles.subtitle}>
+            {metrics.exitSummary.isPlannedSale
+              ? `Planned Sale: Year ${metrics.exitSummary.holdPeriodYears} — IRR and NPV below exit at this year.`
+              : `Analysis Horizon: ${metrics.exitSummary.holdPeriodYears} years — no planned sale entered, so IRR and NPV below use this AssetVerdict default.`}
+          </Text>
+        )}
         <View style={styles.metricGrid}>
           {metricBoxes.map((box) => {
             const numeric = parseFloat(box.value);

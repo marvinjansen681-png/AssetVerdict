@@ -249,17 +249,19 @@ export function getMetricBreakdown({
         resultFormat: "years",
       };
 
-    case "irr":
+    case "irr": {
+      const holdYears = metrics.irrSummary.holdPeriodYears;
       return {
         formula: "Annualised return that equates your cash flows to your initial equity",
         lines: [
           line("Initial Equity Invested", metrics.irrSummary.initialEquityInvestment, "currency"),
-          line("Total Projected Cash Flow (20 yrs)", metrics.irrSummary.totalProjectedCashflow, "currency"),
-          line("Projected Equity at Sale (Yr 20)", metrics.irrSummary.terminalValueYear20, "currency"),
+          line(`Total Projected Cash Flow (${holdYears} yrs)`, metrics.irrSummary.totalProjectedCashflow, "currency"),
+          line(`Projected Equity at Sale (Yr ${holdYears})`, metrics.irrSummary.terminalValueAtExit, "currency"),
         ],
         result: metrics.irrSummary.irr,
         resultFormat: "percent",
       };
+    }
 
     case "npv":
       return {
