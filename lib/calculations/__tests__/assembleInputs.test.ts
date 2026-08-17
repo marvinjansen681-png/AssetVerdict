@@ -163,8 +163,10 @@ describe("assembleInputs — repaymentAmount is never trusted from storage (Phas
     expect(metricsLow.taxMonthly).toBeCloseTo(metricsHigh.taxMonthly, 6);
     expect(metricsLow.irr).toBeCloseTo(metricsHigh.irr as number, 6);
     expect(metricsLow.npv).toBeCloseTo(metricsHigh.npv, 6);
-    expect(metricsLow.exitSummary.remainingDebtAtExit).toBeCloseTo(metricsHigh.exitSummary.remainingDebtAtExit, 6);
-    expect(metricsLow.exitSummary.terminalEquityValue).toBeCloseTo(metricsHigh.exitSummary.terminalEquityValue, 6);
+    expect(metricsLow.exitSummary).toBeDefined();
+    expect(metricsHigh.exitSummary).toBeDefined();
+    expect(metricsLow.exitSummary!.remainingDebtAtExit).toBeCloseTo(metricsHigh.exitSummary!.remainingDebtAtExit, 6);
+    expect(metricsLow.exitSummary!.terminalEquityValue).toBeCloseTo(metricsHigh.exitSummary!.terminalEquityValue, 6);
   });
 
   it("recomputes from the current interestRate even when the stored repaymentAmount matches an old rate (stale value test)", () => {
