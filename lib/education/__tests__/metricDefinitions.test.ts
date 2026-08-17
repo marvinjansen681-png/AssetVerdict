@@ -357,7 +357,7 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     }
   });
 
-  it("Fix & Flip: ROI and Annualised ROI remain genuinely classified (regression + the annualisedROI key-casing bug fix)", () => {
+  it("Fix & Flip: ROI and Annualised ROI are unclassified pending recalibration (Phase 4.10 — pre-tax redefinition)", () => {
     const flipInputs: DealInputs = {
       ...sampleInputs,
       strategy: "fix_and_flip",
@@ -372,8 +372,7 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     for (const key of ["roi", "annualisedROI"] as const) {
       const explanation = explainDealMetric(key, flip[key], "fix_and_flip");
       expect(explanation, key).toBeDefined();
-      expect(explanation!.classification.status, key).toBe("classified");
-      expect(["Strong", "Caution", "Weak"]).toContain(explanation!.classification.label);
+      expect(explanation!.classification.status, key).toBe("unclassified");
     }
   });
 

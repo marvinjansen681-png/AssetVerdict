@@ -48,6 +48,7 @@ function makeExitSummary(overrides: Partial<ExitSummary> = {}): ExitSummary {
     isPlannedSale: false,
     projectedPropertyValueAtExit: 2_500_000,
     remainingDebtAtExit: 1_000_000,
+    cgtBaseCost: 1_500_000,
     capitalGainsTaxAtExit: 100_000,
     terminalEquityValue: 1_400_000,
     ...overrides,

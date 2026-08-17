@@ -109,6 +109,12 @@ export default function ExitAnalysisCard({
             Property value at exit isn&apos;t what you&apos;d actually walk away with — remaining
             debt and capital gains tax come off first.
           </p>
+          <p className="text-xs font-body text-av-slate/80 mt-2">
+            AssetVerdict uses a simplified CGT estimate based on your purchase price of{" "}
+            {fmtCurrency(exitSummary.cgtBaseCost)} and your Effective CGT Rate. Actual base cost may
+            include qualifying acquisition, disposal and improvement costs not separately modelled
+            here — this is not a calculation of actual tax liability.
+          </p>
         </div>
       )}
 

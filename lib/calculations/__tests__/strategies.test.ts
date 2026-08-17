@@ -144,11 +144,16 @@ describe("strategy-specific revenue calculations", () => {
   });
 
   it("Fix & Flip: netProfit and roi computed via calcFlipProfit", () => {
-    // Note: the V2 plan's own worked example for these inputs claims "roi > 20%",
-    // but with holdingCostPerMonth left at its default (0, unspecified in the
-    // plan), totalCost = 1,200,000 + 300,000 + 0 + (1,950,000*5%) = 1,597,500;
-    // grossProfit = 352,500; netProfit after 22% CGT = 274,950; roi = 17.21%.
-    // We assert the correctly-derived value rather than the plan's approximate one.
+    // Note: the V2 plan's own worked example for these inputs claims "roi > 20%".
+    // With holdingCostPerMonth left at its default (0, unspecified in the plan),
+    // totalCost = 1,200,000 + 300,000 + 0 + (1,950,000*5%) = 1,597,500;
+    // grossProfit = 352,500. Phase 4.10: Fix & Flip is now reported PRE-TAX —
+    // capitalGainsTaxRate is no longer automatically deducted (SARS treats
+    // short-interval property disposals as carrying real risk of being taxed
+    // as trading/revenue income, not a capital gain, so AssetVerdict can no
+    // longer assume every flip is a capital gain). netProfit === grossProfit;
+    // roi = 352,500 / 1,597,500 = 22.07%, matching the plan's "> 20%" claim
+    // exactly once tax is no longer silently subtracted.
     const inputs: DealInputs = {
       ...baseInputs,
       strategy: "fix_and_flip",
@@ -161,7 +166,13 @@ describe("strategy-specific revenue calculations", () => {
     };
     const flip = calcFlipProfit(inputs);
     expect(flip.netProfit).toBeGreaterThan(0);
-    expect(flip.roi).toBeCloseTo(17.21, 1);
+    expect(flip.netProfit).toBeCloseTo(flip.grossProfit, 6);
+    expect(flip.roi).toBeCloseTo(22.07, 1);
+
+    // capitalGainsTaxRate no longer affects Flip economics at all.
+    const withDifferentCgtRate = calcFlipProfit({ ...inputs, capitalGainsTaxRate: 0 });
+    expect(withDifferentCgtRate.netProfit).toBeCloseTo(flip.netProfit, 6);
+    expect(withDifferentCgtRate.roi).toBeCloseTo(flip.roi, 6);
 
     // Strategy-branched revenue must be zero — profit is a lump event, not cashflow.
     expect(calcGrossRevenueAnnual(inputs)).toBe(0);

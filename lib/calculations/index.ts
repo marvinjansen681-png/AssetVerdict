@@ -163,7 +163,19 @@ export interface FlipMetrics {
   agentFee: number;
   expectedSalePrice: number;
   grossProfit: number;
-  cgt: number;
+  /**
+   * Phase 4.10: shown PRE-TAX. SARS treats property bought and sold at short
+   * intervals as carrying real risk of being classified as trading activity,
+   * with disposal profit taxed in full as revenue rather than as a capital
+   * gain (https://www.sars.gov.za/faq/faq-if-a-salaried-employee-owns-a-house-that-he-lives-in-and-owns-a-second-property-that-was-let-out-is-he-liable-for-capital-gains-tax-on-the-second-property-which-he-sold/)
+   * — so AssetVerdict can no longer assume every Fix & Flip disposal is a
+   * capital gain and automatically deduct capitalGainsTaxRate. The internal
+   * field name is retained for compatibility (this type is never persisted,
+   * so renaming carries no migration risk, but callers already reference
+   * this key); every user-facing label now reads "before tax" — see
+   * FlipDashboard.tsx, metricDefinitions.ts, and DealSummaryPDF.tsx. Equal
+   * to grossProfit — no tax is deducted here at all.
+   */
   netProfit: number;
   roi: number;
   annualisedROI: number;
@@ -441,6 +453,53 @@ export function calcAnnualDebtServiceForYear(inputs: DealInputs, year: number): 
 }
 
 /**
+ * Phase 4.10: the one interest/principal decomposition truth, derived
+ * entirely from the existing amortisation model — no second debt engine.
+ * `principal` for a year is exactly how much the aggregate remaining
+ * balance fell during that year (calcTotalRemainingLoanBalance at the
+ * start of the year minus at the end); `interest` is whatever's left of
+ * debt service once principal is accounted for. This is mathematically
+ * exact for a standard amortising loan, aggregates correctly across
+ * multiple independently-amortising sources (each source's own
+ * interest/principal split sums linearly — see the regression tests), and
+ * automatically respects loan maturity: a matured source contributes 0 to
+ * every field the year after its remainingBalance reaches 0, consistent
+ * with calcAnnualDebtServiceForYear.
+ */
+export interface DebtServiceBreakdown {
+  debtService: number;
+  interest: number;
+  principal: number;
+  remainingBalance: number;
+}
+
+export function calcDebtServiceBreakdownForYear(inputs: DealInputs, year: number): DebtServiceBreakdown {
+  const debtService = calcAnnualDebtServiceForYear(inputs, year);
+  const balanceStart = calcTotalRemainingLoanBalance(inputs, year - 1);
+  const balanceEnd = calcTotalRemainingLoanBalance(inputs, year);
+  const principal = balanceStart - balanceEnd;
+  const interest = debtService - principal;
+  return { debtService, interest, principal, remainingBalance: balanceEnd };
+}
+
+/**
+ * The interest component of the deal's CURRENT (Year 1) annual debt
+ * service — the interest counterpart to calcAnnualDebtService(), which is
+ * itself a current/Year-1 snapshot (not projected year-by-year; see that
+ * function's doc comment). Used by calcCashflowAnnual/calcTaxMonthly for
+ * the deal's present-day simplified taxable-income estimate: SARS treats
+ * bond interest as a permissible rental expense but principal repayment is
+ * a capital/balance-sheet item, not a deduction against rental income
+ * (https://www.sars.gov.za/types-of-tax/personal-income-tax/tax-on-rental-income/)
+ * — so only this figure, not full debt service, should reduce taxable
+ * income. Full debt service still reduces cashflow (see calcCashflowAnnual)
+ * because principal is a real cash outflow regardless of its tax treatment.
+ */
+export function calcAnnualInterest(inputs: DealInputs): number {
+  return calcDebtServiceBreakdownForYear(inputs, 1).interest;
+}
+
+/**
  * Number of rooms/beds the bills-included amount is charged per, mirroring
  * the same strategy-specific unit count used for base revenue (per_room:
  * numUnits, student: single + sharing beds).
@@ -521,8 +580,13 @@ export function calcGrossYield(inputs: DealInputs): number {
 }
 
 /**
- * Annual net cashflow. Tax is a simplified estimate: (NOI - annual finance cost) x income tax rate,
- * floored at zero (no tax benefit modelled for negative taxable income).
+ * Annual net cashflow. Cashflow itself still subtracts FULL debt service
+ * (principal is a real cash outflow regardless of its tax treatment — see
+ * calcOperatingCostsMonthly, which bakes finance cost into `operatingCosts`
+ * below). Tax is a simplified estimate: (NOI - annual INTEREST only) x
+ * income tax rate, floored at zero (no tax benefit modelled for negative
+ * taxable income) — see calcAnnualInterest's doc comment for why principal
+ * is excluded from the tax base (Phase 4.10, SARS-verified).
  */
 export function calcCashflowAnnual(inputs: DealInputs, beforeTax: boolean): number {
   const grossRevenue = calcGrossRevenueAnnual(inputs);
@@ -531,10 +595,10 @@ export function calcCashflowAnnual(inputs: DealInputs, beforeTax: boolean): numb
   const cashflowBeforeTax = grossRevenue - operatingCosts - provisions;
   if (beforeTax) return cashflowBeforeTax;
 
-  const financeCostAnnual = calcTotalFinanceCostMonthly(inputs) * 12;
+  const interestAnnual = calcAnnualInterest(inputs);
   const tax = Math.max(
     0,
-    (calcNOIAnnual(inputs) - financeCostAnnual) * (inputs.incomeTaxRate / 100)
+    (calcNOIAnnual(inputs) - interestAnnual) * (inputs.incomeTaxRate / 100)
   );
   return cashflowBeforeTax - tax;
 }
@@ -639,11 +703,11 @@ export function calcCapRateSpread(inputs: DealInputs): number {
   return calcCapRateMV(inputs) - inputs.marketCapRate;
 }
 
-/** Monthly tax estimate: (NOI - monthly finance cost) x income tax rate, floored at zero. */
+/** Monthly tax estimate: (NOI - monthly interest only) x income tax rate, floored at zero. See calcAnnualInterest's doc comment. */
 export function calcTaxMonthly(inputs: DealInputs): number {
   const noiMonthly = calcNOIAnnual(inputs) / 12;
-  const financeCostMonthly = calcTotalFinanceCostMonthly(inputs);
-  return Math.max(0, (noiMonthly - financeCostMonthly) * (inputs.incomeTaxRate / 100));
+  const interestMonthly = calcAnnualInterest(inputs) / 12;
+  return Math.max(0, (noiMonthly - interestMonthly) * (inputs.incomeTaxRate / 100));
 }
 
 /** Monthly net cashflow after operating costs, provisions, and tax. */
@@ -654,6 +718,10 @@ export function calcCashflowMonthly(inputs: DealInputs): number {
 /**
  * Fix & Flip profit at point of sale — a single lump event rather than an
  * ongoing cashflow. Only meaningful when inputs.strategy === 'fix_and_flip'.
+ *
+ * Phase 4.10: reports PRE-TAX. capitalGainsTaxRate is deliberately NOT
+ * applied here — see FlipMetrics.netProfit's doc comment. `netProfit`
+ * equals `grossProfit` exactly; no tax of any kind is deducted.
  */
 export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
   const holdingCosts = inputs.holdingCostPerMonth * inputs.holdingPeriodMonths;
@@ -662,8 +730,7 @@ export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
     inputs.purchasePrice + inputs.renovationCost + holdingCosts + agentFee;
 
   const grossProfit = inputs.expectedSalePrice - totalCost;
-  const cgt = Math.max(0, grossProfit * (inputs.capitalGainsTaxRate / 100));
-  const netProfit = grossProfit - cgt;
+  const netProfit = grossProfit;
 
   const roi = totalCost ? (netProfit / totalCost) * 100 : 0;
   const holdingYears = inputs.holdingPeriodMonths / 12;
@@ -680,7 +747,6 @@ export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
     agentFee,
     expectedSalePrice: inputs.expectedSalePrice,
     grossProfit,
-    cgt,
     netProfit,
     roi,
     annualisedROI,
@@ -736,11 +802,15 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
     const operatingCostsExclFinance = baseOperatingCostsExclFinance * costGrowthFactor;
     const provisions = baseProvisions * rentGrowthFactor;
     const noi = grossRevenue - operatingCostsExclFinance - provisions;
-    const financeCostAnnual = calcAnnualDebtServiceForYear(inputs, year);
+    const debtBreakdown = calcDebtServiceBreakdownForYear(inputs, year);
+    const financeCostAnnual = debtBreakdown.debtService;
 
+    // Cashflow still subtracts full debt service (principal is a real cash
+    // outflow); tax subtracts interest only (Phase 4.10 — see
+    // calcAnnualInterest's doc comment).
     const taxAmount = Math.max(
       0,
-      (noi - financeCostAnnual) * (inputs.incomeTaxRate / 100)
+      (noi - debtBreakdown.interest) * (inputs.incomeTaxRate / 100)
     );
 
     const cashflowForPeriod =
@@ -752,7 +822,7 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
     const yearlyROI = totalInvestment
       ? (cashflowForPeriod / totalInvestment) * 100
       : 0;
-    const remainingDebt = calcTotalRemainingLoanBalance(inputs, year);
+    const remainingDebt = debtBreakdown.remainingBalance;
 
     projections.push({
       year,
@@ -826,18 +896,33 @@ function calcTerminalValueBreakdown(
 ): {
   projectedPropertyValueAtExit: number;
   remainingDebtAtExit: number;
+  cgtBaseCost: number;
   capitalGainsTaxAtExit: number;
   terminalEquityValue: number;
 } {
   const remainingDebtAtExit = calcTotalRemainingLoanBalance(inputs, holdYear);
   const projectedPropertyValueAtExit = projection[holdYear - 1].propertyValue;
+  // Phase 4.10: CGT base cost is the deal's own purchase price — SARS base
+  // cost for an ordinary arm's-length acquisition is the acquisition cost
+  // (https://www.sars.gov.za/types-of-tax/capital-gains-tax/assets-subject-to-cgt/base-cost/),
+  // never the assumed market value. marketValue remains a separate,
+  // legitimate concept (Cap Rate MV, valuation context) but was never a
+  // defensible CGT base cost — see the doc comment on `marketValue` in
+  // DealInputs's own semantics, unchanged by this fix. This is deliberately
+  // the SIMPLEST defensible base cost: purchasePrice alone, not also
+  // transferBondCost/renovationCost, since those fields bundle economic
+  // concepts (financing costs, repairs vs. improvements) that don't all
+  // qualify as CGT base cost, and AssetVerdict cannot currently tell which
+  // portion would.
+  const cgtBaseCost = inputs.purchasePrice;
   const capitalGainsTaxAtExit = Math.max(
     0,
-    (projectedPropertyValueAtExit - inputs.marketValue) * (inputs.capitalGainsTaxRate / 100)
+    (projectedPropertyValueAtExit - cgtBaseCost) * (inputs.capitalGainsTaxRate / 100)
   );
   return {
     projectedPropertyValueAtExit,
     remainingDebtAtExit,
+    cgtBaseCost,
     capitalGainsTaxAtExit,
     terminalEquityValue: projectedPropertyValueAtExit - remainingDebtAtExit - capitalGainsTaxAtExit,
   };
@@ -880,6 +965,8 @@ export interface ExitSummary {
   isPlannedSale: boolean;
   projectedPropertyValueAtExit: number;
   remainingDebtAtExit: number;
+  /** The simplified CGT base cost actually used — the deal's own purchase price (Phase 4.10). Exposed so UI/education/Deal Coach can reference the exact number rather than re-deriving or guessing it. */
+  cgtBaseCost: number;
   capitalGainsTaxAtExit: number;
   terminalEquityValue: number;
 }

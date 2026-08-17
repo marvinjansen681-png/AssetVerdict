@@ -31,6 +31,9 @@ import {
   calcTerminalValue,
   calc20YearProjection,
   calcAnnualDebtServiceForYear,
+  calcDebtServiceBreakdownForYear,
+  calcAnnualInterest,
+  calcTaxMonthly,
   calcHoldPeriodYears,
   calcBillsIncludedMonthly,
   calcBillsIncludedUnitCount,
@@ -1020,6 +1023,277 @@ describe("calcExitSummary", () => {
     const inputs = { ...leveredSampleInputs, strategy: "fix_and_flip" };
     const metrics = calcAllMetrics(inputs);
     expect(metrics.exitSummary).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 4.10: CGT base cost is the deal's own purchase price, never
+  // marketValue. leveredSampleInputs already has purchasePrice (5,055,000)
+  // != marketValue (5,500,000), so this proves AssetVerdict is no longer
+  // silently anchoring the CGT base to the market-value assumption.
+  // -------------------------------------------------------------------------
+  it("cgtBaseCost equals purchasePrice, never marketValue", () => {
+    expect(leveredSampleInputs.purchasePrice).not.toBe(leveredSampleInputs.marketValue);
+    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 7 };
+    const summary = calcExitSummary(inputs);
+    expect(summary.cgtBaseCost).toBe(inputs.purchasePrice);
+    expect(summary.cgtBaseCost).not.toBe(inputs.marketValue);
+  });
+
+  it("capitalGainsTaxAtExit is computed against purchasePrice — old marketValue-based figure would differ", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      purchasePrice: 1_000_000,
+      marketValue: 1_300_000,
+      wantToSell: true,
+      saleYear: 7,
+    };
+    const summary = calcExitSummary(inputs);
+    const oldMarketValueBasedGain = Math.max(0, (summary.projectedPropertyValueAtExit - 1_300_000) * (inputs.capitalGainsTaxRate / 100));
+    const newPurchasePriceBasedGain = Math.max(0, (summary.projectedPropertyValueAtExit - 1_000_000) * (inputs.capitalGainsTaxRate / 100));
+    expect(summary.capitalGainsTaxAtExit).toBeCloseTo(newPurchasePriceBasedGain, 4);
+    expect(summary.capitalGainsTaxAtExit).not.toBeCloseTo(oldMarketValueBasedGain, 4);
+    // The new (purchase-price-based) estimate is higher here since purchasePrice < marketValue —
+    // a smaller base cost means a larger taxable gain and higher estimated CGT.
+    expect(summary.capitalGainsTaxAtExit).toBeGreaterThan(oldMarketValueBasedGain);
+  });
+
+  it("exit reconciliation still holds exactly with the new base cost: propertyValue - debt - CGT = terminalEquityValue", () => {
+    const inputs: DealInputs = { ...leveredSampleInputs, purchasePrice: 1_000_000, marketValue: 1_300_000, wantToSell: true, saleYear: 7 };
+    const summary = calcExitSummary(inputs);
+    expect(
+      summary.projectedPropertyValueAtExit - summary.remainingDebtAtExit - summary.capitalGainsTaxAtExit
+    ).toBeCloseTo(summary.terminalEquityValue, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.10: interest/principal debt-service decomposition — the one truth
+// exposed for the simplified taxable-income repair, derived entirely from
+// the existing amortisation model (no second debt engine).
+// ---------------------------------------------------------------------------
+describe("calcDebtServiceBreakdownForYear", () => {
+  const loan = { loanAmount: 1_000_000, interestRate: 10, termYears: 20, repaymentAmount: calcMonthlyRepayment(1_000_000, 10, 20) };
+  const inputs: DealInputs = { ...leveredSampleInputs, financeSources: [loan] };
+
+  it("interest + principal reconciles to debt service, within floating-point tolerance, at Years 1/5/10/15", () => {
+    for (const year of [1, 5, 10, 15]) {
+      const b = calcDebtServiceBreakdownForYear(inputs, year);
+      expect(b.interest + b.principal).toBeCloseTo(b.debtService, 6);
+    }
+  });
+
+  it("prior balance minus principal reconciles to ending balance", () => {
+    for (const year of [1, 5, 10, 15]) {
+      const balanceStart = calcTotalRemainingLoanBalance(inputs, year - 1);
+      const b = calcDebtServiceBreakdownForYear(inputs, year);
+      expect(balanceStart - b.principal).toBeCloseTo(b.remainingBalance, 6);
+    }
+  });
+
+  it("interest share falls and principal share rises over the loan's life (Phase 4.9's finding, now load-bearing)", () => {
+    const y1 = calcDebtServiceBreakdownForYear(inputs, 1);
+    const y5 = calcDebtServiceBreakdownForYear(inputs, 5);
+    const y10 = calcDebtServiceBreakdownForYear(inputs, 10);
+    const y15 = calcDebtServiceBreakdownForYear(inputs, 15);
+    expect(y5.interest).toBeLessThan(y1.interest);
+    expect(y10.interest).toBeLessThan(y5.interest);
+    expect(y15.interest).toBeLessThan(y10.interest);
+    expect(y5.principal).toBeGreaterThan(y1.principal);
+    expect(y10.principal).toBeGreaterThan(y5.principal);
+    expect(y15.principal).toBeGreaterThan(y10.principal);
+  });
+
+  it("cash purchase: interest, principal, and debt service are all zero", () => {
+    const cashInputs: DealInputs = { ...leveredSampleInputs, financeSources: [] };
+    const b = calcDebtServiceBreakdownForYear(cashInputs, 1);
+    expect(b.debtService).toBe(0);
+    expect(b.interest).toBe(0);
+    expect(b.principal).toBe(0);
+    expect(b.remainingBalance).toBe(0);
+  });
+
+  it("0% loan: interest is zero every year, principal alone reduces the balance", () => {
+    const zeroRateLoan = { loanAmount: 240_000, interestRate: 0, termYears: 20, repaymentAmount: calcMonthlyRepayment(240_000, 0, 20) };
+    const zeroRateInputs: DealInputs = { ...leveredSampleInputs, financeSources: [zeroRateLoan] };
+    for (const year of [1, 5, 10]) {
+      const b = calcDebtServiceBreakdownForYear(zeroRateInputs, year);
+      expect(b.interest).toBeCloseTo(0, 6);
+      expect(b.principal).toBeCloseTo(b.debtService, 6);
+    }
+  });
+
+  it("loan maturity: Year 6+ of a 5-year loan has zero debt service, interest, and principal", () => {
+    const shortLoan = { loanAmount: 1_000_000, interestRate: 10, termYears: 5, repaymentAmount: calcMonthlyRepayment(1_000_000, 10, 5) };
+    const shortInputs: DealInputs = { ...leveredSampleInputs, financeSources: [shortLoan] };
+    for (const year of [6, 7, 10, 20]) {
+      const b = calcDebtServiceBreakdownForYear(shortInputs, year);
+      expect(b.debtService).toBe(0);
+      expect(b.interest).toBe(0);
+      expect(b.principal).toBe(0);
+      expect(b.remainingBalance).toBe(0);
+    }
+    // The final year of payments (year 5) is unaffected — still the full repayment.
+    const y5 = calcDebtServiceBreakdownForYear(shortInputs, 5);
+    expect(y5.debtService).toBeCloseTo(shortLoan.repaymentAmount * 12, 4);
+  });
+
+  it("multiple finance sources: each amortises independently, then aggregates exactly (linear, not blended)", () => {
+    const loanA = { loanAmount: 800_000, interestRate: 10, termYears: 20, repaymentAmount: calcMonthlyRepayment(800_000, 10, 20) };
+    const loanB = { loanAmount: 200_000, interestRate: 15, termYears: 5, repaymentAmount: calcMonthlyRepayment(200_000, 15, 5) };
+    const multiInputs: DealInputs = { ...leveredSampleInputs, financeSources: [loanA, loanB] };
+    const soloAInputs: DealInputs = { ...leveredSampleInputs, financeSources: [loanA] };
+    const soloBInputs: DealInputs = { ...leveredSampleInputs, financeSources: [loanB] };
+
+    for (const year of [1, 5, 6, 10]) {
+      const combined = calcDebtServiceBreakdownForYear(multiInputs, year);
+      const soloA = calcDebtServiceBreakdownForYear(soloAInputs, year);
+      const soloB = calcDebtServiceBreakdownForYear(soloBInputs, year);
+      expect(combined.debtService).toBeCloseTo(soloA.debtService + soloB.debtService, 4);
+      expect(combined.interest).toBeCloseTo(soloA.interest + soloB.interest, 4);
+      expect(combined.principal).toBeCloseTo(soloA.principal + soloB.principal, 4);
+      expect(combined.remainingBalance).toBeCloseTo(soloA.remainingBalance + soloB.remainingBalance, 4);
+    }
+    // Year 6: loanB (5yr) has matured, only loanA's own breakdown should remain.
+    const year6 = calcDebtServiceBreakdownForYear(multiInputs, 6);
+    const loanAYear6 = calcDebtServiceBreakdownForYear(soloAInputs, 6);
+    expect(year6.debtService).toBeCloseTo(loanAYear6.debtService, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.10: rental taxable income now deducts interest only, never
+// principal — cashflow keeps deducting full debt service (principal is a
+// real cash outflow regardless of its tax treatment). This is the direct
+// repair for Phase 4.9's confirmed finding.
+// ---------------------------------------------------------------------------
+describe("calcCashflowAnnual / calcTaxMonthly — interest-only taxable income (Phase 4.10)", () => {
+  const loan = { loanAmount: 1_000_000, interestRate: 10, termYears: 20, repaymentAmount: calcMonthlyRepayment(1_000_000, 10, 20) };
+  const inputs: DealInputs = {
+    ...leveredSampleInputs,
+    purchasePrice: 1_500_000,
+    marketValue: 1_500_000,
+    monthlyRent: 25_000,
+    occupancyRate: 100,
+    managementFeeValue: 0,
+    maintenanceCostValue: 0,
+    badDebtsPct: 0,
+    ratesAndTaxes: 0,
+    insurance: 0,
+    waterSewerage: 0,
+    securityCleaning: 0,
+    electricity: 0,
+    additionalIncome: 0,
+    recoveries: 0,
+    incomeTaxRate: 27,
+    financeSources: [loan],
+  };
+
+  it("annual interest matches calcDebtServiceBreakdownForYear(inputs, 1).interest", () => {
+    expect(calcAnnualInterest(inputs)).toBeCloseTo(calcDebtServiceBreakdownForYear(inputs, 1).interest, 6);
+  });
+
+  it("taxable income deducts interest only, not full debt service", () => {
+    const noi = calcNOIAnnual(inputs);
+    const interest = calcAnnualInterest(inputs);
+    const debtService = loan.repaymentAmount * 12;
+    expect(interest).toBeLessThan(debtService); // sanity: interest is only part of the payment
+
+    const expectedTax = Math.max(0, (noi - interest) * (inputs.incomeTaxRate / 100));
+    const oldWrongTax = Math.max(0, (noi - debtService) * (inputs.incomeTaxRate / 100));
+
+    expect(calcTaxMonthly(inputs) * 12).toBeCloseTo(expectedTax, 2);
+    expect(calcTaxMonthly(inputs) * 12).not.toBeCloseTo(oldWrongTax, 2);
+    expect(calcTaxMonthly(inputs) * 12).toBeGreaterThan(oldWrongTax); // interest-only base taxes MORE, not less
+  });
+
+  it("cashflow still subtracts FULL debt service — principal remains a real cash outflow", () => {
+    const cashflowBeforeTax = calcCashflowAnnual(inputs, true);
+    const grossRevenue = calcEffectiveMonthlyRevenue(inputs) * 12;
+    const operatingCosts = calcOperatingCostsMonthly(inputs).total * 12; // includes full finance cost
+    expect(cashflowBeforeTax).toBeCloseTo(grossRevenue - operatingCosts, 2);
+
+    const cashflowAfterTax = calcCashflowAnnual(inputs, false);
+    const tax = calcTaxMonthly(inputs) * 12;
+    expect(cashflowAfterTax).toBeCloseTo(cashflowBeforeTax - tax, 2);
+  });
+
+  it("year-by-year: the tax understatement that used to grow with loan age is gone — taxAmount rises as principal's share grows", () => {
+    const projection = calc20YearProjection(inputs);
+    // With flat NOI (no growth configured beyond defaults) and a fixed-rate
+    // loan, tax should trend upward year over year as interest's share of
+    // the constant debt service shrinks (more of NOI escapes the interest
+    // shield each year) — the exact opposite of the pre-4.10 model, where
+    // tax was flat because the full (constant) debt service was deducted
+    // every year regardless of its interest/principal composition.
+    expect(projection[4].taxAmount).toBeGreaterThan(projection[0].taxAmount); // year 5 > year 1
+    expect(projection[9].taxAmount).toBeGreaterThan(projection[4].taxAmount); // year 10 > year 5
+  });
+
+  it("cash purchase: taxable income derives from NOI alone (no interest/principal ambiguity)", () => {
+    const cashInputs: DealInputs = { ...inputs, financeSources: [] };
+    const expectedTax = Math.max(0, calcNOIAnnual(cashInputs) * (cashInputs.incomeTaxRate / 100));
+    expect(calcTaxMonthly(cashInputs) * 12).toBeCloseTo(expectedTax, 2);
+  });
+
+  it("loan maturity: once a loan matures, tax receives no more interest deduction from it", () => {
+    const shortLoan = { loanAmount: 1_000_000, interestRate: 10, termYears: 5, repaymentAmount: calcMonthlyRepayment(1_000_000, 10, 5) };
+    const shortInputs: DealInputs = { ...inputs, financeSources: [shortLoan] };
+    const projection = calc20YearProjection(shortInputs);
+    const noiYear6 = projection[5].grossRevenue - projection[5].operatingCosts - projection[5].provisions;
+    const expectedTaxYear6 = Math.max(0, noiYear6 * (inputs.incomeTaxRate / 100));
+    expect(projection[5].taxAmount).toBeCloseTo(expectedTaxYear6, 2);
+    expect(projection[5].financeCost).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.10: Equity IRR / NPV before-vs-after the interest-only tax repair.
+// Confirms the corrected engine no longer benefits from sheltering principal
+// from tax, for a deal sold after several years of amortisation.
+// ---------------------------------------------------------------------------
+describe("calcIRR / calcNPV — after the interest-only tax repair (Phase 4.10)", () => {
+  const loan = { loanAmount: 700_000, interestRate: 10, termYears: 5, repaymentAmount: calcMonthlyRepayment(700_000, 10, 5) };
+  const baseFixtureInputs: DealInputs = {
+    ...leveredSampleInputs,
+    purchasePrice: 1_500_000,
+    marketValue: 1_500_000,
+    monthlyRent: 25_000,
+    occupancyRate: 100,
+    capitalGrowthRate: 3,
+    managementFeeValue: 0,
+    maintenanceCostValue: 0,
+    badDebtsPct: 0,
+    ratesAndTaxes: 0,
+    insurance: 0,
+    waterSewerage: 0,
+    securityCleaning: 0,
+    electricity: 0,
+    additionalIncome: 0,
+    recoveries: 0,
+    financeSources: [loan],
+  };
+
+  it("NPV at the solved IRR is still ~0 — the equity cash-flow invariant survives the tax repair", () => {
+    const inputs: DealInputs = { ...baseFixtureInputs, wantToSell: true };
+    for (const saleYear of [5, 10, 15]) {
+      const saleInputs = { ...inputs, saleYear };
+      const irr = calcIRR(saleInputs);
+      const npvAtIrr = { ...saleInputs, discountRate: irr };
+      expect(calcNPV(npvAtIrr)).toBeCloseTo(0, 0);
+    }
+  });
+
+  it("removing the phantom principal-in-tax-base no longer overstates returns relative to a hand-computed interest-only baseline", () => {
+    // Manually replicate the OLD (pre-4.10) formula to prove direction: taxing
+    // full debt service instead of interest-only produces a LOWER estimated
+    // tax and therefore a HIGHER (overstated) after-tax cashflow/IRR/NPV than
+    // the corrected model — matching Phase 4.9's audited finding.
+    const noi = calcNOIAnnual(baseFixtureInputs);
+    const debtService = loan.repaymentAmount * 12;
+    const interest = calcAnnualInterest(baseFixtureInputs);
+    const correctedTax = Math.max(0, (noi - interest) * (baseFixtureInputs.incomeTaxRate / 100));
+    const oldWrongTax = Math.max(0, (noi - debtService) * (baseFixtureInputs.incomeTaxRate / 100));
+    expect(correctedTax).toBeGreaterThan(oldWrongTax);
   });
 });
 

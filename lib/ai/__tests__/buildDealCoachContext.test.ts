@@ -271,7 +271,7 @@ describe("buildDealCoachContext — selected metric (explain_metric)", () => {
     }
   });
 
-  it("Fix & Flip: Annualised ROI is genuinely classified now that the threshold key-casing bug is fixed", () => {
+  it("Fix & Flip: Annualised ROI is unclassified pending recalibration (Phase 4.10 — pre-tax redefinition)", () => {
     const flipMetrics = calcAllMetrics(flipInputs);
     const context = buildDealCoachContext({
       ...baseParams,
@@ -283,7 +283,7 @@ describe("buildDealCoachContext — selected metric (explain_metric)", () => {
       dealSummary: flipDealSummary,
     });
     const entry = context.metrics.find((m) => m.key === "annualisedROI")!;
-    expect(entry.classification?.status).toBe("classified");
+    expect(entry.classification?.status).toBe("unclassified");
   });
 
   it("marks DSCR as N/A with a reason, never a fake 0, for an all-cash deal", () => {
@@ -483,7 +483,8 @@ describe("buildDealCoachContext — scenario comparison", () => {
       scenarios,
     });
     const baseKeys = Object.keys(context.scenarioComparison!.base);
-    expect(baseKeys).toContain("ROI");
+    // Phase 4.10: roi's shortName became "Pre-Tax ROI" (Fix & Flip is now pre-tax).
+    expect(baseKeys).toContain("Pre-Tax ROI");
     expect(baseKeys).not.toContain("DSCR");
   });
 });

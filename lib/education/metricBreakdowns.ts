@@ -316,11 +316,8 @@ export function getMetricBreakdown({
       const f = metrics.flipMetrics;
       if (!f) return undefined;
       return {
-        formula: "Gross Profit − Capital Gains Tax",
-        lines: [
-          line("Gross Profit", f.grossProfit, "currency"),
-          line("Capital Gains Tax", f.cgt, "currency"),
-        ],
+        formula: "= Gross Profit (no tax deducted)",
+        lines: [line("Gross Profit", f.grossProfit, "currency")],
         result: f.netProfit,
         resultFormat: "currency",
       };
@@ -330,9 +327,9 @@ export function getMetricBreakdown({
       const f = metrics.flipMetrics;
       if (!f) return undefined;
       return {
-        formula: "Net Profit ÷ Total Cost",
+        formula: "Estimated Profit Before Tax ÷ Total Cost",
         lines: [
-          line("Net Profit", f.netProfit, "currency"),
+          line("Estimated Profit Before Tax", f.netProfit, "currency"),
           line("Total Cost", f.totalCost, "currency"),
         ],
         result: f.roi,
@@ -344,8 +341,8 @@ export function getMetricBreakdown({
       const f = metrics.flipMetrics;
       if (!f) return undefined;
       return {
-        formula: "ROI ÷ Holding Period (years)",
-        lines: [line("ROI", f.roi, "percent")],
+        formula: "Pre-Tax ROI ÷ Holding Period (years)",
+        lines: [line("Pre-Tax ROI", f.roi, "percent")],
         result: f.annualisedROI,
         resultFormat: "percent",
       };
@@ -355,9 +352,9 @@ export function getMetricBreakdown({
       const f = metrics.flipMetrics;
       if (!f) return undefined;
       return {
-        formula: "Net Profit ÷ Expected Sale Price",
+        formula: "Estimated Profit Before Tax ÷ Expected Sale Price",
         lines: [
-          line("Net Profit", f.netProfit, "currency"),
+          line("Estimated Profit Before Tax", f.netProfit, "currency"),
           line("Expected Sale Price", f.expectedSalePrice, "currency"),
         ],
         result: f.profitMargin,

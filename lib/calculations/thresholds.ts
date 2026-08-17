@@ -274,25 +274,34 @@ const INSTALMENT_SALE_DEFINITIONS: DefinitionSet = {
 
 // Fix & Flip has its own metric family entirely — no Commercial inheritance.
 const FIX_AND_FLIP_DEFINITIONS: DefinitionSet = {
+  // Phase 4.10: roi and annualisedROI were previously classified against
+  // bands calibrated on a POST-CGT profit figure. Now that Fix & Flip
+  // profit is reported pre-tax (capitalGainsTaxRate is no longer
+  // automatically deducted — see calcFlipProfit's doc comment), those old
+  // 25/15 and 40/25 bands no longer reflect what the metric actually
+  // measures. Rather than silently keep a stale threshold or invent a new
+  // one without calibration evidence, both are deliberately unclassified
+  // pending a future recalibration phase — the rand/percentage values
+  // remain fully visible, just without a Strong/Caution/Weak judgement.
   roi: {
     metricKey: "roi",
-    ...cutoff("strategy_specific", "higher", 25, 15, {
-      evidenceLevel: "internal",
-      rationale: "Net profit as a % of total cost — percentage-based, so comparable across deal size. AssetVerdict's own reference bands; no external source documented.",
-    }),
+    ...unclassified(
+      "strategy_specific",
+      "Definition changed pending recalibration (Phase 4.10): this is now a pre-tax return figure, since Fix & Flip profit is no longer automatically taxed at the capital-gains rate. The previous 25%/15% bands were calibrated against a post-tax figure and no longer apply — no new threshold has been set."
+    ),
   },
   annualisedROI: {
     metricKey: "annualisedROI",
-    ...cutoff("strategy_specific", "higher", 40, 25, {
-      evidenceLevel: "internal",
-      rationale: "ROI adjusted for holding period — the more defensible of Fix & Flip's two return metrics for comparing deals of different lengths. AssetVerdict's own reference bands; no external source documented.",
-    }),
+    ...unclassified(
+      "strategy_specific",
+      "Definition changed pending recalibration (Phase 4.10): this is now a pre-tax return figure, since Fix & Flip profit is no longer automatically taxed at the capital-gains rate. The previous 40%/25% bands were calibrated against a post-tax figure and no longer apply — no new threshold has been set."
+    ),
   },
   netProfit: {
     metricKey: "netProfit",
     ...unclassified(
       "strategy_specific",
-      "An absolute rand amount has no meaning without deal size — R148,200 profit reads identically on a R1.4m flip and a R20m one. Removed from standalone Strong/Weak judgement (Decision 4); the rand value remains fully visible. ROI and Annualised ROI are the classified, size-normalized signals for this deal's return."
+      "An absolute rand amount has no meaning without deal size — R148,200 profit reads identically on a R1.4m flip and a R20m one. Removed from standalone Strong/Weak judgement (Decision 4); the rand value remains fully visible. Now also reported pre-tax (Phase 4.10) — see ROI/Annualised ROI's own notes on why their bands are currently unclassified too."
     ),
   },
 };

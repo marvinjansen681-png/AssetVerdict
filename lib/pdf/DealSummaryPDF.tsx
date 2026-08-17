@@ -184,9 +184,9 @@ export default function DealSummaryPDF({
 
   const metricBoxes: { key: string; label: string; value: string }[] = isFlip && metrics.flipMetrics
     ? [
-        { key: "netProfit", label: "Net Profit", value: fmt(metrics.flipMetrics.netProfit, currencySymbol) },
-        { key: "roi", label: "ROI", value: `${metrics.flipMetrics.roi.toFixed(1)}%` },
-        { key: "annualisedROI", label: "Annualised ROI", value: `${metrics.flipMetrics.annualisedROI.toFixed(1)}%` },
+        { key: "netProfit", label: "Estimated Profit Before Tax", value: fmt(metrics.flipMetrics.netProfit, currencySymbol) },
+        { key: "roi", label: "Pre-Tax ROI", value: `${metrics.flipMetrics.roi.toFixed(1)}%` },
+        { key: "annualisedROI", label: "Annualised Pre-Tax ROI", value: `${metrics.flipMetrics.annualisedROI.toFixed(1)}%` },
         { key: "totalCost", label: "Total Cost", value: fmt(metrics.flipMetrics.totalCost, currencySymbol) },
       ]
     : [
@@ -384,13 +384,17 @@ export default function DealSummaryPDF({
         </View>
 
         <View style={styles.row}>
-          <Text style={styles.label}>Tax</Text>
+          <Text style={styles.label}>Estimated Tax</Text>
           <Text style={styles.value}>{fmt(metrics.taxMonthly, currencySymbol)}</Text>
         </View>
         <View style={styles.row}>
           <Text style={styles.label}>Net Cashflow</Text>
           <Text style={styles.value}>{fmt(metrics.cashflowMonthly, currencySymbol)}</Text>
         </View>
+        <Text style={{ fontSize: 8, color: COLORS.slate, marginTop: 4 }}>
+          Tax figures are simplified AssetVerdict estimates based on the rates and assumptions
+          entered in the deal. They are not tax advice or a calculation of actual tax liability.
+        </Text>
 
         <Text style={styles.h2}>Bear vs Bull</Text>
         <View style={styles.table}>
@@ -593,6 +597,14 @@ export default function DealSummaryPDF({
             </Text>
           </View>
         ))}
+        {dealSummary.financeSources.length > 0 && (
+          <Text style={{ fontSize: 8, color: COLORS.slate, marginTop: 2 }}>
+            Repayment shown using AssetVerdict&apos;s standard fully amortising principal-and-interest
+            loan model. A source label such as &quot;Bridging&quot; is descriptive only and does not
+            change the repayment mathematics — interest-only, bridge, balloon/residual and
+            variable-rate structures are not yet modelled.
+          </Text>
+        )}
 
         <Text style={styles.h2}>Cashflow</Text>
         <View style={styles.row}>

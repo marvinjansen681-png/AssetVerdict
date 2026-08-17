@@ -131,6 +131,14 @@ export default function FinanceBlock({
           </FormField>
         </div>
       </div>
+
+      {sourceType !== "Bank Finance" && (
+        <p className="text-xs font-body text-av-orange mt-3">
+          &quot;{sourceType}&quot; is a descriptive label only. This repayment is still calculated
+          using AssetVerdict&apos;s standard fully amortising loan model, not real{" "}
+          {sourceType.toLowerCase()} economics.
+        </p>
+      )}
     </Card>
   );
 }

@@ -213,23 +213,32 @@ describe("classifyMetricForStrategy — deliberately unclassified metrics (Decis
   });
 
   it("never returns 'orange' for unrated/demoted Fix & Flip metrics", () => {
-    for (const key of ["totalCost", "holdingCosts", "grossProfit", "profitMargin", "netProfit"]) {
+    for (const key of ["totalCost", "holdingCosts", "grossProfit", "profitMargin", "netProfit", "roi", "annualisedROI"]) {
       const result = classifyMetricForStrategy(key, 50_000, "fix_and_flip");
       expect(result.status, key).toBe("unclassified");
       expect(result.color, key).toBeNull();
     }
   });
 
-  it("bug fix carried forward: Annualised ROI is classified, not unclassified — the threshold key previously read 'annualisedRoi' and never matched the real field name", () => {
-    expect(hasCalibratedThreshold("annualisedROI", "fix_and_flip")).toBe(true);
+  // Phase 4.10: Fix & Flip profit is now reported PRE-TAX (capitalGainsTaxRate
+  // is no longer automatically deducted — see calcFlipProfit's doc comment).
+  // roi/annualisedROI's previous 25/15 and 40/25 bands were calibrated
+  // against a post-tax figure and no longer measure the same thing, so both
+  // are deliberately unclassified pending a future recalibration — this
+  // supersedes the earlier "annualisedRoi casing bug fix" tests, which
+  // asserted these were genuinely classified under the pre-4.10 model.
+  it("Annualised ROI is unclassified pending recalibration (Phase 4.10 — definition changed from post-tax to pre-tax)", () => {
+    expect(hasCalibratedThreshold("annualisedROI", "fix_and_flip")).toBe(false);
     const result = classifyMetricForStrategy("annualisedROI", 35, "fix_and_flip");
-    expect(result.status).toBe("classified");
-    expect(result.color).toBe("orange"); // 25-40 band
+    expect(result.status).toBe("unclassified");
+    expect(result.reason).toMatch(/pending recalibration|Phase 4\.10/i);
   });
 
-  it("ROI (flip) remains genuinely calibrated with Strong/Caution/Weak, unaffected by Net Profit's demotion", () => {
-    expect(hasCalibratedThreshold("roi", "fix_and_flip")).toBe(true);
-    expect(classifyMetricForStrategy("roi", 30, "fix_and_flip").status).toBe("classified");
+  it("ROI (flip) is unclassified pending recalibration (Phase 4.10 — definition changed from post-tax to pre-tax)", () => {
+    expect(hasCalibratedThreshold("roi", "fix_and_flip")).toBe(false);
+    const result = classifyMetricForStrategy("roi", 30, "fix_and_flip");
+    expect(result.status).toBe("unclassified");
+    expect(result.reason).toMatch(/pending recalibration|Phase 4\.10/i);
   });
 });
 
@@ -349,8 +358,8 @@ describe("getGaugeColorForStrategy — visual colour derived from classification
     expect(getGaugeColorForStrategy("npv", 500_000, "commercial", { initialEquityInvestment: 1_000_000 })).toBe("green");
   });
 
-  it("returns the corrected colour for Annualised ROI now that the key-casing bug is fixed", () => {
-    expect(getGaugeColorForStrategy("annualisedROI", 45, "fix_and_flip")).toBe("green");
+  it("returns 'neutral' for Annualised ROI (Phase 4.10: unclassified pending recalibration, no longer a real colour)", () => {
+    expect(getGaugeColorForStrategy("annualisedROI", 45, "fix_and_flip")).toBe("neutral");
   });
 });
 

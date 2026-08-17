@@ -21,8 +21,9 @@ interface OtherInputsForm {
 }
 
 export default function OtherInputsTab() {
-  const { deal, refreshDeal } = useDeal();
+  const { deal, strategy, refreshDeal } = useDeal();
   const { showToast } = useToast();
+  const isFlip = strategy.id === "fix_and_flip";
 
   const { register, watch, handleSubmit, formState, reset } =
     useForm<OtherInputsForm>({
@@ -102,12 +103,27 @@ export default function OtherInputsTab() {
           Enterprise Details
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField label="Effective Income Tax">
+          <FormField
+            label="Effective Income Tax"
+            helperText="AssetVerdict currently uses 27% as a starting assumption until you change it. Enter the effective rate you want the model to use. This is an investment-model assumption, not a calculation of your actual tax rate."
+          >
             <PercentInput {...register("incomeTaxRate")} />
           </FormField>
-          <FormField label="Effective Capital Gains Tax">
-            <PercentInput {...register("capitalGainsTaxRate")} />
-          </FormField>
+          {isFlip ? (
+            <FormField
+              label="Effective Capital Gains Tax"
+              helperText="Not used for Fix & Flip. AssetVerdict currently reports Flip returns before tax, since the tax character of a property disposal depends on the transaction's own facts — this rate is preserved for other strategies only."
+            >
+              <PercentInput {...register("capitalGainsTaxRate")} readOnly />
+            </FormField>
+          ) : (
+            <FormField
+              label="Effective Capital Gains Tax"
+              helperText="AssetVerdict currently uses 22% as a starting assumption until you change it. Enter the effective CGT rate you want the model to use. Actual tax treatment depends on your circumstances."
+            >
+              <PercentInput {...register("capitalGainsTaxRate")} />
+            </FormField>
+          )}
         </div>
       </section>
 

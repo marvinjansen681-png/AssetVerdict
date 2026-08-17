@@ -56,14 +56,14 @@ function FlipModel({ metrics, currency }: { metrics: DealMetrics; currency: stri
     },
     {
       label: "Sale",
-      formula: `Expected Sale Price (${formatMetricValue(f.expectedSalePrice, "currency", currency)}) − Total Cost − Tax (${formatMetricValue(f.cgt, "currency", currency)})`,
-      resultLabel: "Net Profit",
+      formula: `Expected Sale Price (${formatMetricValue(f.expectedSalePrice, "currency", currency)}) − Total Cost (no tax deducted)`,
+      resultLabel: "Estimated Profit Before Tax",
       resultValue: formatMetricValue(f.netProfit, "currency", currency),
     },
     {
       label: "Return",
-      formula: `Net Profit ÷ Total Cost`,
-      resultLabel: "ROI / Annualised ROI",
+      formula: `Estimated Profit Before Tax ÷ Total Cost`,
+      resultLabel: "Pre-Tax ROI / Annualised Pre-Tax ROI",
       resultValue: `${formatMetricValue(f.roi, "percent", currency)} / ${formatMetricValue(f.annualisedROI, "percent", currency)}`,
     },
   ];

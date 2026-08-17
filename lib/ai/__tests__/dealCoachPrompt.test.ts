@@ -131,6 +131,49 @@ describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
     expect(lower).toContain("the utilities ratio measures gross cost only");
     expect(lower).toContain("must never be netted against it");
   });
+
+  // ---------------------------------------------------------------------
+  // Phase 4.10 — tax, Fix & Flip, and finance-boundary guardrails
+  // ---------------------------------------------------------------------
+
+  it("forbids stating tax figures as actual liability rather than a simplified estimate", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("never a calculation of the user's actual tax liability");
+    expect(lower).toContain('never say "your tax will be x"');
+  });
+
+  it("forbids inferring entity type or personalised tax structuring advice", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("never provide personalised tax structuring advice");
+    expect(lower).toContain("never infer or assume the user's entity type");
+  });
+
+  it("explains the interest/principal tax distinction without implying principal stops reducing cashflow", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("bond interest as a permissible rental expense");
+    expect(lower).toContain("full principal and interest still reduce actual cashflow");
+  });
+
+  it("forbids stating whether a Fix & Flip disposal is capital or revenue in nature", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("never tell a user their flip");
+    expect(lower).toContain("will be taxed as cgt");
+    expect(lower).toContain("will be taxed as ordinary income");
+    expect(lower).toContain("assetverdict does not determine this, and neither should you");
+  });
+
+  it("says Fix & Flip is reported pre-tax and names the property-trader risk", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("property trader");
+    expect(lower).toContain("taxed in full as revenue");
+    expect(DEAL_COACH_SYSTEM_INSTRUCTIONS).toContain("Estimated Profit Before Tax");
+  });
+
+  it("forbids explaining an unsupported finance structure (interest-only/bridge/balloon/variable) as though it were modelled", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("descriptive text the user chose");
+    expect(lower).toContain("does not currently model interest-only, bridge, balloon/residual, or variable-rate structures");
+  });
 });
 
 describe("formatDealCoachContext — prompt-injection resistance (structural defences)", () => {

@@ -118,6 +118,13 @@ export default function FinanceTab() {
       onSubmit={handleSubmit(onSubmit)}
       className="px-4 md:px-8 py-8 max-w-3xl mx-auto flex flex-col gap-6"
     >
+      <p className="text-xs font-body text-av-slate bg-av-light-grey/60 rounded-md p-3">
+        AssetVerdict currently models every finance source as a standard fully amortising
+        principal-and-interest loan. Interest-only, bridge, balloon/residual and variable-rate
+        structures are not yet modelled — the Source of Finance label below is descriptive only
+        and does not change the repayment mathematics.
+      </p>
+
       <div className="flex items-center justify-between">
         <h2 className="font-display text-xl text-av-navy">Finance Sources</h2>
         <Button
