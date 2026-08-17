@@ -21,6 +21,8 @@ export interface DealSummaryInputs {
   }[];
   monthlyRent: number | null;
   occupancyRate: number | null;
+  /** Commercial only. Remaining/expected months on the main commercial lease — null means not recorded, never "0 months remaining." */
+  leaseTermMonths: number | null;
   singleRoomCount: number | null;
   sharingRoomCount: number | null;
   sharingBedsPerRoom: number | null;

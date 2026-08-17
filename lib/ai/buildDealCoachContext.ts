@@ -70,8 +70,10 @@ function buildMetricEntry(params: {
   applicabilityCtx: ApplicabilityContext;
   detail: "full" | "light";
   currency: string;
+  /** Commercial only — see BuildDealCoachContextParams.leaseTermMonths. */
+  leaseTermMonths?: number | null;
 }): DealCoachMetricEntry | undefined {
-  const { metricKey, metrics, dealSummary, strategyId, applicabilityCtx, detail, currency } = params;
+  const { metricKey, metrics, dealSummary, strategyId, applicabilityCtx, detail, currency, leaseTermMonths } = params;
   const rawValue = getMetricRawValue(metricKey, metrics);
   const explanation = explainDealMetric(metricKey, rawValue, strategyId, applicabilityCtx);
   if (!explanation) return undefined;
@@ -132,6 +134,11 @@ function buildMetricEntry(params: {
     entry.interpretation = interpretMetricValue(metricKey, rawValue, {
       holdPeriodYears: metrics.irrSummary.holdPeriodYears,
       isPlannedSale: metrics.exitSummary?.isPlannedSale ?? false,
+      leaseTermMonths: strategyId === "commercial" ? leaseTermMonths ?? null : undefined,
+      utilityContext: {
+        billsIncludedMonthly: metrics.operatingCostsMonthly.billsIncludedMonthly,
+        recoveriesMonthly: metrics.revenueMonthly.recoveries,
+      },
     });
   }
 
@@ -280,10 +287,18 @@ export interface BuildDealCoachContextParams {
     bedrooms: number | null;
     numUnits: number | null;
   } | null;
+  /**
+   * Commercial only (Phase 4.7) — the deal's own recorded lease-term fact
+   * (CashflowInputs.leaseTermMonths). Null means "not recorded," never "0
+   * months remaining." Only meaningful when strategyId is "commercial";
+   * ignored for every other strategy so the coach never mentions lease term
+   * outside Commercial.
+   */
+  leaseTermMonths?: number | null;
 }
 
 export function buildDealCoachContext(params: BuildDealCoachContextParams): DealCoachContext {
-  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, scenarios, areaSuggestionInputs } = params;
+  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, scenarios, areaSuggestionInputs, leaseTermMonths } = params;
   const strategy = getStrategy(strategyId);
   const applicabilityCtx: ApplicabilityContext = {
     ...applicabilityContextFromInputs(inputs),
@@ -349,6 +364,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       ? { years: metrics.exitSummary.holdPeriodYears, isPlannedSale: metrics.exitSummary.isPlannedSale }
       : undefined,
     areaRentContext,
+    commercialContext: strategyId === "commercial" ? { leaseTermMonths: leaseTermMonths ?? null } : undefined,
   };
   const scenario: DealCoachContext["scenario"] = { active: activeScenario, note: SCENARIO_NOTE[activeScenario] };
 
@@ -387,6 +403,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       applicabilityCtx,
       detail: "full",
       currency,
+      leaseTermMonths,
     });
     const entries: DealCoachMetricEntry[] = primary ? [primary] : [];
 
@@ -404,6 +421,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
           applicabilityCtx,
           detail: "light",
           currency,
+          leaseTermMonths,
         });
         if (entry) entries.push(entry);
       }
@@ -425,6 +443,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
         applicabilityCtx,
         detail: "light",
         currency,
+        leaseTermMonths,
       });
       if (entry) entries.push(entry);
     }

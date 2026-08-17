@@ -101,6 +101,36 @@ describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
     // The old, too-absolute wording must be gone.
     expect(text).not.toContain("has no DSCR, LTV, cash flow, or Cash-on-Cash Return to discuss");
   });
+
+  // ---------------------------------------------------------------------
+  // Phase 4.7 — Commercial lease term & utility/recoveries guardrails
+  // ---------------------------------------------------------------------
+
+  it("forbids treating lease term as a safety classification", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("not a standalone safety classification");
+    expect(DEAL_COACH_SYSTEM_INSTRUCTIONS).toContain('"60 months = Strong/Safe/Low Risk,"');
+  });
+
+  it("lists what lease term alone does not tell AssetVerdict", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("tenant credit quality");
+    expect(lower).toContain("renewal likelihood");
+    expect(lower).toContain("tenant concentration");
+  });
+
+  it("forbids calculating a net utility exposure from utilities minus recoveries", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain('"net utility exposure"');
+    expect(lower).toContain("false precision");
+    expect(lower).toContain("your true utility cost is utilities minus recoveries");
+  });
+
+  it("says the Utilities Ratio measures gross cost only, never netted against recoveries", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("the utilities ratio measures gross cost only");
+    expect(lower).toContain("must never be netted against it");
+  });
 });
 
 describe("formatDealCoachContext — prompt-injection resistance (structural defences)", () => {
@@ -176,6 +206,33 @@ describe("formatDealCoachContext — classification integrity (Phase 3.1)", () =
   it("still renders a real classification line for a classified metric", () => {
     const formatted = formatDealCoachContext(baseContext);
     expect(formatted).toContain("AssetVerdict classification: Strong");
+  });
+});
+
+describe("formatDealCoachContext — commercialContext (Phase 4.7)", () => {
+  it("renders the lease term as a fact, explicitly labelled not a safety classification", () => {
+    const context: DealCoachContext = {
+      ...baseContext,
+      deal: { ...baseContext.deal, commercialContext: { leaseTermMonths: 60 } },
+    };
+    const formatted = formatDealCoachContext(context);
+    expect(formatted).toContain("60 months remaining on the recorded commercial lease");
+    expect(formatted).toContain("a fact, not a safety classification");
+  });
+
+  it("renders a plain 'not recorded' line when leaseTermMonths is null — never a fake zero", () => {
+    const context: DealCoachContext = {
+      ...baseContext,
+      deal: { ...baseContext.deal, commercialContext: { leaseTermMonths: null } },
+    };
+    const formatted = formatDealCoachContext(context);
+    expect(formatted).toContain("no lease term is currently recorded");
+    expect(formatted).not.toContain("0 months");
+  });
+
+  it("omits any commercial lease line entirely when commercialContext is absent", () => {
+    const formatted = formatDealCoachContext(baseContext);
+    expect(formatted.toLowerCase()).not.toContain("commercial lease context");
   });
 });
 

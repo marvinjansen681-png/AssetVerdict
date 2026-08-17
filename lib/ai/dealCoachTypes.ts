@@ -140,6 +140,13 @@ export interface DealCoachContext {
       fallbackRangeLow: number | null;
       fallbackRangeHigh: number | null;
     };
+    /**
+     * Commercial only (Phase 4.7) — a factual contract input, not a safety
+     * classification. `leaseTermMonths: null` means "not recorded," never
+     * "0 months remaining." Undefined entirely for every non-Commercial
+     * strategy, so the coach never mentions lease term outside Commercial.
+     */
+    commercialContext?: { leaseTermMonths: number | null };
   };
   scenario: {
     active: ScenarioKey;

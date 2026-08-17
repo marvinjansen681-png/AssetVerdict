@@ -63,6 +63,8 @@ interface MetricLearningCardProps {
   discountRate?: number;
   /** Renders "Ask Deal Coach about this" when supplied (Phase 3 hand-off — see components/DealCoachDrawer.tsx). */
   onAskCoach?: (metricKey: string) => void;
+  /** Commercial only (Phase 4.7) — omit/undefined for every other strategy so the Break-Even Ratio interpretation never mentions lease term outside Commercial. Null means recorded-as-unknown, not "0 months." */
+  leaseTermMonths?: number | null;
 }
 
 /**
@@ -82,6 +84,7 @@ export default function MetricLearningCard({
   defaultOpen = false,
   discountRate,
   onAskCoach,
+  leaseTermMonths,
 }: MetricLearningCardProps) {
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
@@ -101,6 +104,11 @@ export default function MetricLearningCard({
       ? interpretMetricValue(metricKey, rawValue, {
           holdPeriodYears: metrics.irrSummary.holdPeriodYears,
           isPlannedSale: metrics.exitSummary?.isPlannedSale ?? false,
+          leaseTermMonths: strategyId === "commercial" ? leaseTermMonths ?? null : undefined,
+          utilityContext: {
+            billsIncludedMonthly: metrics.operatingCostsMonthly.billsIncludedMonthly,
+            recoveriesMonthly: metrics.revenueMonthly.recoveries,
+          },
         })
       : undefined;
 

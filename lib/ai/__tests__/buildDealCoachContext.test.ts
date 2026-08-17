@@ -869,3 +869,165 @@ describe("buildDealCoachContext — areaRentContext (Phase 4.5)", () => {
     expect(context.deal.areaRentContext?.yourAssumption).toBeNull();
   });
 });
+
+// Phase 4.7: Commercial lease term is a bounded, factual context object —
+// present only for Commercial deals, null (not a fake zero) when unrecorded,
+// and absent entirely for every other strategy.
+describe("buildDealCoachContext — commercialContext (Phase 4.7)", () => {
+  const metrics = calcAllMetrics(rentalInputs); // rentalInputs.strategy === "commercial"
+
+  it("Commercial with a recorded lease term: carries the exact months figure", () => {
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      leaseTermMonths: 60,
+    });
+    expect(context.deal.commercialContext).toEqual({ leaseTermMonths: 60 });
+  });
+
+  it("Commercial with no lease term recorded: null, never a fake zero", () => {
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      leaseTermMonths: null,
+    });
+    expect(context.deal.commercialContext).toEqual({ leaseTermMonths: null });
+  });
+
+  it("Commercial with leaseTermMonths omitted entirely: still reports null, not undefined-shaped", () => {
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+    });
+    expect(context.deal.commercialContext).toEqual({ leaseTermMonths: null });
+  });
+
+  it("non-Commercial strategy: commercialContext is entirely absent, even if leaseTermMonths is supplied", () => {
+    const buyToLetInputs: DealInputs = { ...rentalInputs, strategy: "buy_to_let" };
+    const btlMetrics = calcAllMetrics(buyToLetInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: buyToLetInputs,
+      metrics: btlMetrics,
+      strategyId: "buy_to_let",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      leaseTermMonths: 60,
+    });
+    expect(context.deal.commercialContext).toBeUndefined();
+  });
+
+  it("the breakEvenRatio metric entry's interpretation names the lease term for Commercial", () => {
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      leaseTermMonths: 60,
+    });
+    const breakEven = context.metrics.find((m) => m.key === "breakEvenRatio");
+    expect(breakEven?.interpretation).toContain("60 months remaining on the recorded commercial lease");
+  });
+
+  it("the breakEvenRatio metric entry never mentions lease term for a non-Commercial strategy", () => {
+    const buyToLetInputs: DealInputs = { ...rentalInputs, strategy: "buy_to_let" };
+    const btlMetrics = calcAllMetrics(buyToLetInputs);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: buyToLetInputs,
+      metrics: btlMetrics,
+      strategyId: "buy_to_let",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+      leaseTermMonths: 60,
+    });
+    const breakEven = context.metrics.find((m) => m.key === "breakEvenRatio");
+    expect(breakEven?.interpretation?.toLowerCase()).not.toContain("lease");
+  });
+});
+
+// Phase 4.7: the Utilities Ratio metric entry must explain gross cost vs.
+// recoveries honestly, using only already-computed engine figures — no new
+// fields, no invented net-exposure number.
+describe("buildDealCoachContext — utility cost interpretation (Phase 4.7)", () => {
+  it("no recoveries: utilitiesRatio interpretation states gross cost only", () => {
+    const metrics = calcAllMetrics(rentalInputs); // recoveries: 0
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: rentalInputs,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+    });
+    const utilitiesRatio = context.metrics.find((m) => m.key === "utilitiesRatio");
+    expect(utilitiesRatio?.interpretation?.toLowerCase()).toContain("gross utility cost");
+    expect(utilitiesRatio?.interpretation?.toLowerCase()).not.toContain("recover");
+  });
+
+  it("with recoveries: names the figure, never nets it against utilities", () => {
+    const withRecoveries: DealInputs = { ...rentalInputs, recoveries: 7_000 };
+    const metrics = calcAllMetrics(withRecoveries);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: withRecoveries,
+      metrics,
+      strategyId: "commercial",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+    });
+    const utilitiesRatio = context.metrics.find((m) => m.key === "utilitiesRatio");
+    expect(utilitiesRatio?.interpretation).toContain("R7,000/month");
+    // The sentence legitimately says this ratio "isn't" a net exposure — what
+    // must never appear is an actual calculated net-exposure figure/claim.
+    expect(utilitiesRatio?.interpretation?.toLowerCase()).toContain("isn't your net utility exposure");
+    expect(utilitiesRatio?.interpretation?.toLowerCase()).not.toContain("true utility cost");
+  });
+
+  it("with bills included: references the deterministic amount, never calls it reimbursement", () => {
+    const withBillsIncluded: DealInputs = {
+      ...rentalInputs,
+      strategy: "multi_let",
+      monthlyRent: 0,
+      numUnits: 4,
+      pricePerRoom: 5_000,
+      billsIncluded: true,
+      billsIncludedAmount: 500,
+    };
+    const metrics = calcAllMetrics(withBillsIncluded);
+    const context = buildDealCoachContext({
+      ...baseParams,
+      inputs: withBillsIncluded,
+      metrics,
+      strategyId: "multi_let",
+      selection: { type: "deal" },
+      intent: "general_question",
+      dealSummary,
+    });
+    const utilitiesRatio = context.metrics.find((m) => m.key === "utilitiesRatio");
+    expect(utilitiesRatio?.interpretation).toContain("R2,000/month"); // 500 * 4 units
+    expect(utilitiesRatio?.interpretation?.toLowerCase()).not.toContain("reimbursement");
+  });
+});

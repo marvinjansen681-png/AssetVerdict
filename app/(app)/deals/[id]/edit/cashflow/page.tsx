@@ -40,6 +40,8 @@ interface CashflowForm {
   billsIncluded: boolean;
   pricePerRoom: number;
   billsIncludedAmount: number | null;
+  // Commercial
+  leaseTermMonths: number | null;
   // Student Accommodation (NSFAS-aware)
   singleRoomCount: number;
   singleRoomRent: number;
@@ -106,6 +108,7 @@ export default function CashflowTab() {
         billsIncluded: cf?.billsIncluded ?? false,
         pricePerRoom: cf?.pricePerRoom ?? 0,
         billsIncludedAmount: cf?.billsIncludedAmount ?? null,
+        leaseTermMonths: cf?.leaseTermMonths ?? null,
         singleRoomCount: cf?.singleRoomCount ?? 0,
         singleRoomRent: cf?.singleRoomRent ?? 0,
         singleRoomNsfasBeds: cf?.singleRoomNsfasBeds ?? 0,
@@ -539,6 +542,20 @@ export default function CashflowTab() {
               <FormField label="Occupancy Rate">
                 <PercentInput {...register("occupancyRate")} />
               </FormField>
+              {strategy.id === "commercial" && (
+                <FormField
+                  label="Remaining Lease Term"
+                  helperText="How many months remain on the current or expected main commercial lease? Leave blank if unknown."
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="months"
+                    {...register("leaseTermMonths")}
+                  />
+                </FormField>
+              )}
             </>
           )}
 

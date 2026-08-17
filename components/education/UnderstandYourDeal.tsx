@@ -16,6 +16,8 @@ interface UnderstandYourDealProps {
   discountRate?: number;
   /** When supplied, each card renders an "Ask Deal Coach about this" action that hands the metric key off to the Deal Coach drawer (Phase 3). */
   onAskCoach?: (metricKey: string) => void;
+  /** Commercial only (Phase 4.7) — see MetricLearningCard. */
+  leaseTermMonths?: number | null;
 }
 
 /**
@@ -34,6 +36,7 @@ export default function UnderstandYourDeal({
   currency = "R",
   discountRate,
   onAskCoach,
+  leaseTermMonths,
 }: UnderstandYourDealProps) {
   const groups = getMetricGroupsForStrategy(strategyId);
   const chains = getRelationshipChainsForStrategy(strategyId);
@@ -77,6 +80,7 @@ export default function UnderstandYourDeal({
                 currency={currency}
                 discountRate={discountRate}
                 onAskCoach={onAskCoach}
+                leaseTermMonths={leaseTermMonths}
               />
             ))}
           </div>

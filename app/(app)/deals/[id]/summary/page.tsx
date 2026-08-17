@@ -249,6 +249,7 @@ export default function DealSummaryPage({
               currency={currency === "ZAR" || !currency ? "R" : currency}
               discountRate={discountRate ?? 10}
               onAskCoach={(metricKey) => setCoachSelection({ metricKey })}
+              leaseTermMonths={strategyId === "commercial" ? dealSummary.leaseTermMonths : undefined}
             />
           </div>
         )}

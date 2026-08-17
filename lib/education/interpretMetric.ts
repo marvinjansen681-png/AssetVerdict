@@ -19,11 +19,24 @@ const pct = (value: number, decimals = 1) => round(value, decimals);
  * deal's actual exit year and say whether it's the user's own planned sale or
  * AssetVerdict's 20-year analysis-horizon default (see calcExitSummary in
  * lib/calculations) — never implying a default horizon is a sale prediction.
+ * `context.leaseTermMonths` (Phase 4.7, Commercial only — omit/undefined for
+ * every other strategy) adds objective lease-runway context to Break-Even
+ * Ratio without ever turning it into a safety judgement. `context.utilityContext`
+ * (Phase 4.7) lets the Utilities Ratio sentence stay honest about measuring
+ * gross cost only — never netting the deal's generic `recoveries` income
+ * against it, since AssetVerdict has no way to confirm how much of a
+ * recoveries figure specifically reimburses utilities (see Section G of the
+ * Phase 4.6 report).
  */
 export function interpretMetricValue(
   metricKey: string,
   value: number,
-  context?: { holdPeriodYears?: number; isPlannedSale?: boolean }
+  context?: {
+    holdPeriodYears?: number;
+    isPlannedSale?: boolean;
+    leaseTermMonths?: number | null;
+    utilityContext?: { billsIncludedMonthly: number; recoveriesMonthly: number };
+  }
 ): string | undefined {
   const holdPeriodYears = context?.holdPeriodYears ?? 20;
   const isPlannedSale = context?.isPlannedSale ?? false;
@@ -40,11 +53,31 @@ export function interpretMetricValue(
     case "noiMargin":
       return `About R${pct(value, 0)} of every R100 of gross revenue remains as NOI after operating expenses.`;
 
-    case "utilitiesRatio":
-      return `About R${pct(value, 0)} of every R100 of gross revenue goes toward utilities.`;
+    case "utilitiesRatio": {
+      const base = `About R${pct(value, 0)} of every R100 of gross revenue goes toward gross utility costs (water, electricity, security, and any bills-included estimate).`;
+      const uc = context?.utilityContext;
+      if (!uc) return base;
+      const parts = [base];
+      if (uc.billsIncludedMonthly > 0) {
+        parts.push(
+          `Your operating-cost assumptions include ${fmtR(uc.billsIncludedMonthly)}/month of bills included in the rental arrangement.`
+        );
+      }
+      if (uc.recoveriesMonthly > 0) {
+        parts.push(
+          `Your deal also includes ${fmtR(uc.recoveriesMonthly)}/month of recoveries income — AssetVerdict treats this as generic revenue and doesn't assume it specifically reimburses utility costs, so this ratio isn't your net utility exposure.`
+        );
+      }
+      return parts.join(" ");
+    }
 
-    case "breakEvenRatio":
-      return `About ${pct(value, 0)}% of gross revenue is needed to cover operating expenses and debt payments — the rest is your margin for error before this deal stops covering itself.`;
+    case "breakEvenRatio": {
+      const base = `About ${pct(value, 0)}% of gross revenue is needed to cover operating expenses and debt payments — the rest is your margin for error before this deal stops covering itself.`;
+      if (context?.leaseTermMonths === undefined) return base;
+      return context.leaseTermMonths !== null
+        ? `${base} This deal currently has ${context.leaseTermMonths} months remaining on the recorded commercial lease, which provides additional context when assessing income resilience.`
+        : `${base} No commercial lease term is currently recorded, so AssetVerdict cannot use lease duration as additional context when explaining this income stream.`;
+    }
 
     case "netYieldPreTax":
       return `Based on your current assumptions, your pre-tax annual cash flow equals about ${pct(value)}% of the cash you initially invested.`;

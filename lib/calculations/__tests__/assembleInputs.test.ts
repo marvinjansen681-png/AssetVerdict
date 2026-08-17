@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assembleInputs } from "../assembleInputs";
+import { calcAllMetrics } from "../index";
 import type { DealWithRelations } from "@/types";
 
 /**
@@ -11,12 +12,18 @@ function makeDeal(overrides: {
   saleYear?: number | null;
   billsIncluded?: boolean;
   billsIncludedAmount?: number | null;
+  leaseTermMonths?: number | null;
+  investmentStrategy?: string;
+  purchasePrice?: number | null;
+  monthlyRent?: number | null;
 }): DealWithRelations {
   return {
     id: "deal-1",
     userId: "user-1",
     name: "Test Deal",
     currency: "ZAR",
+    investmentStrategy: overrides.investmentStrategy ?? "commercial",
+    purchasePrice: overrides.purchasePrice ?? 1_000_000,
     wantToSell: overrides.wantToSell ?? false,
     saleYear: overrides.saleYear ?? null,
     isSectionalTitle: false,
@@ -30,6 +37,8 @@ function makeDeal(overrides: {
       maintenanceCostMode: "percent",
       billsIncluded: overrides.billsIncluded ?? false,
       billsIncludedAmount: overrides.billsIncludedAmount ?? null,
+      leaseTermMonths: overrides.leaseTermMonths ?? null,
+      monthlyRent: overrides.monthlyRent ?? 15_000,
     },
     capexItems: [],
     renovationItems: [],
@@ -74,5 +83,29 @@ describe("assembleInputs — hold period (Phase 4.3)", () => {
     const inputs = assembleInputs(deal);
     expect(inputs.wantToSell).toBe(false);
     expect(inputs.saleYear).toBeNull();
+  });
+});
+
+// Phase 4.7: leaseTermMonths is deliberately a contextual fact, never a
+// calculation input — it must never reach DealInputs at all, and its
+// presence/absence/value must never change a single calculated output.
+describe("assembleInputs — leaseTermMonths is excluded from DealInputs (Phase 4.7)", () => {
+  it("never appears as a key on the assembled DealInputs object, recorded or not", () => {
+    const withLease = assembleInputs(makeDeal({ leaseTermMonths: 60 }));
+    const withoutLease = assembleInputs(makeDeal({ leaseTermMonths: null }));
+    expect(withLease).not.toHaveProperty("leaseTermMonths");
+    expect(withoutLease).not.toHaveProperty("leaseTermMonths");
+  });
+
+  it("produces byte-identical DealInputs whether or not a lease term is recorded", () => {
+    const withLease = assembleInputs(makeDeal({ leaseTermMonths: 60 }));
+    const withoutLease = assembleInputs(makeDeal({ leaseTermMonths: null }));
+    expect(withLease).toEqual(withoutLease);
+  });
+
+  it("produces identical calcAllMetrics output whether or not a lease term is recorded — no financial output changes", () => {
+    const withLease = assembleInputs(makeDeal({ leaseTermMonths: 60, purchasePrice: 2_500_000, monthlyRent: 25_000 }));
+    const withoutLease = assembleInputs(makeDeal({ leaseTermMonths: null, purchasePrice: 2_500_000, monthlyRent: 25_000 }));
+    expect(calcAllMetrics(withLease)).toEqual(calcAllMetrics(withoutLease));
   });
 });

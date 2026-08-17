@@ -512,6 +512,14 @@ export default function DealSummaryPDF({
               <Text style={styles.label}>Market Value</Text>
               <Text style={styles.value}>{fmt(dealSummary.marketValue, currencySymbol)}</Text>
             </View>
+            {strategyId === "commercial" && (
+              <View style={styles.row}>
+                <Text style={styles.label}>Remaining Lease Term</Text>
+                <Text style={styles.value}>
+                  {dealSummary.leaseTermMonths !== null ? `${dealSummary.leaseTermMonths} months` : "Not recorded"}
+                </Text>
+              </View>
+            )}
             {dealSummary.isSectionalTitle && (
               <>
                 <View style={styles.row}>

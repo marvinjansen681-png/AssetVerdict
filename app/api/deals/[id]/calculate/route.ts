@@ -71,6 +71,7 @@ export async function GET(
       })),
       monthlyRent: deal.cashflowInputs?.monthlyRent ?? null,
       occupancyRate: deal.cashflowInputs?.occupancyRate ?? null,
+      leaseTermMonths: deal.cashflowInputs?.leaseTermMonths ?? null,
       singleRoomCount: deal.cashflowInputs?.singleRoomCount ?? null,
       sharingRoomCount: deal.cashflowInputs?.sharingRoomCount ?? null,
       sharingBedsPerRoom: deal.cashflowInputs?.sharingBedsPerRoom ?? null,

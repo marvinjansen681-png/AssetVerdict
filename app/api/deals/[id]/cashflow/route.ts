@@ -21,6 +21,7 @@ const CASHFLOW_NUMERIC_FIELDS = [
   "avgOccupiedNights",
   "platformFeesPct",
   "billsIncludedAmount",
+  "leaseTermMonths",
   "pricePerRoom",
   "singleRoomCount",
   "singleRoomRent",

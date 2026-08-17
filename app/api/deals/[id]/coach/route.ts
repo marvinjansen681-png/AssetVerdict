@@ -161,6 +161,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       bedrooms: deal.bedrooms ?? null,
       numUnits: deal.numUnits ?? null,
     },
+    leaseTermMonths: dealWithRelations.cashflowInputs?.leaseTermMonths ?? null,
   });
 
   const system = buildDealCoachSystemPrompt(context);

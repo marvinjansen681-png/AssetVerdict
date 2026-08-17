@@ -122,6 +122,10 @@ export interface CashflowInputs {
   gasRefillCost?: number | null;
   wasteRemovalCost?: number | null;
 
+  // Commercial
+  /** Remaining/expected months on the main commercial lease. Null = not recorded, never "0 months remaining." Contextual fact only — no calculation reads this. */
+  leaseTermMonths?: number | null;
+
   // Fix & Flip
   holdingPeriodMonths?: number | null;
   expectedSalePrice?: number | null;

@@ -163,6 +163,16 @@ model CashflowInputs {
   gasRefillCost    Float? @default(0)
   wasteRemovalCost Float? @default(0)
 
+  // Commercial
+  // Phase 4.7: remaining/expected lease commitment on the main commercial
+  // tenancy, in months. Nullable, no default — null means "not recorded,"
+  // never "0 months remaining." Contextual fact only: no calculation reads
+  // this field (see lib/calculations/index.ts) — it exists purely to give
+  // education copy and Deal Coach an objective fact about income resilience
+  // for Commercial deals. Commercial-only in the UI, but not DB-constrained
+  // to it (consistent with every other strategy-specific field on this model).
+  leaseTermMonths Int?
+
   // Fix & Flip
   holdingPeriodMonths Int?   @default(6)
   expectedSalePrice   Float?
