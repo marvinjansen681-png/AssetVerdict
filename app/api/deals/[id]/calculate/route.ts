@@ -4,6 +4,7 @@ import { getDeal } from "@/lib/db/deals";
 import { calcAllMetrics, calc20YearProjection } from "@/lib/calculations";
 import { calcScenarios } from "@/lib/calculations/scenarios";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
+import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
 import type { DealWithRelations } from "@/types";
 
 export async function GET(
@@ -62,12 +63,15 @@ export async function GET(
       transferBondCost: deal.transferBondCost,
       renovationCost: deal.renovationCost,
       sourcingFee: deal.sourcingFee,
+      // repaymentAmount is recomputed here rather than read from storage
+      // (Phase 4.11) so PDF/UI display is correct even for rows saved
+      // before the server-authoritative write path shipped.
       financeSources: deal.financeSources.map((f) => ({
         sourceType: f.sourceType,
         loanAmount: f.loanAmount,
         interestRate: f.interestRate,
         termYears: f.termYears,
-        repaymentAmount: f.repaymentAmount,
+        repaymentAmount: calcMonthlyRepayment(f.loanAmount ?? 0, f.interestRate ?? 0, f.termYears ?? 0),
       })),
       monthlyRent: deal.cashflowInputs?.monthlyRent ?? null,
       occupancyRate: deal.cashflowInputs?.occupancyRate ?? null,

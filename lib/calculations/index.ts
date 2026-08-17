@@ -12,11 +12,17 @@ export function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && isFinite(value);
 }
 
+/**
+ * Phase 4.11: only loanAmount/interestRate/termYears are treated as finance
+ * inputs — monthly repayment is a derived fact, always recomputed from these
+ * three via calcMonthlyRepayment(), never accepted as a field on this type.
+ * This makes it structurally impossible for a stale or client-submitted
+ * repayment figure to reach the calculation engine.
+ */
 export interface FinanceSourceInput {
   loanAmount: number;
   interestRate: number; // %
   termYears: number;
-  repaymentAmount: number; // monthly
 }
 
 /**
@@ -422,9 +428,17 @@ export function calcBadDebtsMonthly(inputs: DealInputs): number {
   return (calcGrossRevenueAnnual(inputs) / 12) * (inputs.badDebtsPct / 100);
 }
 
-/** Sum of all finance source monthly repayments. */
+/**
+ * Sum of all finance source monthly repayments — each one derived fresh from
+ * its own loanAmount/interestRate/termYears via the single shared
+ * amortisation formula (Phase 4.11). Never trusts a stored/submitted
+ * repayment figure.
+ */
 export function calcTotalFinanceCostMonthly(inputs: DealInputs): number {
-  return inputs.financeSources.reduce((sum, f) => sum + f.repaymentAmount, 0);
+  return inputs.financeSources.reduce(
+    (sum, f) => sum + calcMonthlyRepayment(f.loanAmount, f.interestRate, f.termYears),
+    0
+  );
 }
 
 /** Total annual debt service across all finance sources — the denominator behind DSCR and a term in Break-Even Ratio. */
@@ -447,7 +461,8 @@ export function calcAnnualDebtService(inputs: DealInputs): number {
  */
 export function calcAnnualDebtServiceForYear(inputs: DealInputs, year: number): number {
   return inputs.financeSources.reduce(
-    (sum, f) => sum + (year <= f.termYears ? f.repaymentAmount * 12 : 0),
+    (sum, f) =>
+      sum + (year <= f.termYears ? calcMonthlyRepayment(f.loanAmount, f.interestRate, f.termYears) * 12 : 0),
     0
   );
 }

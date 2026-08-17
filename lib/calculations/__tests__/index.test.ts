@@ -61,8 +61,8 @@ const sampleInputs: DealInputs = {
   agentCommission: 0,
 
   financeSources: [
-    { loanAmount: 4_900_000, interestRate: 15, termYears: 15, repaymentAmount: bankRepayment },
-    { loanAmount: 2_600_000, interestRate: 15.25, termYears: 15, repaymentAmount: dcsrRepayment },
+    { loanAmount: 4_900_000, interestRate: 15, termYears: 15 },
+    { loanAmount: 2_600_000, interestRate: 15.25, termYears: 15 },
   ],
 
   monthlyRent: 200_000,
@@ -188,7 +188,6 @@ const highLeverageInputs: DealInputs = {
       loanAmount: 9_000_000,
       interestRate: 15,
       termYears: 15,
-      repaymentAmount: calcMonthlyRepayment(9_000_000, 15, 15),
     },
   ],
 };
@@ -201,7 +200,6 @@ const zeroEquityInputs: DealInputs = {
       loanAmount: calcTotalInvestment(sampleInputs),
       interestRate: 15,
       termYears: 15,
-      repaymentAmount: calcMonthlyRepayment(calcTotalInvestment(sampleInputs), 15, 15),
     },
   ],
 };
@@ -522,7 +520,7 @@ describe("calcBreakEvenRatio", () => {
   it("equals the Operating Expense Ratio plus debt service as a % of revenue", () => {
     const grossRevenue = calcEffectiveMonthlyRevenue(sampleInputs) * 12;
     const annualDebtService = sampleInputs.financeSources.reduce(
-      (sum, f) => sum + f.repaymentAmount * 12,
+      (sum, f) => sum + calcMonthlyRepayment(f.loanAmount, f.interestRate, f.termYears) * 12,
       0
     );
     const expected = calcOperatingExpenseRatio(sampleInputs) + (annualDebtService / grossRevenue) * 100;
@@ -565,7 +563,7 @@ describe("calcDSCR", () => {
   it("computes NOI / Annual Debt Service for a financed deal", () => {
     const metrics = calcAllMetrics(sampleInputs);
     const annualDebtService = sampleInputs.financeSources.reduce(
-      (sum, f) => sum + f.repaymentAmount * 12,
+      (sum, f) => sum + calcMonthlyRepayment(f.loanAmount, f.interestRate, f.termYears) * 12,
       0
     );
     expect(calcDSCR(sampleInputs)).toBeCloseTo(metrics.noiAnnual / annualDebtService, 6);
@@ -807,7 +805,7 @@ describe("calc20YearProjection — debt service stops when a loan matures (Phase
   });
 
   it("terminal equity / Equity IRR / NPV for a sale after loan maturity no longer understate post-maturity cashflow", () => {
-    const partialDeposit: DealInputs = { ...inputs, financeSources: [{ ...shortLoan, loanAmount: 700_000, repaymentAmount: calcMonthlyRepayment(700_000, 10, 5) }] };
+    const partialDeposit: DealInputs = { ...inputs, financeSources: [{ ...shortLoan, loanAmount: 700_000 }] };
     const saleAtYear10 = { ...partialDeposit, wantToSell: true, saleYear: 10 };
     const irr = calcIRR(saleAtYear10);
     const npv = calcNPV(saleAtYear10);

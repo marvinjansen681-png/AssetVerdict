@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { mutate as globalMutate } from "swr";
 import { useDeal } from "@/lib/DealContext";
 import { useToast } from "@/components/ui/Toast";
+import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
 import SaveBar from "@/components/forms/SaveBar";
 import StrategyHint from "@/components/forms/StrategyHint";
 import MarketIntelligencePanel from "@/components/forms/MarketIntelligencePanel";
@@ -79,8 +80,11 @@ export default function CashflowTab() {
   // field — its effect (if any) is already embedded in Electricity from the old
   // behaviour, so this is not a confirmed R0 and shouldn't be presented as one.
   const legacyBillsUnrecorded = Boolean(cf?.billsIncluded) && (cf?.billsIncludedAmount === null || cf?.billsIncludedAmount === undefined);
+  // Recomputed rather than read from storage (Phase 4.11) so this preview
+  // can never show a stale repayment for a finance source saved before the
+  // server-authoritative write path shipped.
   const financeCostMonthly = deal.financeSources.reduce(
-    (sum, f) => sum + (f.repaymentAmount ?? 0),
+    (sum, f) => sum + calcMonthlyRepayment(f.loanAmount ?? 0, f.interestRate ?? 0, f.termYears ?? 0),
     0
   );
 

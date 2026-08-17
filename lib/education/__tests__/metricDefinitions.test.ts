@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcAllMetrics, calcMonthlyRepayment, type DealInputs, type DealMetrics, type FlipMetrics } from "../../calculations";
+import { calcAllMetrics, type DealInputs, type DealMetrics, type FlipMetrics } from "../../calculations";
 import { classifyMetricForStrategy } from "../../calculations/thresholds";
 import { applicabilityContextFromInputs } from "../../calculations/applicability";
 import {
@@ -160,7 +160,6 @@ describe("Metric Knowledge Registry", () => {
 });
 
 describe("explainDealMetric — deal-specific explanation prep (definition vs judgement separation)", () => {
-  const bankRepayment = 68_579.77;
   const sampleInputs: DealInputs = {
     purchasePrice: 5_055_000,
     marketValue: 5_500_000,
@@ -170,7 +169,7 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
     sourcingFee: 505_500,
     agentCommission: 0,
     financeSources: [
-      { loanAmount: 4_900_000, interestRate: 15, termYears: 15, repaymentAmount: bankRepayment },
+      { loanAmount: 4_900_000, interestRate: 15, termYears: 15 },
     ],
     monthlyRent: 200_000,
     occupancyRate: 88,
@@ -268,7 +267,6 @@ describe("explainDealMetric — deal-specific explanation prep (definition vs ju
           loanAmount: 10_000_000,
           interestRate: 15,
           termYears: 15,
-          repaymentAmount: calcMonthlyRepayment(10_000_000, 15, 15),
         },
       ],
     };

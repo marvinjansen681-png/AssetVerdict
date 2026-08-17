@@ -6,9 +6,7 @@ import {
   classifyMetricForDeal,
   type ApplicabilityContext,
 } from "../applicability";
-import { calcAllMetrics, calcMonthlyRepayment, type DealInputs } from "../index";
-
-const bankRepayment = calcMonthlyRepayment(4_900_000, 15, 15);
+import { calcAllMetrics, type DealInputs } from "../index";
 
 const baseInputs: DealInputs = {
   purchasePrice: 5_055_000,
@@ -19,7 +17,7 @@ const baseInputs: DealInputs = {
   sourcingFee: 505_500,
   agentCommission: 0,
   financeSources: [
-    { loanAmount: 4_900_000, interestRate: 15, termYears: 15, repaymentAmount: bankRepayment },
+    { loanAmount: 4_900_000, interestRate: 15, termYears: 15 },
   ],
   monthlyRent: 200_000,
   occupancyRate: 88,
@@ -123,7 +121,6 @@ describe("applicabilityContextFromInputs / applicabilityContextFromMetrics", () 
           loanAmount: 10_000_000, // far more than total investment
           interestRate: 15,
           termYears: 15,
-          repaymentAmount: calcMonthlyRepayment(10_000_000, 15, 15),
         },
       ],
     };
@@ -191,7 +188,6 @@ describe("classifyMetricForDeal", () => {
           loanAmount: 10_000_000,
           interestRate: 15,
           termYears: 15,
-          repaymentAmount: calcMonthlyRepayment(10_000_000, 15, 15),
         },
       ],
     };

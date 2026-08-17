@@ -126,7 +126,7 @@ export default function FinanceBlock({
         </FormField>
 
         <div className="md:col-span-2">
-          <FormField label="Repayment Amount (monthly)">
+          <FormField label="Calculated Repayment (monthly)">
             <CurrencyInput readOnly value={repayment.toFixed(2)} />
           </FormField>
         </div>

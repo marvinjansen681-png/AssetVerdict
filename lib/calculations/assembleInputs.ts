@@ -100,11 +100,13 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
     wantToSell: deal.wantToSell ?? false,
     saleYear: deal.saleYear ?? null,
 
+    // Phase 4.11: repaymentAmount is intentionally omitted here — it is a
+    // derived fact the calculation engine computes itself from these three
+    // inputs (see FinanceSourceInput), never a value trusted from the DB.
     financeSources: deal.financeSources.map((f) => ({
       loanAmount: f.loanAmount ?? 0,
       interestRate: f.interestRate ?? 0,
       termYears: f.termYears ?? 15,
-      repaymentAmount: f.repaymentAmount ?? 0,
     })),
 
     monthlyRent: cf?.monthlyRent ?? 0,

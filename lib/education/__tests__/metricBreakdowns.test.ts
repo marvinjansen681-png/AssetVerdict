@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { calcAllMetrics, calcMonthlyRepayment, type DealInputs } from "../../calculations";
+import { calcAllMetrics, type DealInputs } from "../../calculations";
 import { getMetricBreakdown, getMetricRawValue, type AcquisitionSummary } from "../metricBreakdowns";
 import { interpretMetricValue } from "../interpretMetric";
 import { formatMetricValue } from "../format";
-
-const bankRepayment = calcMonthlyRepayment(4_900_000, 15, 15);
 
 const rentalInputs: DealInputs = {
   purchasePrice: 5_055_000,
@@ -15,7 +13,7 @@ const rentalInputs: DealInputs = {
   sourcingFee: 505_500,
   agentCommission: 0,
   financeSources: [
-    { loanAmount: 4_900_000, interestRate: 15, termYears: 15, repaymentAmount: bankRepayment },
+    { loanAmount: 4_900_000, interestRate: 15, termYears: 15 },
   ],
   monthlyRent: 200_000,
   occupancyRate: 88,
