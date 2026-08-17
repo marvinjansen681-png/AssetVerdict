@@ -30,6 +30,7 @@ import {
   calcAnnualDebtService,
   calcTerminalValue,
   calc20YearProjection,
+  calcAnnualDebtServiceForYear,
   calcHoldPeriodYears,
   calcBillsIncludedMonthly,
   calcBillsIncludedUnitCount,
@@ -725,6 +726,93 @@ describe("calcTotalRemainingLoanBalance and its effect on Equity IRR/NPV", () =>
     // A longer term leaves more debt outstanding at year 20 (less paid off),
     // which reduces the equity proceeds captured in the terminal value.
     expect(longTerm).toBeLessThan(shortTerm);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.8: financing-model audit bug fix. calc20YearProjection previously
+// computed `financeCostAnnual` ONCE before the year loop and reused that
+// constant for all 20 years, so a loan that fully matured partway through
+// the projection kept being "paid" (debt service, and therefore tax, never
+// dropped) even though remainingDebt correctly reached zero — an internal
+// contradiction within the same YearlyProjection row. calcAnnualDebtServiceForYear
+// fixes this by mirroring remainingLoanBalance()'s own maturity convention
+// (a source with termYears <= year has fully amortised BY THE END of that
+// year, so it stops contributing debt service the year AFTER it matures).
+// ---------------------------------------------------------------------------
+describe("calcAnnualDebtServiceForYear (Phase 4.8 bug fix)", () => {
+  const shortLoan = { loanAmount: 1_000_000, interestRate: 10, termYears: 5, repaymentAmount: calcMonthlyRepayment(1_000_000, 10, 5) };
+  const longLoan = { loanAmount: 800_000, interestRate: 10, termYears: 20, repaymentAmount: calcMonthlyRepayment(800_000, 10, 20) };
+
+  it("a single loan contributes its full annual repayment through its final year, then zero", () => {
+    const inputs: DealInputs = { ...sampleInputs, financeSources: [shortLoan] };
+    expect(calcAnnualDebtServiceForYear(inputs, 1)).toBeCloseTo(shortLoan.repaymentAmount * 12, 4);
+    expect(calcAnnualDebtServiceForYear(inputs, 5)).toBeCloseTo(shortLoan.repaymentAmount * 12, 4); // final year of payments
+    expect(calcAnnualDebtServiceForYear(inputs, 6)).toBe(0); // matured — no more debt service
+    expect(calcAnnualDebtServiceForYear(inputs, 10)).toBe(0);
+  });
+
+  it("with two loans of different terms, only the still-active loan's repayment counts after the shorter one matures", () => {
+    const inputs: DealInputs = { ...sampleInputs, financeSources: [shortLoan, longLoan] };
+    expect(calcAnnualDebtServiceForYear(inputs, 5)).toBeCloseTo((shortLoan.repaymentAmount + longLoan.repaymentAmount) * 12, 4);
+    expect(calcAnnualDebtServiceForYear(inputs, 6)).toBeCloseTo(longLoan.repaymentAmount * 12, 4);
+    expect(calcAnnualDebtServiceForYear(inputs, 20)).toBeCloseTo(longLoan.repaymentAmount * 12, 4);
+    expect(calcAnnualDebtServiceForYear(inputs, 21)).toBe(0);
+  });
+
+  it("cash purchase (no finance sources) contributes zero in every year", () => {
+    const inputs: DealInputs = { ...sampleInputs, financeSources: [] };
+    expect(calcAnnualDebtServiceForYear(inputs, 1)).toBe(0);
+    expect(calcAnnualDebtServiceForYear(inputs, 20)).toBe(0);
+  });
+});
+
+describe("calc20YearProjection — debt service stops when a loan matures (Phase 4.8 bug fix)", () => {
+  const shortLoan = { loanAmount: 1_000_000, interestRate: 10, termYears: 5, repaymentAmount: calcMonthlyRepayment(1_000_000, 10, 5) };
+  const inputs: DealInputs = {
+    ...sampleInputs,
+    purchasePrice: 1_000_000,
+    transferBondCost: 0,
+    renovationCost: 0,
+    sourcingFee: 0,
+    marketValue: 1_000_000,
+    capitalGrowthRate: 3,
+    financeSources: [shortLoan],
+  };
+  const projection = calc20YearProjection(inputs);
+
+  it("financeCost matches the full repayment through the loan's final year", () => {
+    expect(projection[4].financeCost).toBeCloseTo(shortLoan.repaymentAmount * 12, 4); // year 5
+  });
+
+  it("financeCost drops to zero the year after the loan matures, exactly when remainingDebt reaches zero", () => {
+    expect(projection[4].remainingDebt).toBe(0); // year 5 — matured by year-end
+    expect(projection[5].financeCost).toBe(0); // year 6
+    expect(projection[9].financeCost).toBe(0); // year 10
+  });
+
+  it("cashflow rises materially once debt service stops, and tax becomes payable again", () => {
+    const year5 = projection[4];
+    const year6 = projection[5];
+    expect(year6.cashflowForPeriod).toBeGreaterThan(year5.cashflowForPeriod);
+    expect(year6.taxAmount).toBeGreaterThan(0);
+  });
+
+  it("years before maturity are completely unaffected by the fix", () => {
+    expect(projection[0].financeCost).toBeCloseTo(shortLoan.repaymentAmount * 12, 4); // year 1
+    expect(projection[3].financeCost).toBeCloseTo(shortLoan.repaymentAmount * 12, 4); // year 4
+  });
+
+  it("terminal equity / Equity IRR / NPV for a sale after loan maturity no longer understate post-maturity cashflow", () => {
+    const partialDeposit: DealInputs = { ...inputs, financeSources: [{ ...shortLoan, loanAmount: 700_000, repaymentAmount: calcMonthlyRepayment(700_000, 10, 5) }] };
+    const saleAtYear10 = { ...partialDeposit, wantToSell: true, saleYear: 10 };
+    const irr = calcIRR(saleAtYear10);
+    const npv = calcNPV(saleAtYear10);
+    // Regression floor confirmed against the fixed engine (Phase 4.8) — before
+    // the fix these were materially lower (irr ~15.7%, npv ~R195,807) because
+    // years 6-10 wrongly kept subtracting the matured loan's repayment.
+    expect(irr).toBeGreaterThan(20);
+    expect(npv).toBeGreaterThan(450_000);
   });
 });
 

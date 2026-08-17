@@ -421,6 +421,26 @@ export function calcAnnualDebtService(inputs: DealInputs): number {
 }
 
 /**
+ * Total annual debt service actually payable in a specific projection year,
+ * accounting for finance sources that have already matured by then. Mirrors
+ * remainingLoanBalance()'s own maturity convention exactly: a source with
+ * `termYears <= year` has fully amortised by the end of `year` and stops
+ * contributing debt service from that year onward (the final year of
+ * payments — `year === termYears` — still contributes its full repayment,
+ * since payments continue through the loan's last year). calcAnnualDebtService
+ * above is a current/Year-1 snapshot (used by DSCR and Break-Even Ratio,
+ * which are deliberately not projected year-by-year); this is the
+ * year-aware counterpart used by calc20YearProjection so debt service in the
+ * projection table stops exactly when remainingDebt reaches zero.
+ */
+export function calcAnnualDebtServiceForYear(inputs: DealInputs, year: number): number {
+  return inputs.financeSources.reduce(
+    (sum, f) => sum + (year <= f.termYears ? f.repaymentAmount * 12 : 0),
+    0
+  );
+}
+
+/**
  * Number of rooms/beds the bills-included amount is charged per, mirroring
  * the same strategy-specific unit count used for base revenue (per_room:
  * numUnits, student: single + sharing beds).
@@ -688,8 +708,12 @@ const PROJECTION_YEARS = 20;
 
 /**
  * 20-year cashflow projection with rent/cost/capital growth escalations.
- * Finance repayments are held fixed (loan terms don't change), and remaining
- * loan balance is amortised down year by year for terminal-value purposes.
+ * Finance repayments are held fixed at their monthly amount while a loan is
+ * outstanding (loan terms/rates don't change), and stop entirely once a
+ * source matures partway through the projection — see
+ * calcAnnualDebtServiceForYear(), which stays exactly consistent with the
+ * remaining-balance amortisation below so `financeCost` and `remainingDebt`
+ * can never disagree about whether a loan is still being paid off.
  */
 export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
   const totalInvestment = calcTotalInvestment(inputs);
@@ -699,7 +723,6 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
       calcOperatingCostsMonthly(inputs).ratesInsuranceOther) *
     12;
   const baseProvisions = calcProvisionsMonthly(inputs).total * 12;
-  const financeCostAnnual = calcTotalFinanceCostMonthly(inputs) * 12;
 
   const projections: YearlyProjection[] = [];
   let cumulativeCashflow = -totalInvestment;
@@ -713,6 +736,7 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
     const operatingCostsExclFinance = baseOperatingCostsExclFinance * costGrowthFactor;
     const provisions = baseProvisions * rentGrowthFactor;
     const noi = grossRevenue - operatingCostsExclFinance - provisions;
+    const financeCostAnnual = calcAnnualDebtServiceForYear(inputs, year);
 
     const taxAmount = Math.max(
       0,
