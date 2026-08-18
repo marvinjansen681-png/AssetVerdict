@@ -486,7 +486,13 @@ export function deriveDealVerdict(params: DeriveDealVerdictParams): DealVerdictR
   }
 
   // ---- Step 6: Strong qualification (section 41 Step 6, 18) -------------
-  if (safety === "strong" && target === "met" && operating === "strong") {
+  // Phase 4.14.1 correction: the approved rule blocks Strong only on OER
+  // Weak or OER Unknown (missing/unclassified) — a merely cautionary OER
+  // was never meant to be sufficient reason to downgrade an otherwise
+  // Strong deal to Promising. "Operating quality acceptable" is still
+  // Strong-eligible; only "weak" and "unknown" clear the bar for blocking.
+  const operatingClearsStrong = operating === "strong" || operating === "acceptable";
+  if (safety === "strong" && target === "met" && operatingClearsStrong) {
     return available(
       "strong",
       { safety, operating, target },
@@ -494,12 +500,6 @@ export function deriveDealVerdict(params: DeriveDealVerdictParams): DealVerdictR
       []
     );
   }
-  // OER "acceptable" (Caution) does not itself have Strong-blocking
-  // authority stronger than "block Strong" (section 23) — but Strong
-  // explicitly requires OER not be Weak AND no required PRIMARY evidence
-  // missing/unclassified (section 41 Step 6), so acceptable OER also blocks
-  // Strong, same as the weak/unknown cases — all three fall through to
-  // Promising below, distinguished only by their reasons.
 
   // ---- Step 7: everything else with sufficient evidence → Promising -----
   const blockers: VerdictReason[] = [

@@ -622,6 +622,130 @@ describe("deriveDealVerdict — integration fixtures (manual verification matrix
   });
 });
 
+describe("Phase 4.14.1 — OER correction: Strong accepts acceptable, not just strong", () => {
+  it("OER Caution (acceptable) + strong Safety + target met → STRONG, not Promising (mandatory, section 12/20)", () => {
+    // Debt-free, so DSCR is removed from evidence and LTV is trivially 0/green
+    // (§8/§9) — isolates the fix to OER alone. Opex is heavy enough to land
+    // OER in commercial's 40-60% Caution band, but with no debt service,
+    // Break-Even Ratio equals the same ratio (operatingExpensesAnnual has no
+    // finance cost to add), which is still comfortably inside the 75% green
+    // band — Safety stays strong regardless of OER.
+    const inputs: DealInputs = {
+      ...baseInputs,
+      purchasePrice: 1_500_000,
+      marketValue: 1_500_000,
+      financeSources: [],
+      monthlyRent: 25_000,
+      occupancyRate: 90,
+      managementFeeValue: 18,
+      maintenanceCostValue: 15,
+      ratesAndTaxes: 2_000,
+      insurance: 700,
+      badDebtsPct: 4,
+      discountRate: 5,
+      capitalGrowthRate: 5,
+      rentalGrowthRate: 5,
+    };
+    const metrics = calcAllMetrics(inputs);
+    expect(metrics.operatingExpenseRatio).toBeGreaterThan(40);
+    expect(metrics.operatingExpenseRatio).toBeLessThanOrEqual(60);
+    expect(metrics.dscr).toBe(Infinity);
+    expect(metrics.ltv).toBe(0);
+    expect(metrics.breakEvenRatio).toBeLessThanOrEqual(75);
+    expect(metrics.irr).toBeGreaterThanOrEqual(inputs.discountRate);
+
+    const result = deriveDealVerdict({ strategyId: "commercial", inputs, metrics });
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(result.categoryStates.safety).toBe("strong");
+      expect(result.categoryStates.operating).toBe("acceptable");
+      expect(result.categoryStates.target).toBe("met");
+      expect(result.verdict).toBe("strong");
+      expect(result.blockers).toHaveLength(0);
+    }
+  });
+
+  it("OER Weak + strong Safety + target met → PROMISING, never Strong or High Risk (section 13)", () => {
+    const inputs: DealInputs = {
+      ...baseInputs,
+      purchasePrice: 1_500_000,
+      marketValue: 1_500_000,
+      financeSources: [],
+      monthlyRent: 25_000,
+      occupancyRate: 90,
+      managementFeeValue: 30,
+      maintenanceCostValue: 25,
+      ratesAndTaxes: 3_000,
+      insurance: 1_000,
+      badDebtsPct: 5,
+      discountRate: 5,
+      capitalGrowthRate: 5,
+      rentalGrowthRate: 5,
+    };
+    const metrics = calcAllMetrics(inputs);
+    expect(metrics.operatingExpenseRatio).toBeGreaterThan(60);
+    expect(metrics.dscr).toBe(Infinity);
+    expect(metrics.irr).toBeGreaterThanOrEqual(inputs.discountRate);
+
+    const result = deriveDealVerdict({ strategyId: "commercial", inputs, metrics });
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(result.categoryStates.operating).toBe("weak");
+      expect(result.verdict).toBe("promising");
+      expect(result.blockers.some((r) => r.code === "high_oer")).toBe(true);
+    }
+  });
+
+  it("OER unclassified/missing → operating unknown → cannot satisfy the Strong-eligibility rule (section 14)", () => {
+    // None of the five verdict-enabled strategies currently lack an OER
+    // threshold definition (thresholds.ts), so an unclassified OER cannot be
+    // produced through a real DealInputs fixture on any of them — this
+    // tests the rule directly, the same convention Phase 4.14 already used
+    // for "unclassified primary safety metric" (see deriveSafetyState tests
+    // above), since there is no live combination of inputs that reaches it.
+    const unclassified: MetricClassification = { status: "unclassified", applicable: true, color: null, label: null, reason: "test" };
+    const { state: operating, reasons } = deriveOperatingState(unclassified);
+    expect(operating).toBe("unknown");
+    // This is exactly the boolean the engine's Step 6 Strong gate evaluates
+    // (lib/calculations/verdict.ts) — "unknown" satisfies neither "strong"
+    // nor "acceptable", so it cannot clear Strong, falling through to
+    // Promising (proven by the OER-Weak case above sharing the identical
+    // fallthrough path) rather than any negative/High-Risk outcome.
+    const operatingClearsStrong = operating === "strong" || operating === "acceptable";
+    expect(operatingClearsStrong).toBe(false);
+    expect(reasons[0].code).toBe("oer_unclassified");
+  });
+});
+
+describe("Phase 4.14.1 — re-confirmed regressions after the OER correction", () => {
+  it("Break-Even > 100% via a real debt-free fixture (opex alone exceeds revenue) → HIGH RISK, DSCR N/A does not rescue it (section 18)", () => {
+    const inputs: DealInputs = {
+      ...baseInputs,
+      purchasePrice: 1_000_000,
+      marketValue: 1_000_000,
+      financeSources: [],
+      monthlyRent: 10_000,
+      occupancyRate: 90,
+      managementFeeValue: 80,
+      maintenanceCostValue: 40,
+      ratesAndTaxes: 5_000,
+      insurance: 2_000,
+      badDebtsPct: 10,
+      discountRate: 5,
+    };
+    const metrics = calcAllMetrics(inputs);
+    expect(metrics.dscr).toBe(Infinity);
+    expect(metrics.breakEvenRatio).toBeGreaterThan(100);
+
+    const result = deriveDealVerdict({ strategyId: "commercial", inputs, metrics });
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(result.verdict).toBe("high_risk");
+      expect(result.blockers.some((r) => r.code === "break_even_above_100")).toBe(true);
+    }
+  });
+});
+
 describe("promising_if_negotiated is unreachable (Phase 4.14 sections 5, 43, 113)", () => {
   const fixtures: DealInputs[] = [
     { ...baseInputs, purchasePrice: 2_000_000, marketValue: 2_000_000, financeSources: [{ loanAmount: 1_000_000, interestRate: 10, termYears: 20 }], monthlyRent: 35_000, discountRate: 8 },
