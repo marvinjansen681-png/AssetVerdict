@@ -45,6 +45,7 @@ import { getKeyLabel } from "../education/relationshipChains";
 import { getStrategy, type StrategyId } from "../strategies";
 import { calcRentSuggestion } from "../area-suggestions";
 import type { SuburbProfile } from "../../types";
+import { deriveDealVerdict } from "../calculations/verdict";
 import type {
   DealCoachContext,
   DealCoachIntent,
@@ -272,6 +273,17 @@ export interface BuildDealCoachContextParams {
   selection: DealCoachSelection;
   intent: DealCoachIntent;
   dealSummary: AcquisitionSummary;
+  /**
+   * Base-case metrics, for verdict derivation only (Phase 4.14 section 97 —
+   * the verdict is always Base-case, regardless of `activeScenario`).
+   * Optional: falls back to `metrics` when omitted, which is correct
+   * whenever the caller's `metrics` already IS the base case (the common
+   * case, and every existing call site before Phase 4.14). A caller
+   * currently viewing Bear/Bull (where `metrics` is scenario-shifted) must
+   * supply this explicitly so the verdict doesn't silently use the wrong
+   * scenario — see app/api/deals/[id]/coach/route.ts.
+   */
+  baseMetrics?: DealMetrics;
   /** Only required (and only used) when intent is "compare_scenarios". */
   scenarios?: Scenarios;
   /**
@@ -298,11 +310,12 @@ export interface BuildDealCoachContextParams {
 }
 
 export function buildDealCoachContext(params: BuildDealCoachContextParams): DealCoachContext {
-  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, scenarios, areaSuggestionInputs, leaseTermMonths } = params;
+  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, baseMetrics, scenarios, areaSuggestionInputs, leaseTermMonths } = params;
   const strategy = getStrategy(strategyId);
   const applicabilityCtx: ApplicabilityContext = {
     ...applicabilityContextFromInputs(inputs),
   };
+  const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics });
 
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved
@@ -390,7 +403,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
       comparison![key] = row;
     });
-    return { deal, scenario, metrics: [], scenarioComparison: comparison, selection };
+    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, selection };
   }
 
   // ---- Single selected metric: full detail + a few close drivers --------
@@ -427,7 +440,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
     }
 
-    return { deal, scenario, metrics: entries, selection };
+    return { deal, scenario, metrics: entries, verdict, selection };
   }
 
   // ---- Broad deal context: every strategy-relevant metric, light detail --
@@ -463,6 +476,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     scenario,
     metrics: entries,
     assumptionFlags: includeAssumptions ? buildAssumptionFlags(inputs, strategyId) : undefined,
+    verdict,
     selection,
   };
 }

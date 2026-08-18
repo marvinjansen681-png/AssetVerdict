@@ -154,6 +154,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     selection,
     intent,
     dealSummary,
+    // Phase 4.14: verdict is always derived from the Base case (section 97),
+    // regardless of activeScenario — buildDealCoachContext computes it from
+    // this, not from `metrics` above.
+    baseMetrics: scenarios.base.metrics,
     scenarios: intent === "compare_scenarios" ? scenarios : undefined,
     areaSuggestionInputs: {
       suburbProfile: primaryDealSuburb?.suburbProfile ?? null,

@@ -5,6 +5,7 @@ import { calcAllMetrics, calc20YearProjection } from "@/lib/calculations";
 import { calcScenarios } from "@/lib/calculations/scenarios";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
 import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
+import { deriveDealVerdict } from "@/lib/calculations/verdict";
 import type { DealWithRelations } from "@/types";
 
 export async function GET(
@@ -37,6 +38,12 @@ export async function GET(
     realGrowthFactor: deal.realGrowthFactor ?? 10,
     occupationFactor: deal.occupationFactor ?? 10,
   });
+  // Phase 4.14: derived fresh on every request from server-recomputed
+  // metrics (never persisted, never client-supplied — see verdict.ts's own
+  // doc comment). Base case only (Phase 4.14 section 97) — deliberately
+  // uses `metrics`/`inputs` above, not any scenario variant.
+  const strategyId = deal.investmentStrategy ?? "commercial";
+  const verdict = deriveDealVerdict({ strategyId, inputs, metrics });
 
   const primaryDealSuburb =
     dealWithRelations.dealSuburbs.find((ds) => ds.isPrimary) ?? dealWithRelations.dealSuburbs[0] ?? null;
@@ -45,12 +52,13 @@ export async function GET(
     propertyValuation: dealWithRelations.propertyValuation,
     suburbProfile: primaryDealSuburb?.suburbProfile ?? null,
     metrics,
+    verdict,
     projection,
     scenarios,
     dealName: deal.name,
     address: deal.address,
     currency: deal.currency,
-    investmentStrategy: deal.investmentStrategy ?? "commercial",
+    investmentStrategy: strategyId,
     rentalGrowthRate: inputs.rentalGrowthRate,
     costInflation: inputs.costInflation,
     discountRate: inputs.discountRate,

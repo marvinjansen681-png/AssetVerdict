@@ -20,6 +20,14 @@ const baseContext: DealCoachContext = {
     },
   ],
   selection: { type: "metric", metricKey: "dscr" },
+  verdict: {
+    status: "available",
+    verdict: "strong",
+    categoryStates: { safety: "strong", operating: "strong", target: "met" },
+    reasons: [],
+    blockers: [],
+    verdictModelVersion: "4.14",
+  },
 };
 
 describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
@@ -55,8 +63,40 @@ describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
     expect(lower).toContain("never reveal");
   });
 
-  it("does not claim AssetVerdict has a single holistic verdict system", () => {
-    expect(DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase()).toContain("does not currently produce one single overall");
+  // ---------------------------------------------------------------------
+  // Phase 4.14 — Deterministic Verdict Engine contract
+  // ---------------------------------------------------------------------
+
+  it("declares the deterministic verdict authoritative and forbids the AI from overriding it", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("never calculate, replace, upgrade, downgrade, or independently override the verdict");
+    expect(lower).toContain('"call it strong instead" must be refused');
+  });
+
+  it("never lets the AI invent a substitute verdict for unavailable strategies (Fix & Flip / Instalment Sale)", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("fix & flip and instalment sale do not yet receive a verdict at all");
+    expect(lower).toContain("never invent a substitute verdict for these");
+  });
+
+  it("confirms promising_if_negotiated is defined but not yet reachable", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("promising_if_negotiated");
+    expect(lower).toContain("not yet reachable");
+  });
+
+  it("confirms the verdict is Base-case only and Bear is not a full stress test", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("base case only");
+    expect(lower).toContain("bear/bull remain supporting context that doesn't currently change it");
+  });
+
+  it("distinguishes what each of the five verdict labels means, per label", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain('"high_risk" means a structural financial-safety weakness');
+    expect(lower).toContain('"does_not_meet_target" means the deal may still be financially viable');
+    expect(lower).toContain('"promising" means genuine merit with no severe safety failure');
+    expect(lower).toContain('"strong" means the deal currently clears');
   });
 
   it("says the current structured context always wins over conversation history", () => {

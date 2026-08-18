@@ -18,6 +18,8 @@ import {
   applicabilityContextFromMetrics,
 } from "@/lib/calculations/applicability";
 import { getStrategy } from "@/lib/strategies";
+import type { DealVerdictResult, VerdictLabel } from "@/lib/calculations/verdict";
+import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
 
 const COLORS = {
   navy: "#0F1F3D",
@@ -84,7 +86,31 @@ const styles = StyleSheet.create({
   value: { fontFamily: "Helvetica-Bold" },
   twoCol: { flexDirection: "row", gap: 24 },
   col: { flex: 1 },
+  verdictBox: {
+    borderWidth: 1,
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 16,
+  },
+  verdictTitle: { fontSize: 18, fontFamily: "Helvetica-Bold", marginBottom: 4 },
+  verdictDescription: { fontSize: 9, color: COLORS.slate, marginBottom: 8 },
+  verdictReasonsLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: COLORS.navy, marginBottom: 4 },
+  verdictReason: { fontSize: 8.5, color: COLORS.slate, marginBottom: 2 },
+  verdictFootnote: { fontSize: 7.5, color: COLORS.slate, marginTop: 8 },
 });
+
+/**
+ * Distinct from GAUGE_COLOR_HEX (Strong/Caution/Weak) — Phase 4.14 section
+ * 93 requires "Does Not Meet Target" to visually differ from "High Risk",
+ * not just read as a lighter shade of the same danger colour.
+ */
+const VERDICT_COLOR_HEX: Record<VerdictLabel, string> = {
+  strong: COLORS.green,
+  promising: COLORS.gold,
+  promising_if_negotiated: COLORS.gold,
+  high_risk: COLORS.red,
+  does_not_meet_target: COLORS.navy,
+};
 
 function fmt(n: number | null | undefined, currency = "R") {
   if (n === null || n === undefined) return "--";
@@ -113,6 +139,8 @@ interface DealSummaryPDFProps {
   scenarios: Scenarios;
   /** The investor's required annual return (DealInputs.discountRate) — needed to classify Equity IRR, Cash-on-Cash Return, and Equity NPV (Phase 4.1, target-/zero-relative models). */
   discountRate: number;
+  /** Pre-computed by the caller (Phase 4.14) — the same deterministic verdict the Summary page shows, never recalculated here. */
+  verdict: DealVerdictResult;
   dealSummary: DealSummaryInputs;
   renovationItems?: RenovationItem[];
   propertyValuation?: PropertyValuation | null;
@@ -156,6 +184,7 @@ export default function DealSummaryPDF({
   activeScenario,
   scenarios,
   discountRate,
+  verdict,
   dealSummary,
   renovationItems = [],
   propertyValuation = null,
@@ -241,8 +270,47 @@ export default function DealSummaryPDF({
         </Text>
       </Page>
 
-      {/* PAGE 2 — Scenario Comparison */}
+      {/* PAGE 2 — Overall Verdict + Scenario Comparison */}
       <Page size="A4" style={styles.page}>
+        {verdict.status === "available" ? (
+          <View
+            style={[
+              styles.verdictBox,
+              { borderColor: VERDICT_COLOR_HEX[verdict.verdict], backgroundColor: `${VERDICT_COLOR_HEX[verdict.verdict]}12` },
+            ]}
+          >
+            <Text style={[styles.verdictTitle, { color: VERDICT_COLOR_HEX[verdict.verdict] }]}>
+              Overall Verdict: {VERDICT_LABEL_COPY[verdict.verdict].title}
+            </Text>
+            <Text style={styles.verdictDescription}>{VERDICT_LABEL_COPY[verdict.verdict].description}</Text>
+            {(verdict.blockers.length > 0 ? verdict.blockers : verdict.reasons).length > 0 && (
+              <>
+                <Text style={styles.verdictReasonsLabel}>TOP REASONS</Text>
+                {(verdict.blockers.length > 0 ? verdict.blockers : verdict.reasons)
+                  .filter((r) => r.severity === "blocking" || r.severity === "high" || r.severity === "moderate")
+                  .slice(0, 3)
+                  .map((r, i) => (
+                    <Text key={`${r.code}-${i}`} style={styles.verdictReason}>
+                      • {formatVerdictReason(r, currencySymbol)}
+                    </Text>
+                  ))}
+              </>
+            )}
+            <Text style={styles.verdictFootnote}>
+              Based on the Base case only, under the assumptions entered. Bear and Bull scenarios
+              remain supporting context and do not currently change this verdict. Not investment
+              advice.
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.verdictBox, { borderColor: COLORS.lightGrey, backgroundColor: COLORS.lightGrey }]}>
+            <Text style={[styles.verdictTitle, { color: COLORS.slate, fontSize: 14 }]}>
+              Overall Verdict: {VERDICT_UNAVAILABLE_COPY[verdict.reason].title}
+            </Text>
+            <Text style={styles.verdictDescription}>{VERDICT_UNAVAILABLE_COPY[verdict.reason].description}</Text>
+          </View>
+        )}
+
         <Text style={styles.h1}>Bear / Base / Bull — Scenario Comparison</Text>
         <Text style={styles.subtitle}>
           Bear and Bull adjust rental growth, capital growth, and occupancy down/up by your

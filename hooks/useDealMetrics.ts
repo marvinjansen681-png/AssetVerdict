@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import type { DealMetrics, YearlyProjection } from "@/lib/calculations";
 import type { Scenarios } from "@/lib/calculations/scenarios";
+import type { DealVerdictResult } from "@/lib/calculations/verdict";
 import type { CapexItem, RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
 
 export interface DealSummaryInputs {
@@ -48,6 +49,7 @@ export interface DealSummaryInputs {
 
 export interface CalculateResponse {
   metrics: DealMetrics;
+  verdict: DealVerdictResult;
   projection: YearlyProjection[];
   scenarios: Scenarios;
   dealName: string;
@@ -94,6 +96,7 @@ export function useDealMetrics(dealId: string) {
 
   return {
     metrics: data?.metrics,
+    verdict: data?.verdict,
     projection: data?.projection,
     scenarios: data?.scenarios,
     dealName: data?.dealName,

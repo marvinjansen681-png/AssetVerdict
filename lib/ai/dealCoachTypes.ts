@@ -7,6 +7,7 @@
  * already-calculated values (lib/calculations, lib/education) — never from
  * raw database records, and never from client-supplied numbers.
  */
+import type { DealVerdictResult } from "../calculations/verdict";
 
 export type ScenarioKey = "bear" | "base" | "bull";
 
@@ -156,6 +157,16 @@ export interface DealCoachContext {
   metrics: DealCoachMetricEntry[];
   /** Only present for intent "compare_scenarios": headline metrics per scenario, not full 20-year projections. */
   scenarioComparison?: Record<ScenarioKey, Record<string, string>>;
+  /**
+   * The deterministic overall verdict (Phase 4.14) — ALWAYS computed from
+   * the Base case, regardless of `scenario.active` (section 97: Bear/Bull
+   * never drive the verdict). The coach must treat this as authoritative
+   * application output: explain it, never recompute, override, soften, or
+   * intensify it (see the guardrail in dealCoachPrompt.ts). Present for
+   * every request — its own `status` field already distinguishes an
+   * available verdict from a strategy that doesn't get one yet.
+   */
+  verdict: DealVerdictResult;
   /** Deterministic, rule-based flags (e.g. "occupancy assumed at 100%") — the engine identifies WHAT is assumption-heavy; the AI turns that into due-diligence questions, never the reverse. */
   assumptionFlags?: { field: string; value: string; note: string }[];
   selection: DealCoachSelection;

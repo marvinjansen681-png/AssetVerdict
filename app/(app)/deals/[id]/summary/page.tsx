@@ -18,6 +18,8 @@ import FallbackAnalysisCard from "@/components/FallbackAnalysisCard";
 import ExitAnalysisCard from "@/components/ExitAnalysisCard";
 import { hasFallbackAnalysisContent, hasExitAnalysisContent } from "@/lib/areaIntelligence";
 import UnderstandYourDeal from "@/components/education/UnderstandYourDeal";
+import VerdictCard from "@/components/VerdictCard";
+import VerdictExplainer from "@/components/education/VerdictExplainer";
 import type { StrategyId } from "@/lib/strategies";
 import Link from "next/link";
 import type { DealMetrics } from "@/lib/calculations";
@@ -45,6 +47,7 @@ export default function DealSummaryPage({
 
   const {
     metrics,
+    verdict,
     scenarios,
     rentalGrowthRate,
     costInflation,
@@ -76,7 +79,7 @@ export default function DealSummaryPage({
   }
 
   async function handleExportPdf() {
-    if (!scenarios || !dealSummary || !dealName) return;
+    if (!scenarios || !dealSummary || !dealName || !verdict) return;
     setExporting(true);
     try {
       const [{ pdf }, { default: DealSummaryPDF }] = await Promise.all([
@@ -93,6 +96,7 @@ export default function DealSummaryPage({
           activeScenario={scenario}
           scenarios={scenarios}
           discountRate={discountRate ?? 10}
+          verdict={verdict}
           dealSummary={dealSummary}
           renovationItems={renovationItems}
           propertyValuation={propertyValuation}
@@ -205,6 +209,12 @@ export default function DealSummaryPage({
           </Button>
         </div>
       </div>
+
+      {verdict && <VerdictCard verdict={verdict} currency={currency ?? "R"} />}
+
+      <AccordionSection title="How AssetVerdict reaches your verdict" defaultOpen={false}>
+        <VerdictExplainer />
+      </AccordionSection>
 
       <AccordionSection title="Scenarios" defaultOpen={false}>
         <p className="font-body text-sm text-av-slate">
