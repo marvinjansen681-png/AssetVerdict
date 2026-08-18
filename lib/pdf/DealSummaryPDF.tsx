@@ -20,6 +20,12 @@ import {
 import { getStrategy } from "@/lib/strategies";
 import type { DealVerdictResult, VerdictLabel } from "@/lib/calculations/verdict";
 import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
+import type { NegotiationAnalysis, NegotiationObjective } from "@/lib/calculations/negotiation";
+import {
+  NEGOTIATION_OBJECTIVE_LABEL,
+  FIXED_LTV_ASSUMPTION_EXPLAINER,
+  describeNegotiationResult,
+} from "@/lib/education/negotiationCopy";
 
 const COLORS = {
   navy: "#0F1F3D",
@@ -97,6 +103,13 @@ const styles = StyleSheet.create({
   verdictReasonsLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: COLORS.navy, marginBottom: 4 },
   verdictReason: { fontSize: 8.5, color: COLORS.slate, marginBottom: 2 },
   verdictFootnote: { fontSize: 7.5, color: COLORS.slate, marginTop: 8 },
+  negotiationBox: { borderWidth: 1, borderColor: COLORS.lightGrey, borderRadius: 4, padding: 12, marginBottom: 16 },
+  negotiationTitle: { fontSize: 13, fontFamily: "Helvetica-Bold", marginBottom: 6 },
+  negotiationAsking: { fontSize: 9, color: COLORS.slate, marginBottom: 8 },
+  negotiationRow: { marginBottom: 6 },
+  negotiationObjectiveLabel: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: COLORS.navy },
+  negotiationObjectiveValue: { fontSize: 9.5, marginTop: 1 },
+  negotiationObjectiveDetail: { fontSize: 8, color: COLORS.slate, marginTop: 1 },
 });
 
 /**
@@ -141,6 +154,8 @@ interface DealSummaryPDFProps {
   discountRate: number;
   /** Pre-computed by the caller (Phase 4.14) — the same deterministic verdict the Summary page shows, never recalculated here. */
   verdict: DealVerdictResult;
+  /** Pre-computed by the caller (Phase 4.15) — the same deterministic negotiation analysis the Summary page shows, never recalculated here. Optional so a PDF can still render if this fetch failed. */
+  negotiation?: NegotiationAnalysis | null;
   dealSummary: DealSummaryInputs;
   renovationItems?: RenovationItem[];
   propertyValuation?: PropertyValuation | null;
@@ -168,6 +183,20 @@ const COMPARISON_ROWS: {
   { label: "NOI Margin", key: "noiMargin", metricKey: "noiMargin", unit: "%" },
 ];
 
+const NEGOTIATION_FIELD_BY_OBJECTIVE: Record<
+  NegotiationObjective,
+  keyof Pick<NegotiationAnalysis, "meetRequiredReturn" | "clearStructuralSafety" | "reachPromising" | "reachStrong">
+> = {
+  meet_required_return: "meetRequiredReturn",
+  clear_structural_safety: "clearStructuralSafety",
+  reach_promising: "reachPromising",
+  reach_strong: "reachStrong",
+};
+
+function toNegotiationField(objective: NegotiationObjective) {
+  return NEGOTIATION_FIELD_BY_OBJECTIVE[objective];
+}
+
 function formatMetricValue(value: number, unit: string, currency: string) {
   if (!isFiniteNumber(value)) return "--";
   if (unit === "R") return fmt(value, currency);
@@ -185,6 +214,7 @@ export default function DealSummaryPDF({
   scenarios,
   discountRate,
   verdict,
+  negotiation = null,
   dealSummary,
   renovationItems = [],
   propertyValuation = null,
@@ -308,6 +338,54 @@ export default function DealSummaryPDF({
               Overall Verdict: {VERDICT_UNAVAILABLE_COPY[verdict.reason].title}
             </Text>
             <Text style={styles.verdictDescription}>{VERDICT_UNAVAILABLE_COPY[verdict.reason].description}</Text>
+          </View>
+        )}
+
+        {/* Negotiation Analysis (Phase 4.15) */}
+        {negotiation && (
+          <View style={styles.negotiationBox}>
+            <Text style={styles.negotiationTitle}>Negotiation Analysis</Text>
+            {(["meet_required_return", "clear_structural_safety", "reach_strong"] as NegotiationObjective[])
+              .map((objective) => negotiation[toNegotiationField(objective)])
+              .every((r) => r.status === "unavailable") ? (
+              <Text style={styles.negotiationAsking}>
+                Not yet available for this strategy.
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.negotiationAsking}>Asking Price: {fmt(negotiation.currentPrice, currencySymbol)}</Text>
+                {(["meet_required_return", "clear_structural_safety", "reach_strong"] as NegotiationObjective[]).map(
+                  (objective) => {
+                    const result = negotiation[toNegotiationField(objective)];
+                    return (
+                      <View key={objective} style={styles.negotiationRow}>
+                        <Text style={styles.negotiationObjectiveLabel}>{NEGOTIATION_OBJECTIVE_LABEL[objective]}</Text>
+                        {(result.status === "already_meets" || result.status === "solvable") && (
+                          <Text style={styles.negotiationObjectiveValue}>
+                            {result.status === "already_meets"
+                              ? "Already achieved — no discount required"
+                              : fmt(result.targetPrice, currencySymbol)}
+                          </Text>
+                        )}
+                        {result.status === "solvable" && (
+                          <Text style={styles.negotiationObjectiveDetail}>
+                            Reduction needed: {fmt(result.reductionRand, currencySymbol)} ({result.reductionPercent.toFixed(1)}%)
+                          </Text>
+                        )}
+                        {(result.status === "not_achievable_by_price" || result.status === "unavailable") && (
+                          <Text style={styles.negotiationObjectiveDetail}>{describeNegotiationResult(result, currencySymbol)}</Text>
+                        )}
+                      </View>
+                    );
+                  }
+                )}
+                <Text style={styles.verdictFootnote}>{FIXED_LTV_ASSUMPTION_EXPLAINER}</Text>
+                <Text style={styles.verdictFootnote}>
+                  These are mathematical target prices, not a prediction that the seller will accept them, and not
+                  investment advice.
+                </Text>
+              </>
+            )}
           </View>
         )}
 

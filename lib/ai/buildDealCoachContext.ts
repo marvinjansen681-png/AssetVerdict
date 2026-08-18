@@ -46,10 +46,14 @@ import { getStrategy, type StrategyId } from "../strategies";
 import { calcRentSuggestion } from "../area-suggestions";
 import type { SuburbProfile } from "../../types";
 import { deriveDealVerdict } from "../calculations/verdict";
+import { analyzeNegotiation, type NegotiationAnalysis, type NegotiationObjective, type NegotiationTargetResult } from "../calculations/negotiation";
+import { NEGOTIATION_OBJECTIVE_LABEL, FIXED_LTV_ASSUMPTION_EXPLAINER, describeNegotiationResult } from "../education/negotiationCopy";
 import type {
   DealCoachContext,
   DealCoachIntent,
   DealCoachMetricEntry,
+  DealCoachNegotiation,
+  DealCoachNegotiationObjective,
   DealCoachSelection,
   ScenarioKey,
 } from "./dealCoachTypes";
@@ -250,6 +254,49 @@ function buildAssumptionFlags(inputs: DealInputs, strategyId: string): { field: 
   return flags;
 }
 
+function buildNegotiationObjectiveEntry(
+  objective: NegotiationObjective,
+  result: NegotiationTargetResult,
+  currency: string
+): DealCoachNegotiationObjective {
+  const entry: DealCoachNegotiationObjective = {
+    objective,
+    label: NEGOTIATION_OBJECTIVE_LABEL[objective],
+    status: result.status,
+    explanation: describeNegotiationResult(result, currency),
+  };
+  if (result.status === "already_meets" || result.status === "solvable") {
+    entry.targetPrice = formatMetricValue(result.targetPrice, "currency", currency);
+  }
+  if (result.status === "solvable") {
+    entry.reductionRand = formatMetricValue(result.reductionRand, "currency", currency);
+    entry.reductionPercent = `${result.reductionPercent.toFixed(1)}%`;
+  }
+  return entry;
+}
+
+/**
+ * Compact, pre-formatted negotiation summary (Phase 4.15) — reuses the ONE
+ * negotiation engine (analyzeNegotiation) and the ONE copy layer
+ * (negotiationCopy.ts) the Summary UI and PDF also read from, so Deal Coach
+ * can never describe a target price differently from what the user already
+ * sees on screen. Always Base-case (see `inputs` doc comment above — it's
+ * never scenario-shifted), same rule as verdict.
+ */
+function buildDealCoachNegotiation(inputs: DealInputs, strategyId: string, currency: string): DealCoachNegotiation {
+  const negotiation: NegotiationAnalysis = analyzeNegotiation(inputs, strategyId);
+  return {
+    currentPrice: formatMetricValue(negotiation.currentPrice, "currency", currency),
+    fixedLtvNote: FIXED_LTV_ASSUMPTION_EXPLAINER,
+    objectives: [
+      buildNegotiationObjectiveEntry("meet_required_return", negotiation.meetRequiredReturn, currency),
+      buildNegotiationObjectiveEntry("clear_structural_safety", negotiation.clearStructuralSafety, currency),
+      buildNegotiationObjectiveEntry("reach_strong", negotiation.reachStrong, currency),
+      buildNegotiationObjectiveEntry("reach_promising", negotiation.reachPromising, currency),
+    ],
+  };
+}
+
 function resolveRelatedMetricKeys(definitionKeys: string[], strategyId: string): string[] {
   const strategyKeys = new Set(getMetricGroupsForStrategy(strategyId).flatMap((g) => g.metricKeys));
   const related: string[] = [];
@@ -316,6 +363,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     ...applicabilityContextFromInputs(inputs),
   };
   const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics });
+  const negotiation = buildDealCoachNegotiation(inputs, strategyId, currency);
 
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved
@@ -403,7 +451,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
       comparison![key] = row;
     });
-    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, selection };
+    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, negotiation, selection };
   }
 
   // ---- Single selected metric: full detail + a few close drivers --------
@@ -440,7 +488,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
     }
 
-    return { deal, scenario, metrics: entries, verdict, selection };
+    return { deal, scenario, metrics: entries, verdict, negotiation, selection };
   }
 
   // ---- Broad deal context: every strategy-relevant metric, light detail --
@@ -477,6 +525,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     metrics: entries,
     assumptionFlags: includeAssumptions ? buildAssumptionFlags(inputs, strategyId) : undefined,
     verdict,
+    negotiation,
     selection,
   };
 }

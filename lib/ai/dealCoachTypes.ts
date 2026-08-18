@@ -8,6 +8,7 @@
  * raw database records, and never from client-supplied numbers.
  */
 import type { DealVerdictResult } from "../calculations/verdict";
+import type { NegotiationObjective } from "../calculations/negotiation";
 
 export type ScenarioKey = "bear" | "base" | "bull";
 
@@ -110,6 +111,32 @@ export interface DealCoachMetricEntry {
   affects?: string[];
 }
 
+/**
+ * One objective's negotiation result, pre-formatted for the coach (Phase
+ * 4.15) — same "already computed, never yours to recompute" boundary as
+ * DealCoachMetricEntry. `explanation` is the SAME sentence the Summary UI
+ * shows (lib/education/negotiationCopy.ts), so the coach can never drift
+ * from what the user already sees on screen.
+ */
+export interface DealCoachNegotiationObjective {
+  objective: NegotiationObjective;
+  label: string;
+  status: "already_meets" | "solvable" | "not_achievable_by_price" | "unavailable";
+  /** Only present for already_meets/solvable. */
+  targetPrice?: string;
+  /** Only present for solvable. */
+  reductionRand?: string;
+  reductionPercent?: string;
+  explanation: string;
+}
+
+/** Compact, pre-formatted negotiation/target-purchase-price summary (Phase 4.15) — never present for Fix & Flip/Instalment Sale in a way that implies a target price exists. */
+export interface DealCoachNegotiation {
+  currentPrice: string;
+  fixedLtvNote: string;
+  objectives: DealCoachNegotiationObjective[];
+}
+
 export interface DealCoachContext {
   deal: {
     name: string;
@@ -167,6 +194,16 @@ export interface DealCoachContext {
    * available verdict from a strategy that doesn't get one yet.
    */
   verdict: DealVerdictResult;
+  /**
+   * Deterministic target-purchase-price analysis (Phase 4.15) — ALWAYS
+   * computed from the Base case, same rule as `verdict`. Undefined only when
+   * negotiation analysis genuinely can't be built for this request (e.g. an
+   * invalid purchase price); for unsupported strategies (Fix & Flip,
+   * Instalment Sale) this is still present with every objective's own
+   * status "unavailable", so the coach can explain why rather than staying
+   * silent about it.
+   */
+  negotiation?: DealCoachNegotiation;
   /** Deterministic, rule-based flags (e.g. "occupancy assumed at 100%") — the engine identifies WHAT is assumption-heavy; the AI turns that into due-diligence questions, never the reverse. */
   assumptionFlags?: { field: string; value: string; note: string }[];
   selection: DealCoachSelection;

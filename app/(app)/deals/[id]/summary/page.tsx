@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDealMetrics } from "@/hooks/useDealMetrics";
+import { useDealNegotiation } from "@/hooks/useDealNegotiation";
+import NegotiationCard from "@/components/NegotiationCard";
 import GaugeDial from "@/components/gauges/GaugeDial";
 import MetricCard from "@/components/gauges/MetricCard";
 import AccordionSection from "@/components/AccordionSection";
@@ -65,6 +67,10 @@ export default function DealSummaryPage({
     error,
   } = useDealMetrics(id);
 
+  // Own currency field (server-normalized "ZAR" -> "R", matching /coach) —
+  // deliberately not the page's own `currency` (from /calculate, unnormalized).
+  const { negotiation, currency: negotiationCurrency } = useDealNegotiation(id);
+
   const [capexItems, setCapexItems] = useState<CapexItem[]>([]);
   useEffect(() => {
     if (capexFromApi) setCapexItems(capexFromApi);
@@ -97,6 +103,7 @@ export default function DealSummaryPage({
           scenarios={scenarios}
           discountRate={discountRate ?? 10}
           verdict={verdict}
+          negotiation={negotiation}
           dealSummary={dealSummary}
           renovationItems={renovationItems}
           propertyValuation={propertyValuation}
@@ -211,6 +218,8 @@ export default function DealSummaryPage({
       </div>
 
       {verdict && <VerdictCard verdict={verdict} currency={currency ?? "R"} />}
+
+      {negotiation && <NegotiationCard negotiation={negotiation} currency={negotiationCurrency ?? "R"} />}
 
       <AccordionSection title="How AssetVerdict reaches your verdict" defaultOpen={false}>
         <VerdictExplainer />
