@@ -570,3 +570,105 @@ describe("Projected sale price changes only sale-dependent figures (section 93 m
     expect(b.profitability.estimatedProfitBeforeTax).not.toBe(a.profitability.estimatedProfitBeforeTax);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 4.17.1 — metric truth consolidation: the legacy calcFlipProfit()
+// summary must agree EXACTLY with the authoritative FixFlipAnalysis for
+// every same-meaning field, for all valid inputs (sections 10-17).
+// ---------------------------------------------------------------------------
+describe("Phase 4.17.1 — legacy FlipMetrics reconciles exactly with FixFlipAnalysis", () => {
+  const scenarios: [string, DealInputs][] = [
+    ["cash, profitable", cashProfitable],
+    ["cash, losing", cashLosing],
+    ["financed, single loan", financedSingleLoan],
+    ["financed, multi-loan", financedMultiLoan],
+    ["loan matures before sale", loanMaturesBeforeSale],
+  ];
+
+  it.each(scenarios)("%s: netProfit === estimatedProfitBeforeTax (section 11)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.netProfit).toBeCloseTo(a.profitability.estimatedProfitBeforeTax, 6);
+  });
+
+  it.each(scenarios)("%s: roi === preTaxProjectROI (section 10)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.roi).toBeCloseTo(a.profitability.preTaxProjectROI, 6);
+  });
+
+  it.each(scenarios)("%s: totalCost === totalProjectCost (section 12)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.totalCost).toBeCloseTo(a.profitability.totalProjectCost, 6);
+  });
+
+  it.each(scenarios)("%s: profitMargin === preTaxProfitMargin (section 13)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.profitMargin).toBeCloseTo(a.profitability.preTaxProfitMargin, 6);
+  });
+
+  it.each(scenarios)("%s: agentFee === sale.sellingCosts (section 14)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.agentFee).toBeCloseTo(a.sale.sellingCosts, 6);
+  });
+
+  it.each(scenarios)("%s: holdingCosts === holding.totalHoldingCosts (section 15)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.holdingCosts).toBeCloseTo(a.holding.totalHoldingCosts, 6);
+  });
+
+  it.each(scenarios)("%s: financingInterest === financing.totalInterestPaid (section 16)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.financingInterest).toBeCloseTo(a.financing.totalInterestPaid, 6);
+  });
+
+  it.each(scenarios)("%s: acquisitionCosts === acquisition.acquisitionCosts (section 17)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.acquisitionCosts).toBeCloseTo(a.acquisition.acquisitionCosts, 6);
+  });
+
+  it.each(scenarios)("%s: annualisedROI === annualisedPreTaxROI (the phase's primary defect)", (_label, inputs) => {
+    const flip = calcFlipProfit(inputs);
+    const a = available(inputs);
+    expect(flip.annualisedROI).not.toBeNull();
+    expect(a.profitability.annualisedPreTaxROI).not.toBeNull();
+    expect(flip.annualisedROI!).toBeCloseTo(a.profitability.annualisedPreTaxROI!, 6);
+  });
+});
+
+describe("Phase 4.17.1 — one shared annualisation implementation", () => {
+  it("calcFlipProfit no longer uses the linear approximation (ROI / holdingYears)", () => {
+    // 6-month hold, comfortably profitable — linear and compounding
+    // annualisation diverge meaningfully at this duration (verified above
+    // for FixFlipAnalysis; this proves calcFlipProfit now agrees, not the
+    // old linear number).
+    const flip = calcFlipProfit(cashProfitable);
+    const linear = flip.roi * (12 / cashProfitable.holdingPeriodMonths);
+    expect(flip.annualisedROI).not.toBeCloseTo(linear, 1);
+  });
+
+  it("calcFlipProfit: annualisedROI is null (not 0) for an invalid holding period (section 5 mandatory)", () => {
+    const zero = calcFlipProfit({ ...cashProfitable, holdingPeriodMonths: 0 });
+    expect(zero.annualisedROI).toBeNull();
+    const negative = calcFlipProfit({ ...cashProfitable, holdingPeriodMonths: -3 });
+    expect(negative.annualisedROI).toBeNull();
+  });
+
+  it("calcFlipProfit: annualisedROI is null (not NaN/Infinity) when ROI <= -100% (section 6 mandatory)", () => {
+    const catastrophic = calcFlipProfit({ ...cashProfitable, expectedSalePrice: 0 });
+    expect(catastrophic.roi).toBeLessThanOrEqual(-100);
+    expect(catastrophic.annualisedROI).toBeNull();
+  });
+
+  it("calcFlipProfit still returns a real number for a normal profitable flip (never null when genuinely calculable)", () => {
+    const flip = calcFlipProfit(cashProfitable);
+    expect(flip.annualisedROI).not.toBeNull();
+    expect(Number.isFinite(flip.annualisedROI)).toBe(true);
+  });
+});

@@ -51,6 +51,7 @@ import {
   isFiniteNumber,
   type DealInputs,
 } from "./index";
+import { annualiseReturnOverMonths } from "./returnMath";
 
 // ---------------------------------------------------------------------------
 // Output model
@@ -361,14 +362,10 @@ export function calcFixFlipAnalysis(inputs: DealInputs): FixFlipAnalysis {
 
   const equityIRR = calcEquityIRR(equityCashflows);
 
-  // Compounding-equivalent annualisation (section 34) — guarded against the
-  // undefined fractional power when roiFraction <= -1 (i.e. ROI <= -100%,
-  // total loss or worse).
-  const roiFraction = preTaxProjectROI / 100;
-  const annualisedPreTaxROI =
-    roiFraction > -1
-      ? (Math.pow(1 + roiFraction, 12 / holdingPeriodMonths) - 1) * 100
-      : null;
+  // Compounding-equivalent annualisation (section 34), via the one shared
+  // helper also used by calcFlipProfit's legacy summary (Phase 4.17.1) —
+  // null when the ROI is <= -100% (undefined fractional power).
+  const annualisedPreTaxROI = annualiseReturnOverMonths(preTaxProjectROI, holdingPeriodMonths);
 
   const breakEvenFixedCosts =
     inputs.purchasePrice + acquisitionCosts + inputs.renovationCost + totalHoldingCosts + financingTotals.totalInterestPaid;

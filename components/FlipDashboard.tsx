@@ -51,6 +51,16 @@ export default function FlipDashboard({ flipMetrics, fixFlipAnalysis, currency =
           strategyId="fix_and_flip"
           max={60}
         />
+        {/* Phase 4.17.1: this fallback is now provably safe, not just
+            defensive — flipMetrics.annualisedROI shares its formula with
+            fixFlipAnalysis.profitability.annualisedPreTaxROI (both call
+            annualiseReturnOverMonths with the same reconciled ROI), so it
+            is null in exactly the cases annualisedPreTaxROI is null too.
+            The `??` never resurrects a stale/misleading non-null value —
+            it only covers fixFlipAnalysis being entirely absent
+            (pre-4.17 cached response) or "unavailable" (invalid holding
+            period), where flipMetrics.annualisedROI is the sole source
+            anyway. GaugeDial itself renders null as "--". */}
         <GaugeDial
           value={a?.profitability.annualisedPreTaxROI ?? flipMetrics.annualisedROI}
           unit="%"

@@ -26,8 +26,15 @@ export interface MetricBreakdown {
   formula: string;
   /** The deterministic numerator/denominator components, in display order. */
   lines: MetricBreakdownLine[];
-  /** The final value. Callers should treat this as informational only — whether to actually SHOW it (vs an N/A message) is the applicability layer's call, not this module's. */
-  result: number;
+  /**
+   * The final value. Callers should treat this as informational only —
+   * whether to actually SHOW it (vs an N/A message) is the applicability
+   * layer's call, not this module's. null (Phase 4.17.1) means the
+   * underlying figure genuinely isn't calculable for these inputs (e.g.
+   * Annualised ROI with an invalid holding period) — formatMetricValue
+   * already renders null as "N/A", so callers need no special handling.
+   */
+  result: number | null;
   resultFormat: BreakdownFormat;
 }
 
@@ -62,13 +69,11 @@ export function getMetricRawValue(metricKey: string, metrics: DealMetrics): numb
   if (metricKey === "initialEquityInvestment") return metrics.depositRequired;
   if (metricKey === "equity") return null;
 
-  // Phase 4.17: annualisedROI's compounding-equivalent figure lives on the
-  // Fix & Flip financial model, not the legacy linear FlipMetrics field — use
-  // it when available so every surface (Deal Coach included) quotes the same
-  // number as the FlipDashboard/PDF headline.
-  if (metricKey === "annualisedROI" && metrics.fixFlipAnalysis?.status === "available") {
-    return metrics.fixFlipAnalysis.profitability.annualisedPreTaxROI;
-  }
+  // Phase 4.17.1: flipMetrics.annualisedROI now shares its formula with
+  // FixFlipAnalysis.profitability.annualisedPreTaxROI (both call
+  // annualiseReturnOverMonths), so no special-casing is needed here any
+  // more — the generic flipMetrics lookup below already returns the
+  // correct, null-safe figure.
 
   if (metrics.flipMetrics && metricKey in metrics.flipMetrics) {
     const flipValue = (metrics.flipMetrics as unknown as Record<string, unknown>)[metricKey];
@@ -355,21 +360,21 @@ export function getMetricBreakdown({
     case "annualisedROI": {
       const f = metrics.flipMetrics;
       if (!f) return undefined;
+      // Phase 4.17.1: f.annualisedROI is now itself the compounding-equivalent
+      // figure (shares its formula with FixFlipAnalysis's own
+      // annualisedPreTaxROI via annualiseReturnOverMonths), so it's always the
+      // result shown here — a single source of truth, never a stale linear
+      // fallback. fixFlipAnalysis, when available, only adds the exact
+      // holding-period-months line for a more legible breakdown.
       const a = metrics.fixFlipAnalysis?.status === "available" ? metrics.fixFlipAnalysis : null;
-      if (a && a.profitability.annualisedPreTaxROI !== null) {
-        return {
-          formula: "(1 + Pre-Tax ROI) ^ (12 ÷ Holding Period Months) − 1",
-          lines: [
-            line("Pre-Tax ROI", a.profitability.preTaxProjectROI, "percent"),
-            line("Holding Period (months)", a.holdingPeriodMonths, "number"),
-          ],
-          result: a.profitability.annualisedPreTaxROI,
-          resultFormat: "percent",
-        };
-      }
       return {
-        formula: "Pre-Tax ROI ÷ Holding Period (years)",
-        lines: [line("Pre-Tax ROI", f.roi, "percent")],
+        formula: "(1 + Pre-Tax ROI) ^ (12 ÷ Holding Period Months) − 1",
+        lines: a
+          ? [
+              line("Pre-Tax ROI", a.profitability.preTaxProjectROI, "percent"),
+              line("Holding Period (months)", a.holdingPeriodMonths, "number"),
+            ]
+          : [line("Pre-Tax ROI", f.roi, "percent")],
         result: f.annualisedROI,
         resultFormat: "percent",
       };

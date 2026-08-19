@@ -92,7 +92,10 @@ describe("getMetricBreakdown — deterministic formula breakdowns reconcile with
     expect(b.lines[0].value).toBe(metrics.noiAnnual);
     expect(b.lines[1].value).toBe(metrics.annualDebtService);
     expect(b.result).toBeCloseTo(metrics.dscr, 6);
-    expect(b.lines[0].value / b.lines[1].value).toBeCloseTo(b.result, 6);
+    // DSCR's breakdown is never null (only Flip's annualisedROI can be,
+    // since Phase 4.17.1 widened MetricBreakdown.result to number | null) —
+    // asserted above, so a non-null assertion here is safe.
+    expect(b.lines[0].value / b.lines[1].value).toBeCloseTo(b.result!, 6);
   });
 
   it("LTV: Total Loan Amount ÷ Purchase Price reconciles to metrics.ltv", () => {

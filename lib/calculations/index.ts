@@ -1,4 +1,5 @@
 import { calcMonthlyRepayment } from "./amortisation";
+import { annualiseReturnOverMonths } from "./returnMath";
 // Deliberate late-bound circular import: fixFlip.ts imports several pure
 // primitives FROM this module (calcMonthlyRepayment, calcFinancingTotalsOverMonths,
 // remainingLoanBalanceAfterMonths, solvePeriodicIRR, isFiniteNumber) — all
@@ -197,7 +198,17 @@ export interface FlipMetrics {
    */
   netProfit: number;
   roi: number;
-  annualisedROI: number;
+  /**
+   * Compounding-equivalent annualisation of `roi` (Phase 4.17.1, via the
+   * shared annualiseReturnOverMonths helper — the same one
+   * FixFlipAnalysis.profitability.annualisedPreTaxROI uses, so the two
+   * always agree). Previously a linear approximation (roi / holdingYears)
+   * that silently disagreed with the Phase 4.17 model's own figure, and
+   * silently returned 0 — rather than null — for an invalid holding
+   * period. null means "not calculable" (invalid holding period, or ROI
+   * <= -100%): never conflate with a genuine 0% return.
+   */
+  annualisedROI: number | null;
   profitMargin: number;
 }
 
@@ -783,8 +794,9 @@ export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
   const netProfit = grossProfit;
 
   const roi = totalCost ? (netProfit / totalCost) * 100 : 0;
-  const holdingYears = inputs.holdingPeriodMonths / 12;
-  const annualisedROI = holdingYears > 0 ? roi / holdingYears : 0;
+  // Phase 4.17.1: shared with FixFlipAnalysis.profitability.annualisedPreTaxROI
+  // — one compounding-equivalent implementation, not two independent ones.
+  const annualisedROI = annualiseReturnOverMonths(roi, inputs.holdingPeriodMonths);
   const profitMargin = inputs.expectedSalePrice
     ? (netProfit / inputs.expectedSalePrice) * 100
     : 0;

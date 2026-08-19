@@ -263,16 +263,14 @@ export default function DealSummaryPDF({
         { key: "netProfit", label: "Estimated Profit Before Tax", value: fmt(metrics.flipMetrics.netProfit, currencySymbol) },
         { key: "roi", label: "Pre-Tax ROI", value: `${metrics.flipMetrics.roi.toFixed(1)}%` },
         {
+          // Phase 4.17.1: flipMetrics.annualisedROI is itself the
+          // compounding-equivalent figure now (shares its formula with
+          // fixFlipAnalysis.profitability.annualisedPreTaxROI), and is
+          // null — not a misleading 0% or stale linear number — exactly
+          // when fixFlipAnalysis would also say N/A. One field is enough.
           key: "annualisedROI",
           label: "Annualised Pre-Tax ROI",
-          value:
-            metrics.fixFlipAnalysis?.status === "available" && metrics.fixFlipAnalysis.profitability.annualisedPreTaxROI === null
-              ? "N/A"
-              : `${(
-                  metrics.fixFlipAnalysis?.status === "available"
-                    ? metrics.fixFlipAnalysis.profitability.annualisedPreTaxROI!
-                    : metrics.flipMetrics.annualisedROI
-                ).toFixed(1)}%`,
+          value: metrics.flipMetrics.annualisedROI === null ? "N/A" : `${metrics.flipMetrics.annualisedROI.toFixed(1)}%`,
         },
         { key: "totalCost", label: "Total Cost", value: fmt(metrics.flipMetrics.totalCost, currencySymbol) },
       ]
