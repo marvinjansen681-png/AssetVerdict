@@ -276,7 +276,7 @@ export default function DealSummaryPage({
       </section>
 
       {isFlip && activeMetrics.flipMetrics ? (
-        <FlipDashboard flipMetrics={activeMetrics.flipMetrics} currency="R" />
+        <FlipDashboard flipMetrics={activeMetrics.flipMetrics} fixFlipAnalysis={activeMetrics.fixFlipAnalysis} currency="R" />
       ) : (
         <>
       <section>

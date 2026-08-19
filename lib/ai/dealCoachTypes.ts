@@ -199,6 +199,43 @@ export interface DealCoachContext {
      */
     commercialContext?: { leaseTermMonths: number | null };
   };
+  /**
+   * Fix & Flip only (Phase 4.17) — the ONE deterministic Fix & Flip
+   * financial model (lib/calculations/fixFlip.ts), pre-formatted. Undefined
+   * for every non-Flip strategy. All figures are already-computed,
+   * already-formatted strings; the coach must never recompute or
+   * re-derive any of them (see the guardrail in dealCoachPrompt.ts).
+   * `status: "unavailable"` means holdingPeriodMonths is invalid — every
+   * other field is then absent, and the coach should say so plainly rather
+   * than guessing a duration.
+   */
+  fixFlipAnalysis?: {
+    status: "available" | "unavailable";
+    holdingPeriodMonths?: number;
+    purchasePrice?: string;
+    acquisitionCosts?: string;
+    renovationCost?: string;
+    totalHoldingCosts?: string;
+    totalLoanAmount?: string;
+    totalInterestPaid?: string;
+    totalPrincipalPaid?: string;
+    remainingLoanBalanceAtSale?: string;
+    projectedSalePrice?: string;
+    sellingCosts?: string;
+    projectProfitBeforeFinancingAndTax?: string;
+    estimatedProfitBeforeTax?: string;
+    preTaxProjectROI?: string;
+    preTaxEquityROI?: string;
+    annualisedPreTaxROI?: string;
+    equityIRR?: string;
+    preTaxProfitMargin?: string;
+    breakEvenSalePrice?: string;
+    salePriceBufferRand?: string;
+    salePriceBufferPercent?: string;
+    financingAssumption?: string;
+    taxAssumption?: string;
+    renovationTimingAssumption?: string;
+  };
   scenario: {
     active: ScenarioKey;
     note: string;

@@ -62,6 +62,14 @@ export function getMetricRawValue(metricKey: string, metrics: DealMetrics): numb
   if (metricKey === "initialEquityInvestment") return metrics.depositRequired;
   if (metricKey === "equity") return null;
 
+  // Phase 4.17: annualisedROI's compounding-equivalent figure lives on the
+  // Fix & Flip financial model, not the legacy linear FlipMetrics field — use
+  // it when available so every surface (Deal Coach included) quotes the same
+  // number as the FlipDashboard/PDF headline.
+  if (metricKey === "annualisedROI" && metrics.fixFlipAnalysis?.status === "available") {
+    return metrics.fixFlipAnalysis.profitability.annualisedPreTaxROI;
+  }
+
   if (metrics.flipMetrics && metricKey in metrics.flipMetrics) {
     const flipValue = (metrics.flipMetrics as unknown as Record<string, unknown>)[metricKey];
     return typeof flipValue === "number" ? flipValue : null;
@@ -286,11 +294,18 @@ export function getMetricBreakdown({
       const f = metrics.flipMetrics;
       if (!f) return undefined;
       return {
-        formula: "Purchase Price + Renovation Cost + Holding Costs + Agent Commission",
+        // Phase 4.17: acquisition costs (transfer/bond + sourcing fee) and
+        // financing interest during the hold were previously missing from
+        // this total entirely — see calcFlipProfit's doc comment. Loan
+        // PRINCIPAL is deliberately never a line here — it is financing
+        // cashflow, not a project cost (see lib/calculations/fixFlip.ts).
+        formula: "Purchase Price + Acquisition Costs + Renovation Cost + Holding Costs + Financing Interest + Agent Commission",
         lines: [
           line("Purchase Price", f.purchasePrice, "currency"),
+          line("Acquisition Costs", f.acquisitionCosts, "currency"),
           line("Renovation Cost", f.renovationCost, "currency"),
           line("Holding Costs", f.holdingCosts, "currency"),
+          line("Financing Interest", f.financingInterest, "currency"),
           line("Agent Commission", f.agentFee, "currency"),
         ],
         result: f.totalCost,
@@ -340,6 +355,18 @@ export function getMetricBreakdown({
     case "annualisedROI": {
       const f = metrics.flipMetrics;
       if (!f) return undefined;
+      const a = metrics.fixFlipAnalysis?.status === "available" ? metrics.fixFlipAnalysis : null;
+      if (a && a.profitability.annualisedPreTaxROI !== null) {
+        return {
+          formula: "(1 + Pre-Tax ROI) ^ (12 ÷ Holding Period Months) − 1",
+          lines: [
+            line("Pre-Tax ROI", a.profitability.preTaxProjectROI, "percent"),
+            line("Holding Period (months)", a.holdingPeriodMonths, "number"),
+          ],
+          result: a.profitability.annualisedPreTaxROI,
+          resultFormat: "percent",
+        };
+      }
       return {
         formula: "Pre-Tax ROI ÷ Holding Period (years)",
         lines: [line("Pre-Tax ROI", f.roi, "percent")],

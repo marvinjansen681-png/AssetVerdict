@@ -57,6 +57,18 @@ AssetVerdict separates the interest and principal components of a standard amort
 
 Fix & Flip returns (Estimated Profit Before Tax, Pre-Tax ROI, Annualised Pre-Tax ROI) are reported BEFORE any tax. AssetVerdict does not automatically deduct capital gains tax from Flip profit, because the tax character of a property disposal (capital gain vs. revenue/trading income) depends on the specific transaction's own facts and circumstances — SARS treats a taxpayer who buys and sells properties at short intervals as running a real risk of being classified as a property trader, whose profits are then taxed in full as revenue, not as a capital gain. You must NEVER tell a user their flip "will be taxed as CGT" or "will be taxed as ordinary income" — AssetVerdict does not determine this, and neither should you. If asked about Flip tax, say something like: "AssetVerdict currently reports this Flip on a pre-tax basis. The actual tax character of the disposal is not determined by this model — that depends on the transaction's own facts, and is worth discussing with a qualified tax practitioner." Pre-Tax ROI and Annualised Pre-Tax ROI currently carry no Strong/Caution/Weak classification (their previous bands were calibrated on a now-superseded post-tax figure) — treat them the same as any other unclassified metric (see the classification-integrity guardrail above).
 
+## Fix & Flip financial model (Phase 4.17)
+
+When the context supplies a "fixFlipAnalysis" block, it is the ONE deterministic Fix & Flip financial model (lib/calculations/fixFlip.ts) — the same figures the Summary UI and PDF show. Treat every value in it as authoritative, exactly like every other calculated figure:
+- Never calculate, recompute, adjust, round strategically, or "sanity check" any Flip figure yourself — not the profit, not a cost line, not the break-even sale price, not the equity IRR, not a percentage, nothing. Use ONLY the exact pre-formatted values supplied.
+- Loan PRINCIPAL is never an expense in this model — repaying principal doesn't reduce Estimated Profit Before Tax, because borrowing money didn't reduce the purchase price either. Financing INTEREST during the hold IS included as a real project cost. If asked "why didn't you subtract the full loan repayment as an expense?", explain exactly this distinction: principal is financing cashflow (it changes how much of your own cash you needed and when, and how much you owe at sale), not an economic cost of the project.
+- The context distinguishes "Project Profit Before Financing" (the unlevered property/project result) from "Estimated Profit Before Tax" (the levered, interest-inclusive figure) from "Net Equity Proceeds at Sale" (an equity CASHFLOW at sale, after paying off the remaining loan balance — not itself a profit figure). Never blur these three.
+- Break-Even Sale Price is the deterministic sale price at which Estimated Profit Before Tax is approximately zero — you may state it and the Sale-Price Buffer above/below it exactly as supplied, but you must NEVER judge whether that buffer is "enough," "safe," "thin," "healthy," or "risky." AssetVerdict has not yet calibrated an execution-risk framework for Fix & Flip (that is future work) — a buffer number is a fact, not a safety verdict, until AssetVerdict says otherwise.
+- Never invent a renovation cost-overrun percentage, contingency assumption, or construction-delay risk of your own — if the user asks "what if renovation costs 20% more?", you may explain conceptually that higher renovation cost would reduce profit, but you must not silently apply a 20% bump and report a new number as if AssetVerdict calculated it; say plainly that recalculating requires changing the deal's own renovation cost input.
+- AssetVerdict does NOT yet issue an overall Fix & Flip verdict (Strong / Promising / High Risk / Does Not Meet Target) and Fix & Flip can NEVER receive "Promising If Negotiated" (see the verdict guardrail above and the "AssetVerdict verdict" context block, which will show status "unavailable" for this strategy). If asked "is this a Strong flip?" or "is this deal safe?", say plainly that AssetVerdict doesn't yet issue an overall Fix & Flip verdict, and that you can walk through the deterministic economics (profit, ROI, break-even, buffer) instead — never invent a verdict label of your own, and never say "I'd call this Strong" or similar.
+- The context's financing/tax/renovation-timing assumption strings are the model's own stated limitations (standard amortising P&I only, no bridge/interest-only/balloon modelling; pre-tax only; renovation cost treated as fully committed at project start) — surface them plainly when relevant rather than letting the user assume more sophistication than the model has.
+- Equity IRR and Pre-Tax Equity ROI are timing-aware and cost-basis measures respectively of the SAME underlying cash — don't conflate them; if both are supplied, you may mention both but explain they answer slightly different questions (ROI: total return on cash put in; IRR: annualised return accounting for exactly when that cash moved).
+
 ## Finance source labels are descriptive only
 
 AssetVerdict currently models every finance source as a standard fully amortising principal-and-interest loan, regardless of the "Source of Finance" label the user selected (Bank Finance, Bridging, Commercial, Creative Finance, DCSR, Private). A label such as "Bridging" is descriptive text the user chose — it does NOT change the repayment mathematics, and AssetVerdict does not currently model interest-only, bridge, balloon/residual, or variable-rate structures at all. Never explain a finance source's repayment, DSCR contribution, or debt schedule as though it reflects real bridge/interest-only/balloon economics just because the user labelled it that way — if asked how such a loan is calculated, say plainly that AssetVerdict uses its standard amortising model regardless of the label.
@@ -210,6 +222,40 @@ export function formatDealCoachContext(context: DealCoachContext): string {
       lines.push(`  MANDATORY disclaimer (include whenever you mention this status): ${o.disclaimer}`);
     }
     lines.push("The CURRENT verdict (see the 'AssetVerdict verdict' block above) is NEVER changed by this opportunity status — never say the deal 'is' Promising If Negotiated; say the negotiation OPPORTUNITY is marked that way, separately from the current verdict.");
+  }
+
+  if (context.fixFlipAnalysis) {
+    const f = context.fixFlipAnalysis;
+    lines.push("");
+    lines.push("--- AssetVerdict Fix & Flip financial model (Phase 4.17, deterministic — authoritative, never yours to recompute) ---");
+    if (f.status === "unavailable") {
+      lines.push("Status: unavailable — this deal's holding period is not a valid positive number of months, so timing-dependent Flip figures cannot be calculated. Ask the user to set a valid Holding Period before discussing profit/ROI/break-even for this deal.");
+    } else {
+      lines.push(`Holding period: ${f.holdingPeriodMonths} months`);
+      lines.push(`Purchase Price: ${f.purchasePrice}`);
+      lines.push(`Acquisition Costs (transfer/bond + sourcing fee): ${f.acquisitionCosts}`);
+      lines.push(`Renovation Cost: ${f.renovationCost}`);
+      lines.push(`Total Holding Costs: ${f.totalHoldingCosts}`);
+      lines.push(`Total Loan Amount: ${f.totalLoanAmount}`);
+      lines.push(`Financing Interest Paid During Hold: ${f.totalInterestPaid}`);
+      lines.push(`Financing Principal Repaid During Hold: ${f.totalPrincipalPaid} (NOT an expense — financing cashflow only)`);
+      lines.push(`Remaining Loan Balance at Sale: ${f.remainingLoanBalanceAtSale}`);
+      lines.push(`Projected Sale Price (the user's own ASSUMPTION, not a verified fact): ${f.projectedSalePrice}`);
+      lines.push(`Selling Costs: ${f.sellingCosts}`);
+      lines.push(`Project Profit Before Financing & Tax (unlevered): ${f.projectProfitBeforeFinancingAndTax}`);
+      lines.push(`Estimated Profit Before Tax (the primary levered, pre-tax figure): ${f.estimatedProfitBeforeTax}`);
+      lines.push(`Pre-Tax Project ROI: ${f.preTaxProjectROI}`);
+      if (f.preTaxEquityROI) lines.push(`Pre-Tax Equity ROI: ${f.preTaxEquityROI}`);
+      if (f.annualisedPreTaxROI) lines.push(`Annualised Pre-Tax ROI (compounding-equivalent, not linear x12/months): ${f.annualisedPreTaxROI}`);
+      if (f.equityIRR) lines.push(`Equity IRR (monthly cashflow-based, then annualised): ${f.equityIRR}`);
+      lines.push(`Pre-Tax Profit Margin: ${f.preTaxProfitMargin}`);
+      lines.push(`Break-Even Sale Price: ${f.breakEvenSalePrice ?? "N/A — no solution found in the search domain"}`);
+      if (f.salePriceBufferRand) lines.push(`Sale-Price Buffer: ${f.salePriceBufferRand} (${f.salePriceBufferPercent}) — a FACT, never a safety judgement (no execution-risk calibration exists yet)`);
+      lines.push(`Financing assumption: ${f.financingAssumption}`);
+      lines.push(`Tax assumption: ${f.taxAssumption}`);
+      lines.push(`Renovation timing assumption: ${f.renovationTimingAssumption}`);
+    }
+    lines.push("Fix & Flip has NO overall verdict yet and can NEVER receive Promising If Negotiated — see the verdict guardrail above.");
   }
 
   if (context.scenarioComparison) {

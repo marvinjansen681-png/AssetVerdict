@@ -140,13 +140,53 @@ export function applicabilityContextFromMetrics(
  * union (classified / unclassified / not_applicable) in thresholds.ts —
  * these are deliberately never collapsed into each other.
  */
+/**
+ * Rental income-producing metrics that are structurally meaningless for Fix
+ * & Flip (Phase 4.17, sections 65-68): Flip has no ongoing operating income
+ * (calcBaseMonthlyRevenue returns 0 for "fix_and_flip"), so NOI-derived
+ * ratios like DSCR, Break-Even Ratio, and OER don't measure what they claim
+ * to for this strategy, and yield/cap-rate/cash-on-cash concepts assume a
+ * holding-period income stream a Flip doesn't have. These are marked
+ * not_applicable regardless of their raw computed value — Fix & Flip's own
+ * meaningful risk/return concepts (Estimated Profit Before Tax, Pre-Tax
+ * Project ROI, Break-Even Sale Price, Sale-Price Buffer) live in
+ * lib/calculations/fixFlip.ts instead. Not currently reachable through the
+ * Summary UI or Deal Coach (both already strategy-gate to flip-only metric
+ * groups — see FLIP_GROUPS in lib/education/metricDefinitions.ts), but this
+ * is the correct, defensive fix at the one shared classification entry
+ * point so no future caller can accidentally surface a misleading rental
+ * classification for a Flip deal.
+ */
+const FLIP_NOT_APPLICABLE_METRICS = new Set([
+  "dscr",
+  "breakEvenRatio",
+  "operatingExpenseRatio",
+  "capRatePP",
+  "capRateMV",
+  "grossYield",
+  "netYieldPreTax",
+  "netYieldPostTax",
+  "irr",
+  "npv",
+  "paybackPeriod",
+]);
+
+function getFlipApplicabilityOverride(metricKey: string, strategyId: string): MetricApplicability | null {
+  if (strategyId !== "fix_and_flip" || !FLIP_NOT_APPLICABLE_METRICS.has(metricKey)) return null;
+  return {
+    applicable: false,
+    reason:
+      "This is a rental income-producing metric — Fix & Flip has no ongoing operating income, so it isn't meaningful here. See the Fix & Flip financial model (Estimated Profit Before Tax, Pre-Tax Project ROI, Break-Even Sale Price) instead.",
+  };
+}
+
 export function classifyMetricForDeal(
   metricKey: string,
   value: number | null | undefined,
   ctx: ApplicabilityContext,
   strategyId: string
 ): MetricClassification {
-  const applicability = getMetricApplicability(metricKey, ctx);
+  const applicability = getFlipApplicabilityOverride(metricKey, strategyId) ?? getMetricApplicability(metricKey, ctx);
   if (!applicability.applicable) {
     return {
       status: "not_applicable",

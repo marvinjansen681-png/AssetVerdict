@@ -252,3 +252,48 @@ describe("classifyMetricForDeal", () => {
     }
   });
 });
+
+describe("classifyMetricForDeal — Fix & Flip rental-metric applicability (Phase 4.17, sections 65-68)", () => {
+  const flipInputsWithDebt: DealInputs = {
+    ...baseInputs,
+    strategy: "fix_and_flip",
+    financeSources: [{ loanAmount: 500_000, interestRate: 12, termYears: 20 }],
+    purchasePrice: 1_000_000,
+    marketValue: 1_000_000,
+    renovationCost: 200_000,
+    expectedSalePrice: 1_500_000,
+    holdingPeriodMonths: 6,
+  };
+
+  it("DSCR/Break-Even/OER/Cap Rates/Yields/Cash-on-Cash/IRR/NPV/Payback are all not_applicable for Fix & Flip, even with debt present", () => {
+    const metrics = calcAllMetrics(flipInputsWithDebt);
+    const ctx = applicabilityContextFromInputs(flipInputsWithDebt);
+    const flipInapplicableKeys = [
+      "dscr",
+      "breakEvenRatio",
+      "operatingExpenseRatio",
+      "capRatePP",
+      "capRateMV",
+      "grossYield",
+      "netYieldPreTax",
+      "netYieldPostTax",
+      "irr",
+      "npv",
+      "paybackPeriod",
+    ] as const;
+    for (const key of flipInapplicableKeys) {
+      const result = classifyMetricForDeal(key, metrics[key], ctx, "fix_and_flip");
+      expect(result.status, key).toBe("not_applicable");
+      expect(result.applicable, key).toBe(false);
+      expect(result.color, key).toBeNull();
+    }
+  });
+
+  it("the SAME metrics remain classifiable/applicable as normal for a commercial deal with identical debt (the override is strategy-scoped, not global)", () => {
+    const commercialInputs: DealInputs = { ...flipInputsWithDebt, strategy: "commercial", monthlyRent: 15_000, occupancyRate: 90 };
+    const metrics = calcAllMetrics(commercialInputs);
+    const ctx = applicabilityContextFromInputs(commercialInputs);
+    const dscrResult = classifyMetricForDeal("dscr", metrics.dscr, ctx, "commercial");
+    expect(dscrResult.status).toBe("classified");
+  });
+});

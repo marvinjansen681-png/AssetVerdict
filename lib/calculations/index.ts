@@ -1,4 +1,13 @@
 import { calcMonthlyRepayment } from "./amortisation";
+// Deliberate late-bound circular import: fixFlip.ts imports several pure
+// primitives FROM this module (calcMonthlyRepayment, calcFinancingTotalsOverMonths,
+// remainingLoanBalanceAfterMonths, solvePeriodicIRR, isFiniteNumber) — all
+// used only inside function bodies there, never at module-evaluation time —
+// and this module only needs fixFlip's export inside calcAllMetrics's own
+// function body below, likewise never at module-evaluation time. ES module
+// circular imports are safe under that condition; see index.test.ts's own
+// "fixFlipAnalysis is attached" regression coverage.
+import { calcFixFlipAnalysis, type FixFlipAnalysis } from "./fixFlip";
 
 /**
  * Type guard for "a real, usable number". Prefer this over the bare
@@ -164,8 +173,12 @@ export interface RevenueBreakdown {
 export interface FlipMetrics {
   totalCost: number;
   purchasePrice: number;
+  /** Phase 4.17: transferBondCost + sourcingFee — previously omitted from totalCost entirely (a real gap, not a zero-cost strategy choice). */
+  acquisitionCosts: number;
   renovationCost: number;
   holdingCosts: number;
+  /** Phase 4.17: financing INTEREST paid during the hold — never principal, which is financing cashflow, not a project expense. Previously omitted; a financed Flip showed identical profit to an all-cash Flip. */
+  financingInterest: number;
   agentFee: number;
   expectedSalePrice: number;
   grossProfit: number;
@@ -260,6 +273,14 @@ export interface DealMetrics {
   npvBreakdown: NPVBreakdown;
   irrSummary: IRRSummary;
   flipMetrics?: FlipMetrics;
+  /**
+   * Phase 4.17 — the full deterministic Fix & Flip financial model (cost
+   * breakdown, financing breakdown, equity cashflow schedule, equity IRR,
+   * break-even sale price). Only attached for strategy "fix_and_flip" (see
+   * calcAllMetrics) — undefined for every other strategy, exactly mirroring
+   * flipMetrics' own convention. See lib/calculations/fixFlip.ts.
+   */
+  fixFlipAnalysis?: FixFlipAnalysis;
   /** Undefined for Fix & Flip — see calcExitSummary() doc comment for why. */
   exitSummary?: ExitSummary;
 }
@@ -737,12 +758,26 @@ export function calcCashflowMonthly(inputs: DealInputs): number {
  * Phase 4.10: reports PRE-TAX. capitalGainsTaxRate is deliberately NOT
  * applied here — see FlipMetrics.netProfit's doc comment. `netProfit`
  * equals `grossProfit` exactly; no tax of any kind is deducted.
+ *
+ * Phase 4.17 correction: `totalCost` previously omitted two real costs —
+ * acquisition/transfer costs (transferBondCost + sourcingFee) and financing
+ * interest during the hold. A financed Flip therefore showed IDENTICAL
+ * profit to an all-cash Flip with the same purchase price, which is wrong —
+ * borrowing doesn't make the property cheaper, but the INTEREST paid to
+ * borrow is a real project cost. Both are now included. Loan PRINCIPAL is
+ * deliberately still excluded — repaying principal is not an expense, it is
+ * financing cashflow (see lib/calculations/fixFlip.ts's module doc comment
+ * for the full project-economics-vs-financing-cashflow architecture and the
+ * richer FixFlipAnalysis breakdown/equity-cashflow/IRR/break-even that now
+ * accompanies this simpler summary figure).
  */
 export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
-  const holdingCosts = inputs.holdingCostPerMonth * inputs.holdingPeriodMonths;
+  const acquisitionCosts = inputs.transferBondCost + inputs.sourcingFee;
+  const holdingCosts = inputs.holdingCostPerMonth * Math.max(0, inputs.holdingPeriodMonths);
   const agentFee = inputs.expectedSalePrice * (inputs.agentCommission / 100);
+  const financingInterest = calcFinancingTotalsOverMonths(inputs, inputs.holdingPeriodMonths).totalInterestPaid;
   const totalCost =
-    inputs.purchasePrice + inputs.renovationCost + holdingCosts + agentFee;
+    inputs.purchasePrice + acquisitionCosts + inputs.renovationCost + holdingCosts + agentFee + financingInterest;
 
   const grossProfit = inputs.expectedSalePrice - totalCost;
   const netProfit = grossProfit;
@@ -757,8 +792,10 @@ export function calcFlipProfit(inputs: DealInputs): FlipMetrics {
   return {
     totalCost,
     purchasePrice: inputs.purchasePrice,
+    acquisitionCosts,
     renovationCost: inputs.renovationCost,
     holdingCosts,
+    financingInterest,
     agentFee,
     expectedSalePrice: inputs.expectedSalePrice,
     grossProfit,
@@ -858,17 +895,26 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
   return projections;
 }
 
-/** Remaining balance on a fully-amortising loan after `yearsElapsed` years. */
-function remainingLoanBalance(
+/**
+ * Remaining balance on a fully-amortising loan after `monthsElapsed` whole
+ * months — the single authoritative amortisation-balance primitive (Phase
+ * 4.17): takes months directly (integer payment count) rather than requiring
+ * a yearsElapsed-to-months conversion at every call site, so short-duration
+ * callers (Fix & Flip, holding period in months) get exact month-by-month
+ * precision without a fractional-year round trip. calcTotalRemainingLoanBalance
+ * (the pre-existing rental caller, years-based) is a thin wrapper over this —
+ * same formula, same numbers, nothing about rental behaviour changes.
+ */
+export function remainingLoanBalanceAfterMonths(
   loanAmount: number,
   interestRatePct: number,
   termYears: number,
-  yearsElapsed: number
+  monthsElapsed: number
 ): number {
-  if (!loanAmount || yearsElapsed >= termYears) return 0;
-  const r = interestRatePct / 12 / 100;
   const n = termYears * 12;
-  const p = Math.min(yearsElapsed * 12, n);
+  if (!loanAmount || monthsElapsed >= n) return 0;
+  const r = interestRatePct / 12 / 100;
+  const p = Math.min(monthsElapsed, n);
   if (r === 0) return loanAmount * (1 - p / n);
   const factor = Math.pow(1 + r, n);
   const factorP = Math.pow(1 + r, p);
@@ -876,11 +922,57 @@ function remainingLoanBalance(
 }
 
 export function calcTotalRemainingLoanBalance(inputs: DealInputs, yearsElapsed: number): number {
+  const monthsElapsed = Math.round(yearsElapsed * 12);
   return inputs.financeSources.reduce(
-    (sum, f) =>
-      sum + remainingLoanBalance(f.loanAmount, f.interestRate, f.termYears, yearsElapsed),
+    (sum, f) => sum + remainingLoanBalanceAfterMonths(f.loanAmount, f.interestRate, f.termYears, monthsElapsed),
     0
   );
+}
+
+/** Aggregate financing totals across every finance source over a fixed span of whole months from project start (Phase 4.17 — Fix & Flip's financing primitive). */
+export interface FinancingTotalsOverMonths {
+  totalInterestPaid: number;
+  totalPrincipalPaid: number;
+  /** Always exactly totalInterestPaid + totalPrincipalPaid — interest is derived as payment-minus-principal, never independently computed, so this identity holds by construction (Phase 4.17 section 47). */
+  totalDebtService: number;
+  remainingLoanBalance: number;
+}
+
+/**
+ * Sums interest/principal/debt-service/remaining-balance across ALL finance
+ * sources over months 1..months from project start — each source amortises
+ * fully independently (its own rate, its own term; never averaged or
+ * blended, per section 18/51). A source that has already matured
+ * (termYears*12 < month) contributes zero to every figure for that month,
+ * exactly mirroring calcAnnualDebtServiceForYear's rental maturity handling
+ * (section 17/55) — reuses remainingLoanBalanceAfterMonths and
+ * calcMonthlyRepayment, the SAME amortisation primitives rental deals use;
+ * no second loan-math implementation exists for Fix & Flip.
+ */
+export function calcFinancingTotalsOverMonths(inputs: DealInputs, months: number): FinancingTotalsOverMonths {
+  let totalInterestPaid = 0;
+  let totalPrincipalPaid = 0;
+  let totalDebtService = 0;
+  const wholeMonths = Math.max(0, Math.floor(months));
+
+  for (const f of inputs.financeSources) {
+    const termMonths = f.termYears * 12;
+    const monthlyPayment = calcMonthlyRepayment(f.loanAmount, f.interestRate, f.termYears);
+    for (let m = 1; m <= wholeMonths; m++) {
+      if (m > termMonths) continue; // matured — debt service stops (section 17, 55)
+      const balanceBefore = remainingLoanBalanceAfterMonths(f.loanAmount, f.interestRate, f.termYears, m - 1);
+      const balanceAfter = remainingLoanBalanceAfterMonths(f.loanAmount, f.interestRate, f.termYears, m);
+      const principal = balanceBefore - balanceAfter;
+      const interest = monthlyPayment - principal;
+      totalPrincipalPaid += principal;
+      totalInterestPaid += interest;
+      totalDebtService += monthlyPayment;
+    }
+  }
+
+  const remainingLoanBalance = calcTotalRemainingLoanBalance(inputs, wholeMonths / 12);
+
+  return { totalInterestPaid, totalPrincipalPaid, totalDebtService, remainingLoanBalance };
 }
 
 /**
@@ -1035,17 +1127,18 @@ export function buildEquityCashflows(inputs: DealInputs): number[] {
 }
 
 /**
- * Equity IRR over 20 years using Newton-Raphson on buildEquityCashflows(): the
- * annualised return on the investor's OWN cash, after debt service and the
- * eventual (after-tax, after-debt-payoff) sale. AssetVerdict's dashboard and
- * DealMetrics field are simply named "IRR", but this is always the equity/
- * levered return, never an unlevered property-only return — see
- * lib/education/metricDefinitions.ts for the education-facing explanation of
- * that distinction.
+ * Newton-Raphson solve for the PERIODIC internal rate of return of an
+ * arbitrary cashflow series — cashflows[0] at period 0, cashflows[1] at
+ * period 1, etc. Deliberately period-agnostic (Phase 4.17): the Newton-
+ * Raphson iteration itself doesn't know or care whether a "period" is a
+ * year or a month, so this is the ONE IRR solver both calcIRR (annual,
+ * rental) and Fix & Flip's monthly equity IRR (lib/calculations/fixFlip.ts)
+ * call — no second, duplicated root-finder exists anywhere in the app.
+ * Returns the raw, un-clamped periodic rate (a fraction, not a percentage);
+ * callers decide their own sane clamping band, since "wide but sane" means
+ * something different for an annual vs. a monthly rate.
  */
-export function calcIRR(inputs: DealInputs): number {
-  const cashflows = buildEquityCashflows(inputs);
-
+export function solvePeriodicIRR(cashflows: number[]): number {
   const npvAt = (rate: number) =>
     cashflows.reduce((sum, cf, t) => sum + cf / Math.pow(1 + rate, t), 0);
 
@@ -1063,6 +1156,21 @@ export function calcIRR(inputs: DealInputs): number {
     }
     rate = nextRate;
   }
+  return rate;
+}
+
+/**
+ * Equity IRR over 20 years using Newton-Raphson on buildEquityCashflows(): the
+ * annualised return on the investor's OWN cash, after debt service and the
+ * eventual (after-tax, after-debt-payoff) sale. AssetVerdict's dashboard and
+ * DealMetrics field are simply named "IRR", but this is always the equity/
+ * levered return, never an unlevered property-only return — see
+ * lib/education/metricDefinitions.ts for the education-facing explanation of
+ * that distinction.
+ */
+export function calcIRR(inputs: DealInputs): number {
+  const cashflows = buildEquityCashflows(inputs);
+  const rate = solvePeriodicIRR(cashflows);
 
   // Newton-Raphson can diverge to a spurious, numerically "converged" root far
   // from any economically meaningful rate (e.g. deals with cashflow negative
@@ -1149,6 +1257,8 @@ export function calcAllMetrics(inputs: DealInputs): DealMetrics {
   return {
     flipMetrics:
       inputs.strategy === "fix_and_flip" ? calcFlipProfit(inputs) : undefined,
+    fixFlipAnalysis:
+      inputs.strategy === "fix_and_flip" ? calcFixFlipAnalysis(inputs) : undefined,
     exitSummary:
       inputs.strategy === "fix_and_flip" ? undefined : calcExitSummary(inputs),
     totalInvestment: calcTotalInvestment(inputs),

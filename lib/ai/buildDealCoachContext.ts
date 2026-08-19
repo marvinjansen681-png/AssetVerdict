@@ -345,6 +345,50 @@ function buildDealCoachNegotiation(
   };
 }
 
+/**
+ * Compact, pre-formatted Fix & Flip financial model (Phase 4.17) — reuses
+ * the ONE Fix & Flip engine (calcFixFlipAnalysis, already attached to
+ * `metrics.fixFlipAnalysis` by calcAllMetrics) and formats every figure
+ * with the SAME formatMetricValue the Summary UI/PDF use. No second
+ * calculation of any Flip figure exists here.
+ */
+function buildDealCoachFixFlipAnalysis(metrics: DealMetrics, currency: string): DealCoachContext["fixFlipAnalysis"] {
+  const a = metrics.fixFlipAnalysis;
+  if (!a) return undefined;
+  if (a.status === "unavailable") return { status: "unavailable" };
+
+  const cur = (v: number) => formatMetricValue(v, "currency", currency);
+  const pct = (v: number | null) => (v === null ? undefined : `${v.toFixed(1)}%`);
+
+  return {
+    status: "available",
+    holdingPeriodMonths: a.holdingPeriodMonths,
+    purchasePrice: cur(a.acquisition.purchasePrice),
+    acquisitionCosts: cur(a.acquisition.acquisitionCosts),
+    renovationCost: cur(a.renovation.renovationCost),
+    totalHoldingCosts: cur(a.holding.totalHoldingCosts),
+    totalLoanAmount: cur(a.financing.totalLoanAmount),
+    totalInterestPaid: cur(a.financing.totalInterestPaid),
+    totalPrincipalPaid: cur(a.financing.totalPrincipalPaid),
+    remainingLoanBalanceAtSale: cur(a.financing.remainingLoanBalanceAtSale),
+    projectedSalePrice: cur(a.sale.projectedSalePrice),
+    sellingCosts: cur(a.sale.sellingCosts),
+    projectProfitBeforeFinancingAndTax: cur(a.profitability.projectProfitBeforeFinancingAndTax),
+    estimatedProfitBeforeTax: cur(a.profitability.estimatedProfitBeforeTax),
+    preTaxProjectROI: pct(a.profitability.preTaxProjectROI),
+    preTaxEquityROI: pct(a.profitability.preTaxEquityROI),
+    annualisedPreTaxROI: pct(a.profitability.annualisedPreTaxROI),
+    equityIRR: pct(a.profitability.equityIRR),
+    preTaxProfitMargin: pct(a.profitability.preTaxProfitMargin),
+    breakEvenSalePrice: a.breakEven.breakEvenSalePrice === null ? undefined : cur(a.breakEven.breakEvenSalePrice),
+    salePriceBufferRand: a.breakEven.salePriceBufferRand === null ? undefined : cur(a.breakEven.salePriceBufferRand),
+    salePriceBufferPercent: pct(a.breakEven.salePriceBufferPercent),
+    financingAssumption: a.modelAssumptions.financingAssumption,
+    taxAssumption: a.modelAssumptions.taxAssumption,
+    renovationTimingAssumption: a.modelAssumptions.renovationTimingAssumption,
+  };
+}
+
 function resolveRelatedMetricKeys(definitionKeys: string[], strategyId: string): string[] {
   const strategyKeys = new Set(getMetricGroupsForStrategy(strategyId).flatMap((g) => g.metricKeys));
   const related: string[] = [];
@@ -412,6 +456,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
   };
   const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics });
   const negotiation = buildDealCoachNegotiation(inputs, strategyId, currency, verdict);
+  const fixFlipAnalysis = strategyId === "fix_and_flip" ? buildDealCoachFixFlipAnalysis(metrics, currency) : undefined;
 
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved
@@ -499,7 +544,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
       comparison![key] = row;
     });
-    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, negotiation, selection };
+    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, negotiation, fixFlipAnalysis, selection };
   }
 
   // ---- Single selected metric: full detail + a few close drivers --------
@@ -536,7 +581,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
     }
 
-    return { deal, scenario, metrics: entries, verdict, negotiation, selection };
+    return { deal, scenario, metrics: entries, verdict, negotiation, fixFlipAnalysis, selection };
   }
 
   // ---- Broad deal context: every strategy-relevant metric, light detail --
@@ -574,6 +619,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     assumptionFlags: includeAssumptions ? buildAssumptionFlags(inputs, strategyId) : undefined,
     verdict,
     negotiation,
+    fixFlipAnalysis,
     selection,
   };
 }

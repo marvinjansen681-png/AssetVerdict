@@ -122,6 +122,8 @@ const styles = StyleSheet.create({
   opportunityGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   opportunityFieldLabel: { fontSize: 7, color: COLORS.slate, textTransform: "uppercase" },
   opportunityFieldValue: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: COLORS.navy, marginTop: 1 },
+  flipBox: { borderWidth: 1, borderColor: COLORS.lightGrey, borderRadius: 4, padding: 12, marginTop: 16 },
+  flipBoxTitle: { fontSize: 12, fontFamily: "Helvetica-Bold", marginBottom: 6 },
 });
 
 /**
@@ -260,7 +262,18 @@ export default function DealSummaryPDF({
     ? [
         { key: "netProfit", label: "Estimated Profit Before Tax", value: fmt(metrics.flipMetrics.netProfit, currencySymbol) },
         { key: "roi", label: "Pre-Tax ROI", value: `${metrics.flipMetrics.roi.toFixed(1)}%` },
-        { key: "annualisedROI", label: "Annualised Pre-Tax ROI", value: `${metrics.flipMetrics.annualisedROI.toFixed(1)}%` },
+        {
+          key: "annualisedROI",
+          label: "Annualised Pre-Tax ROI",
+          value:
+            metrics.fixFlipAnalysis?.status === "available" && metrics.fixFlipAnalysis.profitability.annualisedPreTaxROI === null
+              ? "N/A"
+              : `${(
+                  metrics.fixFlipAnalysis?.status === "available"
+                    ? metrics.fixFlipAnalysis.profitability.annualisedPreTaxROI!
+                    : metrics.flipMetrics.annualisedROI
+                ).toFixed(1)}%`,
+        },
         { key: "totalCost", label: "Total Cost", value: fmt(metrics.flipMetrics.totalCost, currencySymbol) },
       ]
     : [
@@ -555,6 +568,65 @@ export default function DealSummaryPDF({
             );
           })}
         </View>
+
+        {/* Fix & Flip financial breakdown (Phase 4.17) — same fixFlipAnalysis object the Summary UI reads, no duplicated arithmetic. */}
+        {isFlip && metrics.fixFlipAnalysis?.status === "available" && (
+          <>
+            <View style={styles.flipBox}>
+              <Text style={styles.flipBoxTitle}>Financing</Text>
+              <View style={styles.row}>
+                <Text style={styles.label}>Total Loan Amount</Text>
+                <Text style={styles.value}>{fmt(metrics.fixFlipAnalysis.financing.totalLoanAmount, currencySymbol)}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Interest Paid During Hold</Text>
+                <Text style={styles.value}>{fmt(metrics.fixFlipAnalysis.financing.totalInterestPaid, currencySymbol)}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Principal Repaid During Hold</Text>
+                <Text style={styles.value}>{fmt(metrics.fixFlipAnalysis.financing.totalPrincipalPaid, currencySymbol)}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Remaining Loan Balance at Sale</Text>
+                <Text style={styles.value}>{fmt(metrics.fixFlipAnalysis.financing.remainingLoanBalanceAtSale, currencySymbol)}</Text>
+              </View>
+              <Text style={styles.verdictFootnote}>{metrics.fixFlipAnalysis.modelAssumptions.financingAssumption}</Text>
+            </View>
+
+            <View style={styles.flipBox}>
+              <Text style={styles.flipBoxTitle}>Break-Even &amp; Equity Return</Text>
+              <View style={styles.row}>
+                <Text style={styles.label}>Break-Even Sale Price</Text>
+                <Text style={styles.value}>
+                  {metrics.fixFlipAnalysis.breakEven.breakEvenSalePrice === null
+                    ? "N/A"
+                    : fmt(metrics.fixFlipAnalysis.breakEven.breakEvenSalePrice, currencySymbol)}
+                </Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Sale-Price Buffer</Text>
+                <Text style={styles.value}>
+                  {metrics.fixFlipAnalysis.breakEven.salePriceBufferRand === null
+                    ? "N/A"
+                    : `${fmt(metrics.fixFlipAnalysis.breakEven.salePriceBufferRand, currencySymbol)} (${(metrics.fixFlipAnalysis.breakEven.salePriceBufferPercent ?? 0).toFixed(1)}%)`}
+                </Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.label}>Pre-Tax Equity IRR (annualised)</Text>
+                <Text style={styles.value}>
+                  {metrics.fixFlipAnalysis.profitability.equityIRR === null
+                    ? "N/A"
+                    : `${metrics.fixFlipAnalysis.profitability.equityIRR.toFixed(1)}%`}
+                </Text>
+              </View>
+              <Text style={styles.verdictFootnote}>
+                The break-even sale price is a mathematical target — the price at which Estimated Profit Before Tax is
+                approximately zero — not a prediction of what the property will sell for.
+              </Text>
+              <Text style={styles.verdictFootnote}>{metrics.fixFlipAnalysis.modelAssumptions.taxAssumption}</Text>
+            </View>
+          </>
+        )}
       </Page>
 
       {/* PAGE 4 — Cashflow Summary */}
