@@ -5,6 +5,7 @@ import { classifyMetricForDeal, applicabilityContextFromInputs } from "../applic
 import {
   analyzeNegotiation,
   buildNegotiatedInputs,
+  deriveNegotiationOpportunity,
   type NegotiationAnalysis,
   type NegotiationTargetResult,
 } from "../negotiation";
@@ -208,6 +209,30 @@ const dealH_over100LTV: DealInputs = {
   monthlyRent: 15_000,
   occupancyRate: 90,
   discountRate: 10,
+};
+
+/**
+ * Deal I (Phase 4.16): current verdict "promising" driven ONLY by a safety
+ * CAUTION (DSCR/Break-Even orange, not red — no raw structural failure),
+ * with LTV comfortably green (53%, so the LTV modifier never confounds this
+ * fixture) and OER/target already fine. Lowering price should push DSCR/
+ * Break-Even into their green bands, making Strong reachable by price alone
+ * — the "promising -> strong reachable" case sections 12/38 require, kept
+ * structurally distinct from dealE_highLTV (promising -> NOT reachable).
+ */
+const dealI_promisingSafetyCaution: DealInputs = {
+  ...baseInputs,
+  purchasePrice: 1_500_000,
+  marketValue: 1_500_000,
+  financeSources: [{ loanAmount: 800_000, interestRate: 13, termYears: 20 }],
+  monthlyRent: 15_000,
+  occupancyRate: 90,
+  managementFeeValue: 8,
+  maintenanceCostValue: 3,
+  badDebtsPct: 1,
+  ratesAndTaxes: 500,
+  insurance: 300,
+  discountRate: 6,
 };
 
 describe("buildNegotiatedInputs (sections 4-16)", () => {
@@ -696,5 +721,203 @@ describe("Performance (section 52)", () => {
     analyzeFor(dealC_structuralFailure);
     const elapsedMs = Date.now() - start;
     expect(elapsedMs).toBeLessThan(2_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.16 — Conditional Negotiation Opportunity (deriveNegotiationOpportunity)
+// ---------------------------------------------------------------------------
+
+function opportunityFor(inputs: DealInputs, strategyId: string = inputs.strategy) {
+  const negotiation = analyzeFor(inputs, strategyId);
+  return { negotiation, opportunity: deriveNegotiationOpportunity(negotiation.currentVerdict, negotiation) };
+}
+
+describe("Deal B — does_not_meet_target -> strong reachable (section 37, required)", () => {
+  it("current verdict remains does_not_meet_target; opportunity is promising_if_negotiated", () => {
+    const { negotiation, opportunity } = opportunityFor(dealB_doesNotMeetTarget);
+    expect(negotiation.currentVerdict.status).toBe("available");
+    if (negotiation.currentVerdict.status === "available") {
+      expect(negotiation.currentVerdict.verdict).toBe("does_not_meet_target");
+    }
+    expect(negotiation.reachStrong.status).toBe("solvable");
+    expect(opportunity.status).toBe("promising_if_negotiated");
+    if (opportunity.status === "promising_if_negotiated" && negotiation.reachStrong.status === "solvable") {
+      expect(opportunity.currentVerdictLabel).toBe("does_not_meet_target");
+      expect(opportunity.targetPrice).toBe(negotiation.reachStrong.targetPrice);
+      expect(opportunity.reductionRand).toBe(negotiation.reachStrong.reductionRand);
+      expect(opportunity.reductionPercent).toBe(negotiation.reachStrong.reductionPercent);
+      expect(opportunity.resultingVerdict).toBe("strong");
+    }
+  });
+});
+
+describe("Deal I — promising -> strong reachable via safety caution (section 38, required)", () => {
+  it("current verdict is promising (safety acceptable, not strong); opportunity is promising_if_negotiated", () => {
+    const { negotiation, opportunity } = opportunityFor(dealI_promisingSafetyCaution);
+    expect(negotiation.currentVerdict.status).toBe("available");
+    if (negotiation.currentVerdict.status === "available") {
+      expect(negotiation.currentVerdict.verdict).toBe("promising");
+      expect(negotiation.currentVerdict.categoryStates.safety).not.toBe("strong");
+    }
+    expect(negotiation.reachStrong.status).toBe("solvable");
+    expect(opportunity.status).toBe("promising_if_negotiated");
+    if (opportunity.status === "promising_if_negotiated") {
+      expect(opportunity.currentVerdictLabel).toBe("promising");
+    }
+  });
+});
+
+describe("Deal C — high_risk current verdict never softened (section 9, 39, required)", () => {
+  it("opportunity is never promising_if_negotiated regardless of what reachStrong says", () => {
+    const { negotiation, opportunity } = opportunityFor(dealC_structuralFailure);
+    expect(negotiation.currentVerdict.status).toBe("available");
+    if (negotiation.currentVerdict.status === "available") {
+      expect(negotiation.currentVerdict.verdict).toBe("high_risk");
+    }
+    expect(opportunity.status).not.toBe("promising_if_negotiated");
+    expect(opportunity).toEqual({ status: "no_negotiation_opportunity", reasonCode: "current_high_risk" });
+    // The negotiation target itself remains fully visible/computed, just not conditionally labelled.
+    expect(["solvable", "already_meets", "not_achievable_by_price"]).toContain(negotiation.reachStrong.status);
+  });
+});
+
+describe("Deal A — already strong (section 10, 40, required)", () => {
+  it("opportunity is already_strong, never promising_if_negotiated", () => {
+    const { negotiation, opportunity } = opportunityFor(dealA_alreadyMeets);
+    expect(negotiation.currentVerdict.status).toBe("available");
+    if (negotiation.currentVerdict.status === "available") {
+      expect(negotiation.currentVerdict.verdict).toBe("strong");
+    }
+    expect(opportunity).toEqual({ status: "already_strong" });
+  });
+});
+
+describe("Deal D — Weak OER: no conditional opportunity (section 13, 41, required)", () => {
+  it("reasonCode is strong_not_reachable_by_price, citing the OER blocker", () => {
+    const { negotiation, opportunity } = opportunityFor(dealD_weakOER);
+    expect(negotiation.reachStrong.status).toBe("not_achievable_by_price");
+    expect(opportunity.status).toBe("no_negotiation_opportunity");
+    if (opportunity.status === "no_negotiation_opportunity") {
+      expect(opportunity.reasonCode).toBe("strong_not_reachable_by_price");
+      expect(opportunity.blockers?.some((b) => b.code === "high_oer")).toBe(true);
+    }
+  });
+});
+
+describe("Deal E — High LTV: no conditional opportunity under fixed-LTV semantics (section 14, 42, required)", () => {
+  it("reasonCode is strong_not_reachable_by_price, citing the LTV blocker", () => {
+    const { negotiation, opportunity } = opportunityFor(dealE_highLTV);
+    expect(negotiation.currentVerdict.status).toBe("available");
+    if (negotiation.currentVerdict.status === "available") {
+      expect(negotiation.currentVerdict.verdict).toBe("promising");
+    }
+    expect(negotiation.reachStrong.status).toBe("not_achievable_by_price");
+    expect(opportunity.status).toBe("no_negotiation_opportunity");
+    if (opportunity.status === "no_negotiation_opportunity") {
+      expect(opportunity.reasonCode).toBe("strong_not_reachable_by_price");
+      expect(opportunity.blockers?.some((b) => b.code === "high_ltv")).toBe(true);
+    }
+  });
+});
+
+describe("Negotiation-unavailable cases never produce a conditional label (section 43, required)", () => {
+  it("Fix & Flip: opportunity unavailable/current_verdict_unavailable", () => {
+    const { opportunity } = opportunityFor({ ...dealA_alreadyMeets, strategy: "fix_and_flip" }, "fix_and_flip");
+    expect(opportunity).toEqual({ status: "unavailable", reason: "current_verdict_unavailable" });
+  });
+
+  it("Instalment Sale: opportunity unavailable/current_verdict_unavailable", () => {
+    const { opportunity } = opportunityFor({ ...dealA_alreadyMeets, strategy: "instalment_sale" }, "instalment_sale");
+    expect(opportunity).toEqual({ status: "unavailable", reason: "current_verdict_unavailable" });
+  });
+
+  it(">100% original LTV: opportunity unavailable/unsupported_financing_structure", () => {
+    const { negotiation, opportunity } = opportunityFor(dealH_over100LTV);
+    expect(negotiation.currentVerdict.status).toBe("available"); // the deal's own verdict is unaffected
+    expect(opportunity).toEqual({ status: "unavailable", reason: "unsupported_financing_structure" });
+  });
+
+  it("invalid purchase price: opportunity unavailable/invalid_purchase_price", () => {
+    const { opportunity } = opportunityFor({ ...dealA_alreadyMeets, purchasePrice: 0 });
+    expect(opportunity.status).toBe("unavailable");
+    if (opportunity.status === "unavailable") {
+      expect(opportunity.reason).toBe("invalid_purchase_price");
+    }
+  });
+});
+
+describe("No seller-plausibility language anywhere in the domain model (section 44, mandatory)", () => {
+  const forbiddenWords = ["realistic", "likely", "unlikely", "reasonable", "probability", "probable", "plausible"];
+
+  it("scans every fixture's opportunity output for forbidden plausibility language", () => {
+    const allDeals = [
+      dealA_alreadyMeets,
+      dealB_doesNotMeetTarget,
+      dealC_structuralFailure,
+      dealD_weakOER,
+      dealE_highLTV,
+      dealF_debtFree,
+      dealG_multiFinance,
+      dealH_over100LTV,
+      dealI_promisingSafetyCaution,
+    ];
+    for (const deal of allDeals) {
+      const { opportunity } = opportunityFor(deal);
+      const serialized = JSON.stringify(opportunity).toLowerCase();
+      for (const word of forbiddenWords) {
+        expect(serialized).not.toContain(word);
+      }
+    }
+  });
+});
+
+describe("Huge discount does not suppress promising_if_negotiated (section 45, Decision 16 = A, required)", () => {
+  // Deliberately extreme: price is very high relative to rent (mirrors the
+  // Phase 4.15 brief's own R5,000,000 -> R1,300,000 example), so the
+  // required reduction to reach Strong is very large — no debt, so price is
+  // the sole lever and nothing else confounds the result.
+  const dealHugeDiscount: DealInputs = {
+    ...baseInputs,
+    purchasePrice: 5_000_000,
+    marketValue: 5_000_000,
+    financeSources: [],
+    monthlyRent: 10_000,
+    occupancyRate: 90,
+    discountRate: 10,
+  };
+
+  it("a >50% required reduction still produces promising_if_negotiated with no magnitude cutoff", () => {
+    const { negotiation, opportunity } = opportunityFor(dealHugeDiscount);
+    expect(negotiation.reachStrong.status).toBe("solvable");
+    if (negotiation.reachStrong.status === "solvable") {
+      // Confirm this really is a "huge" discount before asserting it's still honoured.
+      expect(negotiation.reachStrong.reductionPercent).toBeGreaterThan(50);
+    }
+    expect(opportunity.status).toBe("promising_if_negotiated");
+  });
+});
+
+describe("Target price exactness — no independent recalculation (section 46, required)", () => {
+  it("opportunity.targetPrice is bit-for-bit identical to negotiation.reachStrong.targetPrice", () => {
+    const { negotiation, opportunity } = opportunityFor(dealB_doesNotMeetTarget);
+    expect(negotiation.reachStrong.status).toBe("solvable");
+    if (negotiation.reachStrong.status === "solvable" && opportunity.status === "promising_if_negotiated") {
+      expect(Object.is(opportunity.targetPrice, negotiation.reachStrong.targetPrice)).toBe(true);
+    }
+  });
+});
+
+describe("deriveNegotiationOpportunity is pure (section 47, required)", () => {
+  it("never mutates currentVerdict or negotiationAnalysis", () => {
+    const negotiation = analyzeFor(dealB_doesNotMeetTarget);
+    // structuredClone (unlike JSON.stringify/parse) faithfully preserves
+    // Infinity/NaN — this fixture's dscr is Infinity (debt-free deal), which
+    // JSON would lossily round-trip to null and produce a false mismatch.
+    const verdictSnapshot = structuredClone(negotiation.currentVerdict);
+    const negotiationSnapshot = structuredClone(negotiation);
+    deriveNegotiationOpportunity(negotiation.currentVerdict, negotiation);
+    expect(negotiation.currentVerdict).toEqual(verdictSnapshot);
+    expect(negotiation).toEqual(negotiationSnapshot);
   });
 });

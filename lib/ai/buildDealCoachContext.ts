@@ -45,15 +45,29 @@ import { getKeyLabel } from "../education/relationshipChains";
 import { getStrategy, type StrategyId } from "../strategies";
 import { calcRentSuggestion } from "../area-suggestions";
 import type { SuburbProfile } from "../../types";
-import { deriveDealVerdict } from "../calculations/verdict";
-import { analyzeNegotiation, type NegotiationAnalysis, type NegotiationObjective, type NegotiationTargetResult } from "../calculations/negotiation";
-import { NEGOTIATION_OBJECTIVE_LABEL, FIXED_LTV_ASSUMPTION_EXPLAINER, describeNegotiationResult } from "../education/negotiationCopy";
+import { deriveDealVerdict, type DealVerdictResult } from "../calculations/verdict";
+import {
+  analyzeNegotiation,
+  deriveNegotiationOpportunity,
+  type NegotiationAnalysis,
+  type NegotiationObjective,
+  type NegotiationTargetResult,
+} from "../calculations/negotiation";
+import {
+  NEGOTIATION_OBJECTIVE_LABEL,
+  NEGOTIATION_OPPORTUNITY_TITLE,
+  NEGOTIATION_OPPORTUNITY_DISCLAIMER,
+  FIXED_LTV_ASSUMPTION_EXPLAINER,
+  describeNegotiationResult,
+  describeNegotiationOpportunity,
+} from "../education/negotiationCopy";
 import type {
   DealCoachContext,
   DealCoachIntent,
   DealCoachMetricEntry,
   DealCoachNegotiation,
   DealCoachNegotiationObjective,
+  DealCoachNegotiationOpportunity,
   DealCoachSelection,
   ScenarioKey,
 } from "./dealCoachTypes";
@@ -276,18 +290,52 @@ function buildNegotiationObjectiveEntry(
 }
 
 /**
- * Compact, pre-formatted negotiation summary (Phase 4.15) — reuses the ONE
- * negotiation engine (analyzeNegotiation) and the ONE copy layer
+ * Compact, pre-formatted conditional Negotiation Opportunity (Phase 4.16) —
+ * reuses deriveNegotiationOpportunity (which itself reuses `currentVerdict`
+ * and `negotiation.reachStrong`, already computed) and the ONE copy layer
+ * (negotiationCopy.ts) the Summary UI/PDF also read from. No second
+ * "is this deal promising if negotiated" judgement exists anywhere else.
+ */
+function buildDealCoachNegotiationOpportunity(
+  currentVerdict: DealVerdictResult,
+  negotiation: NegotiationAnalysis,
+  currency: string
+): DealCoachNegotiationOpportunity {
+  const opportunity = deriveNegotiationOpportunity(currentVerdict, negotiation);
+  const entry: DealCoachNegotiationOpportunity = {
+    status: opportunity.status,
+    title: NEGOTIATION_OPPORTUNITY_TITLE[opportunity.status],
+    description: describeNegotiationOpportunity(opportunity, currency),
+  };
+  if (opportunity.status === "promising_if_negotiated") {
+    entry.targetPrice = formatMetricValue(opportunity.targetPrice, "currency", currency);
+    entry.reductionRand = formatMetricValue(opportunity.reductionRand, "currency", currency);
+    entry.reductionPercent = `${opportunity.reductionPercent.toFixed(1)}%`;
+    entry.resultingVerdict = opportunity.resultingVerdict;
+    entry.disclaimer = NEGOTIATION_OPPORTUNITY_DISCLAIMER;
+  }
+  return entry;
+}
+
+/**
+ * Compact, pre-formatted negotiation summary (Phase 4.15/4.16) — reuses the
+ * ONE negotiation engine (analyzeNegotiation) and the ONE copy layer
  * (negotiationCopy.ts) the Summary UI and PDF also read from, so Deal Coach
  * can never describe a target price differently from what the user already
  * sees on screen. Always Base-case (see `inputs` doc comment above — it's
  * never scenario-shifted), same rule as verdict.
  */
-function buildDealCoachNegotiation(inputs: DealInputs, strategyId: string, currency: string): DealCoachNegotiation {
+function buildDealCoachNegotiation(
+  inputs: DealInputs,
+  strategyId: string,
+  currency: string,
+  currentVerdict: DealVerdictResult
+): DealCoachNegotiation {
   const negotiation: NegotiationAnalysis = analyzeNegotiation(inputs, strategyId);
   return {
     currentPrice: formatMetricValue(negotiation.currentPrice, "currency", currency),
     fixedLtvNote: FIXED_LTV_ASSUMPTION_EXPLAINER,
+    opportunity: buildDealCoachNegotiationOpportunity(currentVerdict, negotiation, currency),
     objectives: [
       buildNegotiationObjectiveEntry("meet_required_return", negotiation.meetRequiredReturn, currency),
       buildNegotiationObjectiveEntry("clear_structural_safety", negotiation.clearStructuralSafety, currency),
@@ -363,7 +411,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     ...applicabilityContextFromInputs(inputs),
   };
   const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics });
-  const negotiation = buildDealCoachNegotiation(inputs, strategyId, currency);
+  const negotiation = buildDealCoachNegotiation(inputs, strategyId, currency, verdict);
 
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved

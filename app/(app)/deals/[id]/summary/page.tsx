@@ -69,7 +69,7 @@ export default function DealSummaryPage({
 
   // Own currency field (server-normalized "ZAR" -> "R", matching /coach) —
   // deliberately not the page's own `currency` (from /calculate, unnormalized).
-  const { negotiation, currency: negotiationCurrency } = useDealNegotiation(id);
+  const { negotiation, opportunity, currency: negotiationCurrency } = useDealNegotiation(id);
 
   const [capexItems, setCapexItems] = useState<CapexItem[]>([]);
   useEffect(() => {
@@ -104,6 +104,7 @@ export default function DealSummaryPage({
           discountRate={discountRate ?? 10}
           verdict={verdict}
           negotiation={negotiation}
+          opportunity={opportunity}
           dealSummary={dealSummary}
           renovationItems={renovationItems}
           propertyValuation={propertyValuation}
@@ -219,7 +220,7 @@ export default function DealSummaryPage({
 
       {verdict && <VerdictCard verdict={verdict} currency={currency ?? "R"} />}
 
-      {negotiation && <NegotiationCard negotiation={negotiation} currency={negotiationCurrency ?? "R"} />}
+      {negotiation && <NegotiationCard negotiation={negotiation} opportunity={opportunity} currency={negotiationCurrency ?? "R"} />}
 
       <AccordionSection title="How AssetVerdict reaches your verdict" defaultOpen={false}>
         <VerdictExplainer />

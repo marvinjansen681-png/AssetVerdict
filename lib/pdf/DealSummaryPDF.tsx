@@ -20,13 +20,16 @@ import {
 import { getStrategy } from "@/lib/strategies";
 import type { DealVerdictResult, VerdictLabel } from "@/lib/calculations/verdict";
 import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
-import type { NegotiationAnalysis, NegotiationObjective } from "@/lib/calculations/negotiation";
+import type { NegotiationAnalysis, NegotiationObjective, NegotiationOpportunity } from "@/lib/calculations/negotiation";
 import {
   NEGOTIATION_OBJECTIVE_LABEL,
   NEGOTIATION_UNAVAILABLE_COPY,
+  NEGOTIATION_OPPORTUNITY_TITLE,
+  NEGOTIATION_OPPORTUNITY_DISCLAIMER,
   UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER,
   FIXED_LTV_ASSUMPTION_EXPLAINER,
   describeNegotiationResult,
+  describeNegotiationOpportunity,
 } from "@/lib/education/negotiationCopy";
 
 const COLORS = {
@@ -112,6 +115,13 @@ const styles = StyleSheet.create({
   negotiationObjectiveLabel: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: COLORS.navy },
   negotiationObjectiveValue: { fontSize: 9.5, marginTop: 1 },
   negotiationObjectiveDetail: { fontSize: 8, color: COLORS.slate, marginTop: 1 },
+  opportunityBox: { borderWidth: 1, borderColor: COLORS.lightGrey, borderRadius: 4, padding: 10, marginBottom: 12 },
+  opportunityLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: COLORS.slate, marginBottom: 2 },
+  opportunityTitle: { fontSize: 12, fontFamily: "Helvetica-Bold", marginBottom: 3 },
+  opportunityDescription: { fontSize: 8.5, color: COLORS.slate, marginBottom: 6 },
+  opportunityGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  opportunityFieldLabel: { fontSize: 7, color: COLORS.slate, textTransform: "uppercase" },
+  opportunityFieldValue: { fontSize: 9.5, fontFamily: "Helvetica-Bold", color: COLORS.navy, marginTop: 1 },
 });
 
 /**
@@ -158,6 +168,8 @@ interface DealSummaryPDFProps {
   verdict: DealVerdictResult;
   /** Pre-computed by the caller (Phase 4.15) — the same deterministic negotiation analysis the Summary page shows, never recalculated here. Optional so a PDF can still render if this fetch failed. */
   negotiation?: NegotiationAnalysis | null;
+  /** Pre-computed by the caller (Phase 4.16) — the same conditional Negotiation Opportunity status the Summary page shows, never recalculated here. */
+  opportunity?: NegotiationOpportunity | null;
   dealSummary: DealSummaryInputs;
   renovationItems?: RenovationItem[];
   propertyValuation?: PropertyValuation | null;
@@ -217,6 +229,7 @@ export default function DealSummaryPDF({
   discountRate,
   verdict,
   negotiation = null,
+  opportunity = null,
   dealSummary,
   renovationItems = [],
   propertyValuation = null,
@@ -357,6 +370,36 @@ export default function DealSummaryPDF({
             ) : (
               <>
                 <Text style={styles.negotiationAsking}>Asking Price: {fmt(negotiation.currentPrice, currencySymbol)}</Text>
+
+                {opportunity && opportunity.status !== "unavailable" && (
+                  <View style={styles.opportunityBox}>
+                    <Text style={styles.opportunityLabel}>NEGOTIATION OPPORTUNITY</Text>
+                    <Text style={styles.opportunityTitle}>{NEGOTIATION_OPPORTUNITY_TITLE[opportunity.status]}</Text>
+                    <Text style={styles.opportunityDescription}>{describeNegotiationOpportunity(opportunity, currencySymbol)}</Text>
+                    {opportunity.status === "promising_if_negotiated" && (
+                      <>
+                        <View style={styles.opportunityGrid}>
+                          <View>
+                            <Text style={styles.opportunityFieldLabel}>Maximum Price to Reach Strong</Text>
+                            <Text style={styles.opportunityFieldValue}>{fmt(opportunity.targetPrice, currencySymbol)}</Text>
+                          </View>
+                          <View>
+                            <Text style={styles.opportunityFieldLabel}>Reduction Required</Text>
+                            <Text style={styles.opportunityFieldValue}>
+                              {fmt(opportunity.reductionRand, currencySymbol)} ({opportunity.reductionPercent.toFixed(1)}%)
+                            </Text>
+                          </View>
+                          <View>
+                            <Text style={styles.opportunityFieldLabel}>Result at Target Price</Text>
+                            <Text style={[styles.opportunityFieldValue, { color: COLORS.green }]}>Strong</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.verdictFootnote}>{NEGOTIATION_OPPORTUNITY_DISCLAIMER}</Text>
+                      </>
+                    )}
+                  </View>
+                )}
+
                 {(["meet_required_return", "clear_structural_safety", "reach_strong"] as NegotiationObjective[]).map(
                   (objective) => {
                     const result = negotiation[toNegotiationField(objective)];

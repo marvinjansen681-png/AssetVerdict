@@ -44,10 +44,19 @@
  * blockers — the same pattern verdict.ts uses for VerdictUnavailableReason.
  * Human sentences are assembled downstream in lib/education/negotiationCopy.ts,
  * exactly mirroring how verdictCopy.ts turns verdict.ts's codes into copy.
- * `promising_if_negotiated` is NEVER produced or referenced by this module —
- * it remains deliberately unreachable pending a future negotiation-plausibility
- * policy (Phase 4.16+); this phase only establishes the mathematical target
- * price truth beneath that future decision.
+ *
+ * `promising_if_negotiated` and `analyzeNegotiation`/`deriveDealVerdict`
+ * (Phase 4.16): `analyzeNegotiation` itself still NEVER produces or
+ * references that label anywhere in its own return value — `currentVerdict`
+ * and every `resultingVerdict` come straight from the unmodified verdict
+ * engine (verdict.ts), which structurally cannot return it (see
+ * VERDICT_ENABLED_STRATEGIES/deriveDealVerdict — unchanged by this phase).
+ * `promising_if_negotiated` becomes reachable ONLY as the separate, derived
+ * `NegotiationOpportunity.status` this module also exports
+ * (deriveNegotiationOpportunity, below) — a CONDITIONAL fact about whether a
+ * lower price would deterministically reach Strong, never a replacement for,
+ * or a claim about, the deal's actual current-asking-price verdict. See that
+ * function's doc comment for the exact eligibility rule.
  *
  * Solver domain (Phase 4.15.1): V1's binary search is only validated for
  * original acquisition finance <= 100% of the original purchase price. Above
@@ -73,6 +82,7 @@ import {
   VERDICT_ENABLED_STRATEGIES,
   type DealVerdictResult,
   type VerdictReason,
+  type VerdictLabel,
 } from "./verdict";
 import { classifyMetricForDeal, applicabilityContextFromInputs } from "./applicability";
 
@@ -508,5 +518,174 @@ export function analyzeNegotiation(inputs: DealInputs, strategyId: string): Nego
     reachPromising,
     reachStrong,
     modelAssumptions: BASE_MODEL_ASSUMPTIONS,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Conditional Negotiation Opportunity (Phase 4.16)
+//
+// Answers a SEPARATE question from analyzeNegotiation: "does deterministic
+// evidence justify a conditional 'this deal could become Strong through
+// price alone' status?" This is the Model C / dual-state design (Phase 4.16
+// section 5): the deal's own CURRENT-asking-price `verdict` is never
+// replaced or softened by this — it is read, never written, by the function
+// below. `promising_if_negotiated` here is a status on a DIFFERENT,
+// deliberately separate type (NegotiationOpportunity), never a value
+// deriveDealVerdict or analyzeNegotiation's own `currentVerdict`/
+// `resultingVerdict` fields can produce (see the module doc comment above).
+//
+// This function calls NO financial formula and duplicates NO solver — it
+// only reads fields `deriveDealVerdict` and `analyzeNegotiation` (specifically
+// `reachStrong`) already computed. See its doc comment for the exact,
+// deliberately strict eligibility rule (Phase 4.16 section 8).
+// ---------------------------------------------------------------------------
+
+export type NegotiationOpportunityReasonCode =
+  | "strong_reachable_by_price"
+  | "already_strong"
+  | "current_high_risk"
+  | "strong_not_reachable_by_price"
+  | "target_price_not_lower"
+  | "resulting_verdict_not_strong";
+
+export type NegotiationOpportunityUnavailableReason = NegotiationUnavailableReason | "current_verdict_unavailable";
+
+/**
+ * The deal's current asking price CANNOT deterministically reach Strong
+ * through purchase price alone, and no lower price is needed either — every
+ * strict condition in section 8 held. `currentVerdictLabel` is included
+ * purely for display context (never re-derived, never re-judged here); it
+ * is always "does_not_meet_target" or "promising" in practice, since
+ * "strong" and "high_risk" are excluded before this branch is reachable.
+ */
+export interface NegotiationOpportunityPromising {
+  status: "promising_if_negotiated";
+  reasonCode: "strong_reachable_by_price";
+  currentVerdictLabel: VerdictLabel;
+  /** Reused EXACTLY from negotiationAnalysis.reachStrong — never recalculated or independently rounded (section 46). */
+  targetPrice: number;
+  reductionRand: number;
+  reductionPercent: number;
+  resultingVerdict: "strong";
+}
+
+/** Deterministically NOT eligible for the conditional label — `reasonCode` says why; `blockers` carries the engine's own reasons when relevant (never re-derived prose). */
+export interface NegotiationOpportunityNone {
+  status: "no_negotiation_opportunity";
+  reasonCode: Exclude<NegotiationOpportunityReasonCode, "strong_reachable_by_price" | "already_strong">;
+  blockers?: VerdictReason[];
+}
+
+/** The deal already clears Strong at its current asking price — no conditional rescue is needed (section 10, 23). */
+export interface NegotiationOpportunityAlreadyStrong {
+  status: "already_strong";
+}
+
+export interface NegotiationOpportunityUnavailable {
+  status: "unavailable";
+  reason: NegotiationOpportunityUnavailableReason;
+}
+
+export type NegotiationOpportunity =
+  | NegotiationOpportunityPromising
+  | NegotiationOpportunityNone
+  | NegotiationOpportunityAlreadyStrong
+  | NegotiationOpportunityUnavailable;
+
+/**
+ * Pure. Consumes only already-computed `currentVerdict` (deriveDealVerdict's
+ * own output) and `negotiationAnalysis` (analyzeNegotiation's own output) —
+ * never touches DealInputs, never calls calcAllMetrics/buildNegotiatedInputs,
+ * never re-runs the solver. Reading order mirrors the strict definition in
+ * Phase 4.16 section 8 exactly, evaluated top-to-bottom as a precedence
+ * chain — availability is a PREREQUISITE gate (section 8 points 1-2) decided
+ * before the current-verdict exclusions (points 3-4), which in turn are
+ * decided before price eligibility is even considered (section 9-10
+ * mandate):
+ *
+ *   1. currentVerdict not "available"            -> unavailable (a
+ *      strategy-unsupported/insufficient-evidence deal has no current label
+ *      to compare a conditional status against at all)
+ *   2. negotiationAnalysis.reachStrong === "unavailable" -> unavailable, same
+ *      reason (e.g. unsupported_financing_structure, invalid_purchase_price
+ *      — section 43). Checked BEFORE the high_risk/strong exclusions below:
+ *      a deal can be structurally high_risk AND have unavailable negotiation
+ *      (e.g. >100% LTV) at the same time, and "negotiation is technically
+ *      unavailable" is the more specific, more useful fact to surface.
+ *   3. currentVerdict.verdict === "strong"        -> already_strong (never
+ *      "promising_if_negotiated" — there is nothing to rescue)
+ *   4. currentVerdict.verdict === "high_risk"     -> no_negotiation_opportunity
+ *      / current_high_risk, REGARDLESS of what reachStrong says (a
+ *      structural safety failure at the CURRENT price is never softened by
+ *      a hopeful conditional headline — section 9, mandatory)
+ *   5. negotiationAnalysis.reachStrong read for the two remaining current
+ *      verdicts ("does_not_meet_target" and "promising", sections 11-12,
+ *      treated identically):
+ *        - "already_meets"        -> already_strong (defensive: this would
+ *          mean Strong already holds at the current price, which the
+ *          currentVerdict==="strong" branch above should already have
+ *          caught — kept as a safe fallback, never surfaced as a
+ *          contradiction)
+ *        - "not_achievable_by_price" -> no_negotiation_opportunity /
+ *          strong_not_reachable_by_price, blockers reused verbatim (covers
+ *          Weak OER section 13, preserved high LTV section 14, and
+ *          unresolved "unknown" evidence section 25 — no special-casing
+ *          needed, since all of these already surface as
+ *          not_achievable_by_price from the existing engine)
+ *        - "solvable"             -> defensively re-verified against
+ *          section 8 points 6-7 (resultingVerdict really is "strong";
+ *          targetPrice really is < currentPrice) before being accepted as
+ *          "promising_if_negotiated" — both checks are structural
+ *          invariants of solveObjective/evaluateVerdictLabel and should
+ *          never fail in practice; if they somehow did, this falls back to
+ *          a "no_negotiation_opportunity" reason naming exactly which
+ *          invariant didn't hold, rather than silently trusting it.
+ */
+export function deriveNegotiationOpportunity(
+  currentVerdict: DealVerdictResult,
+  negotiationAnalysis: NegotiationAnalysis
+): NegotiationOpportunity {
+  if (currentVerdict.status !== "available") {
+    return { status: "unavailable", reason: "current_verdict_unavailable" };
+  }
+
+  const { reachStrong } = negotiationAnalysis;
+
+  if (reachStrong.status === "unavailable") {
+    return { status: "unavailable", reason: reachStrong.reason };
+  }
+
+  if (currentVerdict.verdict === "strong") {
+    return { status: "already_strong" };
+  }
+
+  if (currentVerdict.verdict === "high_risk") {
+    return { status: "no_negotiation_opportunity", reasonCode: "current_high_risk" };
+  }
+
+  if (reachStrong.status === "already_meets") {
+    return { status: "already_strong" };
+  }
+
+  if (reachStrong.status === "not_achievable_by_price") {
+    return { status: "no_negotiation_opportunity", reasonCode: "strong_not_reachable_by_price", blockers: reachStrong.blockers };
+  }
+
+  // reachStrong.status === "solvable" from here.
+  if (!(reachStrong.resultingVerdict?.status === "available" && reachStrong.resultingVerdict.verdict === "strong")) {
+    return { status: "no_negotiation_opportunity", reasonCode: "resulting_verdict_not_strong" };
+  }
+  if (!(reachStrong.targetPrice < reachStrong.currentPrice)) {
+    return { status: "no_negotiation_opportunity", reasonCode: "target_price_not_lower" };
+  }
+
+  return {
+    status: "promising_if_negotiated",
+    reasonCode: "strong_reachable_by_price",
+    currentVerdictLabel: currentVerdict.verdict,
+    targetPrice: reachStrong.targetPrice,
+    reductionRand: reachStrong.reductionRand,
+    reductionPercent: reachStrong.reductionPercent,
+    resultingVerdict: "strong",
   };
 }

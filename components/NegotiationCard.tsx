@@ -1,20 +1,24 @@
 "use client";
 
-import type { NegotiationAnalysis, NegotiationObjective, NegotiationTargetResult } from "@/lib/calculations/negotiation";
+import type { NegotiationAnalysis, NegotiationObjective, NegotiationOpportunity, NegotiationTargetResult } from "@/lib/calculations/negotiation";
 import {
   NEGOTIATION_OBJECTIVE_LABEL,
   NEGOTIATION_UNAVAILABLE_COPY,
   UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER,
   TARGET_PRICE_EXPLAINER,
   FIXED_LTV_ASSUMPTION_EXPLAINER,
+  NEGOTIATION_OPPORTUNITY_TITLE,
+  NEGOTIATION_OPPORTUNITY_DISCLAIMER,
   describeAlreadyMeets,
   describeFixedLtvLimitation,
+  describeNegotiationOpportunity,
 } from "@/lib/education/negotiationCopy";
 import { formatVerdictReason } from "@/lib/education/verdictCopy";
 import clsx from "clsx";
 
 interface NegotiationCardProps {
   negotiation: NegotiationAnalysis;
+  opportunity?: NegotiationOpportunity;
   currency?: string;
 }
 
@@ -84,7 +88,59 @@ function ObjectiveRow({
   );
 }
 
-export default function NegotiationCard({ negotiation, currency = "R" }: NegotiationCardProps) {
+/**
+ * Phase 4.16 — the conditional Negotiation Opportunity status. Deliberately
+ * SECONDARY to the "Negotiation Analysis" header above it and to the
+ * current Overall Verdict (VerdictCard, rendered before this whole card on
+ * the Summary page) — this never overrides or restates the current-price
+ * verdict, it only adds a conditional fact on top of it (section 27
+ * hierarchy). Every field is shown as plain text (section 36 accessibility
+ * — never colour-only), and the mandatory seller-acceptance disclaimer
+ * always accompanies the qualifying case.
+ */
+function OpportunityBanner({ opportunity, currency }: { opportunity: NegotiationOpportunity; currency: string }) {
+  if (opportunity.status === "unavailable") return null; // the whole-card unavailable state above already covers this
+
+  const isPromising = opportunity.status === "promising_if_negotiated";
+  const title = NEGOTIATION_OPPORTUNITY_TITLE[opportunity.status];
+  const description = describeNegotiationOpportunity(opportunity, currency);
+
+  return (
+    <div
+      className={clsx(
+        "rounded-md p-3 mb-3 border",
+        isPromising ? "bg-av-gold/10 border-av-gold/40" : "bg-av-light-grey/40 border-av-light-grey"
+      )}
+    >
+      <p className="font-body text-xs font-semibold uppercase tracking-wide text-av-slate mb-1">Negotiation Opportunity</p>
+      <p className={clsx("font-display text-lg", isPromising ? "text-av-gold" : "text-av-navy")}>{title}</p>
+      <p className="font-body text-sm text-av-slate mt-1">{description}</p>
+
+      {isPromising && opportunity.status === "promising_if_negotiated" && (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <p className="font-body text-[11px] text-av-slate uppercase tracking-wide">Maximum Price to Reach Strong</p>
+            <p className="font-display text-base text-av-navy">{formatRand(opportunity.targetPrice, currency)}</p>
+          </div>
+          <div>
+            <p className="font-body text-[11px] text-av-slate uppercase tracking-wide">Reduction Required</p>
+            <p className="font-display text-base text-av-navy">
+              {formatRand(opportunity.reductionRand, currency)} ({opportunity.reductionPercent.toFixed(1)}%)
+            </p>
+          </div>
+          <div className="col-span-2">
+            <p className="font-body text-[11px] text-av-slate uppercase tracking-wide">Result at Target Price</p>
+            <p className="font-body text-sm font-semibold text-av-green">Strong</p>
+          </div>
+        </div>
+      )}
+
+      {isPromising && <p className="font-body text-[11px] text-av-slate/80 mt-3 italic">{NEGOTIATION_OPPORTUNITY_DISCLAIMER}</p>}
+    </div>
+  );
+}
+
+export default function NegotiationCard({ negotiation, opportunity, currency = "R" }: NegotiationCardProps) {
   // Every objective becomes "unavailable" together for these three reasons
   // (see analyzeNegotiation's guards) — checking meetRequiredReturn alone is
   // sufficient and matches the other three objectives by construction.
@@ -111,6 +167,8 @@ export default function NegotiationCard({ negotiation, currency = "R" }: Negotia
           Asking Price: <span className="font-semibold text-av-navy">{formatRand(negotiation.currentPrice, currency)}</span>
         </span>
       </div>
+
+      {opportunity && <OpportunityBanner opportunity={opportunity} currency={currency} />}
 
       <ObjectiveRow objective="meet_required_return" result={negotiation.meetRequiredReturn} currency={currency} emphasise />
 

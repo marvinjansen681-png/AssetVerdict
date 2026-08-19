@@ -1,10 +1,11 @@
 "use client";
 
 import useSWR from "swr";
-import type { NegotiationAnalysis } from "@/lib/calculations/negotiation";
+import type { NegotiationAnalysis, NegotiationOpportunity } from "@/lib/calculations/negotiation";
 
 export interface NegotiationApiResponse {
   negotiation: NegotiationAnalysis;
+  opportunity: NegotiationOpportunity;
   currency: string;
 }
 
@@ -26,6 +27,7 @@ export function useDealNegotiation(dealId: string) {
 
   return {
     negotiation: data?.negotiation,
+    opportunity: data?.opportunity,
     currency: data?.currency,
     isLoading,
     error,

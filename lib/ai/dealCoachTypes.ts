@@ -8,7 +8,7 @@
  * raw database records, and never from client-supplied numbers.
  */
 import type { DealVerdictResult } from "../calculations/verdict";
-import type { NegotiationObjective } from "../calculations/negotiation";
+import type { NegotiationObjective, NegotiationOpportunity } from "../calculations/negotiation";
 
 export type ScenarioKey = "bear" | "base" | "bull";
 
@@ -130,11 +130,34 @@ export interface DealCoachNegotiationObjective {
   explanation: string;
 }
 
-/** Compact, pre-formatted negotiation/target-purchase-price summary (Phase 4.15) — never present for Fix & Flip/Instalment Sale in a way that implies a target price exists. */
+/**
+ * The conditional Negotiation Opportunity status, pre-formatted (Phase
+ * 4.16) — a SEPARATE fact from the deal's current-asking-price `verdict`
+ * (DealCoachContext.verdict), never a replacement for it. `status` mirrors
+ * NegotiationOpportunity's own discriminant exactly so the coach can quote
+ * it verbatim ("AssetVerdict marks the negotiation opportunity as Promising
+ * If Negotiated"). `disclaimer` is ALWAYS present when status is
+ * "promising_if_negotiated" and must accompany every mention of it — see
+ * the guardrail in dealCoachPrompt.ts.
+ */
+export interface DealCoachNegotiationOpportunity {
+  status: NegotiationOpportunity["status"];
+  title: string;
+  description: string;
+  /** Only present when status is "promising_if_negotiated". */
+  targetPrice?: string;
+  reductionRand?: string;
+  reductionPercent?: string;
+  resultingVerdict?: "strong";
+  disclaimer?: string;
+}
+
+/** Compact, pre-formatted negotiation/target-purchase-price summary (Phase 4.15/4.16) — never present for Fix & Flip/Instalment Sale in a way that implies a target price exists. */
 export interface DealCoachNegotiation {
   currentPrice: string;
   fixedLtvNote: string;
   objectives: DealCoachNegotiationObjective[];
+  opportunity: DealCoachNegotiationOpportunity;
 }
 
 export interface DealCoachContext {

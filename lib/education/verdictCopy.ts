@@ -25,8 +25,16 @@ export const VERDICT_LABEL_COPY: Record<VerdictLabel, { title: string; descripti
   },
   promising_if_negotiated: {
     title: "Promising If Negotiated",
+    // Phase 4.16: this label is never returned by deriveDealVerdict — the
+    // engine behind this exact copy — so this entry exists only for
+    // VerdictLabel's Record<> type completeness (VerdictCard/VerdictExplainer
+    // reference every label). The label IS reachable, but only as a
+    // separate, conditional fact — see NegotiationOpportunity in
+    // lib/calculations/negotiation.ts and its copy in
+    // lib/education/negotiationCopy.ts (NEGOTIATION_OPPORTUNITY_TITLE /
+    // describeNegotiationOpportunity) — never as this deal's actual verdict.
     description:
-      "Reserved for deals where AssetVerdict can deterministically show that a negotiable acquisition term would move the deal into acceptable territory. This verdict is not active until negotiation analysis is implemented.",
+      "Not produced as an actual verdict by AssetVerdict's verdict engine. See the deal's separate Negotiation Opportunity status for the conditional fact this label describes.",
   },
   high_risk: {
     title: "High Risk",

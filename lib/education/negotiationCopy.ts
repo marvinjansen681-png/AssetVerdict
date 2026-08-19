@@ -20,6 +20,7 @@ import type {
   NegotiationObjective,
   NegotiationTargetResult,
   NegotiationUnavailableReason,
+  NegotiationOpportunity,
 } from "../calculations/negotiation";
 
 export const NEGOTIATION_OBJECTIVE_LABEL: Record<NegotiationObjective, string> = {
@@ -112,3 +113,64 @@ export const FIXED_LTV_ASSUMPTION_EXPLAINER =
 export function describeAlreadyMeets(objective: NegotiationObjective, currentPrice: number, currency = "R"): string {
   return `Already achieved at your current asking price of ${formatMetricValue(currentPrice, "currency", currency)} — no discount is required to ${NEGOTIATION_OBJECTIVE_VERB_PHRASE[objective]}.`;
 }
+
+// ---------------------------------------------------------------------------
+// Conditional Negotiation Opportunity copy (Phase 4.16).
+//
+// This is the ONLY place `promising_if_negotiated`-related prose is
+// authored — the calculation layer (lib/calculations/negotiation.ts) emits
+// only stable status/reasonCode values, never a sentence. Every string here
+// deliberately avoids any claim about seller acceptance, negotiation
+// realism, or discount plausibility (Phase 4.16 sections 2, 15-19) — see
+// NEGOTIATION_OPPORTUNITY_DISCLAIMER, which must accompany every
+// "promising_if_negotiated" display.
+// ---------------------------------------------------------------------------
+
+export const NEGOTIATION_OPPORTUNITY_TITLE: Record<NegotiationOpportunity["status"], string> = {
+  promising_if_negotiated: "Promising If Negotiated",
+  already_strong: "Already Strong",
+  no_negotiation_opportunity: "No Conditional Opportunity",
+  unavailable: "Not Available",
+};
+
+/**
+ * The primary descriptive sentence for a NegotiationOpportunity result.
+ * Section 28's recommended wording for the qualifying case; structured,
+ * reused reasons for every non-qualifying case — never invented prose about
+ * WHY price can't help beyond what the engine's own blockers already say.
+ */
+export function describeNegotiationOpportunity(opportunity: NegotiationOpportunity, currency = "R"): string {
+  switch (opportunity.status) {
+    case "promising_if_negotiated":
+      return "A lower purchase price can move this deal into AssetVerdict's Strong range under the same Base-case assumptions.";
+    case "already_strong":
+      return "This deal already meets AssetVerdict's current Strong conditions at the asking price, so no conditional negotiation label is needed.";
+    case "no_negotiation_opportunity":
+      if (opportunity.reasonCode === "current_high_risk") {
+        return "AssetVerdict keeps the current High Risk verdict because a structural safety failure exists at the asking price. Negotiation targets remain available separately, below.";
+      }
+      if (opportunity.reasonCode === "strong_not_reachable_by_price") {
+        const blockerText =
+          opportunity.blockers && opportunity.blockers.length > 0
+            ? opportunity.blockers.map((b) => formatVerdictReason(b, currency)).join(" ")
+            : "AssetVerdict's evidence remains insufficient even at a much lower purchase price.";
+        return `Purchase-price negotiation alone cannot make this deal Strong. ${blockerText}`;
+      }
+      // Defensive fallbacks (target_price_not_lower / resulting_verdict_not_strong)
+      // — structurally shouldn't occur; see deriveNegotiationOpportunity's doc comment.
+      return "AssetVerdict could not confirm a conditional negotiation opportunity for this deal.";
+    case "unavailable":
+      return opportunity.reason === "current_verdict_unavailable"
+        ? "AssetVerdict does not currently issue an overall verdict for this deal, so no conditional negotiation opportunity can be determined."
+        : NEGOTIATION_UNAVAILABLE_COPY[opportunity.reason];
+  }
+}
+
+/**
+ * Mandatory companion sentence (sections 2, 15-19, 28) — MUST be shown
+ * alongside every "promising_if_negotiated" display, in the UI, PDF, and
+ * Deal Coach alike. Never omit it, never soften it, never replace it with a
+ * plausibility judgement.
+ */
+export const NEGOTIATION_OPPORTUNITY_DISCLAIMER =
+  "This is a mathematical target, not a prediction that the seller will accept the required price. AssetVerdict does not model seller acceptance, negotiation probability, or whether a given reduction is realistic.";
