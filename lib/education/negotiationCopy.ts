@@ -48,7 +48,18 @@ export const NEGOTIATION_UNAVAILABLE_COPY: Record<NegotiationUnavailableReason, 
   strategy_not_supported: "Negotiation analysis is not yet available for this strategy.",
   invalid_purchase_price: "Negotiation analysis needs a valid purchase price before it can run.",
   insufficient_inputs: "AssetVerdict doesn't have enough deal information yet to run negotiation analysis.",
+  unsupported_financing_structure: "Negotiation analysis is not available for this financing structure.",
 };
+
+/**
+ * Longer supporting sentence for `unsupported_financing_structure` (Phase
+ * 4.15.1, section 15) — deliberately frames this as a limitation of the
+ * NEGOTIATION MODEL, never a claim that the deal's own financing is invalid.
+ * AssetVerdict's ordinary metrics/verdict still work normally for such a
+ * deal; only target-price analysis is withheld.
+ */
+export const UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER =
+  "Current acquisition finance exceeds the purchase price. AssetVerdict's current target-price model assumes a standard loan-to-price structure and does not analyse over-100% financing. This does not mean your financing is invalid — it may be intentionally structured that way — AssetVerdict simply doesn't yet calculate negotiation targets for it.";
 
 /**
  * One-line summary for a single objective's result — the primary string the

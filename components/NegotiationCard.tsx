@@ -4,6 +4,7 @@ import type { NegotiationAnalysis, NegotiationObjective, NegotiationTargetResult
 import {
   NEGOTIATION_OBJECTIVE_LABEL,
   NEGOTIATION_UNAVAILABLE_COPY,
+  UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER,
   TARGET_PRICE_EXPLAINER,
   FIXED_LTV_ASSUMPTION_EXPLAINER,
   describeAlreadyMeets,
@@ -84,25 +85,20 @@ function ObjectiveRow({
 }
 
 export default function NegotiationCard({ negotiation, currency = "R" }: NegotiationCardProps) {
-  const strategyUnavailable =
-    negotiation.meetRequiredReturn.status === "unavailable" && negotiation.meetRequiredReturn.reason === "strategy_not_supported";
-  const priceInvalid =
-    negotiation.meetRequiredReturn.status === "unavailable" && negotiation.meetRequiredReturn.reason === "invalid_purchase_price";
+  // Every objective becomes "unavailable" together for these three reasons
+  // (see analyzeNegotiation's guards) — checking meetRequiredReturn alone is
+  // sufficient and matches the other three objectives by construction.
+  const wholeCardUnavailableReason =
+    negotiation.meetRequiredReturn.status === "unavailable" ? negotiation.meetRequiredReturn.reason : null;
 
-  if (strategyUnavailable) {
+  if (wholeCardUnavailableReason) {
     return (
       <div className="rounded-lg border border-av-light-grey p-5 bg-av-light-grey/30">
         <h3 className="font-display text-lg text-av-navy mb-1">Negotiation Analysis</h3>
-        <p className="font-body text-sm text-av-slate">Not yet available for this strategy.</p>
-      </div>
-    );
-  }
-
-  if (priceInvalid) {
-    return (
-      <div className="rounded-lg border border-av-light-grey p-5 bg-av-light-grey/30">
-        <h3 className="font-display text-lg text-av-navy mb-1">Negotiation Analysis</h3>
-        <p className="font-body text-sm text-av-slate">{NEGOTIATION_UNAVAILABLE_COPY.invalid_purchase_price}</p>
+        <p className="font-body text-sm text-av-slate">{NEGOTIATION_UNAVAILABLE_COPY[wholeCardUnavailableReason]}</p>
+        {wholeCardUnavailableReason === "unsupported_financing_structure" && (
+          <p className="font-body text-xs text-av-slate/80 mt-2">{UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER}</p>
+        )}
       </div>
     );
   }

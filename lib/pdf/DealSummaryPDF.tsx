@@ -23,6 +23,8 @@ import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } fro
 import type { NegotiationAnalysis, NegotiationObjective } from "@/lib/calculations/negotiation";
 import {
   NEGOTIATION_OBJECTIVE_LABEL,
+  NEGOTIATION_UNAVAILABLE_COPY,
+  UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER,
   FIXED_LTV_ASSUMPTION_EXPLAINER,
   describeNegotiationResult,
 } from "@/lib/education/negotiationCopy";
@@ -341,16 +343,17 @@ export default function DealSummaryPDF({
           </View>
         )}
 
-        {/* Negotiation Analysis (Phase 4.15) */}
+        {/* Negotiation Analysis (Phase 4.15 / 4.15.1) */}
         {negotiation && (
           <View style={styles.negotiationBox}>
             <Text style={styles.negotiationTitle}>Negotiation Analysis</Text>
-            {(["meet_required_return", "clear_structural_safety", "reach_strong"] as NegotiationObjective[])
-              .map((objective) => negotiation[toNegotiationField(objective)])
-              .every((r) => r.status === "unavailable") ? (
-              <Text style={styles.negotiationAsking}>
-                Not yet available for this strategy.
-              </Text>
+            {negotiation.meetRequiredReturn.status === "unavailable" ? (
+              <>
+                <Text style={styles.negotiationAsking}>{NEGOTIATION_UNAVAILABLE_COPY[negotiation.meetRequiredReturn.reason]}</Text>
+                {negotiation.meetRequiredReturn.reason === "unsupported_financing_structure" && (
+                  <Text style={styles.negotiationObjectiveDetail}>{UNSUPPORTED_FINANCING_STRUCTURE_EXPLAINER}</Text>
+                )}
+              </>
             ) : (
               <>
                 <Text style={styles.negotiationAsking}>Asking Price: {fmt(negotiation.currentPrice, currencySymbol)}</Text>

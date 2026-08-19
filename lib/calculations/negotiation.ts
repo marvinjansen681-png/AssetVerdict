@@ -48,6 +48,15 @@
  * it remains deliberately unreachable pending a future negotiation-plausibility
  * policy (Phase 4.16+); this phase only establishes the mathematical target
  * price truth beneath that future decision.
+ *
+ * Solver domain (Phase 4.15.1): V1's binary search is only validated for
+ * original acquisition finance <= 100% of the original purchase price. Above
+ * that, negotiation analysis is withheld entirely (all four objectives
+ * return `unavailable`/`unsupported_financing_structure`) rather than run an
+ * unproven search — see the guard in analyzeNegotiation and the monotonicity
+ * note above findHighestQualifyingPrice. This is a restriction on the
+ * NEGOTIATION SOLVER only: the deal's own verdict/metrics are computed
+ * exactly as before and are unaffected.
  */
 import {
   calcAllMetrics,
@@ -133,7 +142,8 @@ export type NegotiationReasonCode =
 export type NegotiationUnavailableReason =
   | "strategy_not_supported"
   | "invalid_purchase_price"
-  | "insufficient_inputs";
+  | "insufficient_inputs"
+  | "unsupported_financing_structure";
 
 export interface NegotiationAlreadyMeets {
   status: "already_meets";
@@ -185,18 +195,21 @@ export type NegotiationTargetResult =
 //
 // Domain is strictly 0 < candidatePrice <= currentPrice (section 21) — this
 // solver only ever asks "how much lower," never searches above asking price.
-// Monotonicity (section 22-23): under the fixed-LTV policy, every objective
-// predicate is expected to be non-decreasing as price falls (true at low
-// price, false at high price, at most one crossing) — lower price scales
-// finance down proportionally, which lowers debt service and raises DSCR/
-// lowers Break-Even Ratio/raises IRR, while every non-price input is held
-// fixed (section 10). This is verified empirically for representative
-// fixtures in negotiation.test.ts (multi-source, debt-free, high-LTV, OER-
-// weak cases), not assumed from intuition alone — see that file's
-// "monotonicity" describe block. A pathological input where a finance
-// source's original loanAmount already exceeds the original purchase price
-// (LTV > 100%) is a known edge case where monotonicity is not proven; see
-// the Phase 4.15 report section H.
+// Monotonicity (section 22-23, hardened Phase 4.15.1): under the fixed-LTV
+// policy, every objective predicate is expected to be non-decreasing as
+// price falls (true at low price, false at high price, at most one
+// crossing) — lower price scales finance down proportionally, which lowers
+// debt service and raises DSCR/lowers Break-Even Ratio/raises IRR, while
+// every non-price input is held fixed (section 10). This is verified
+// empirically for representative fixtures in negotiation.test.ts
+// (multi-source, debt-free, high-LTV, OER-weak cases) — an empirical
+// spot-check across the validated domain, not a universal mathematical
+// proof. V1 deliberately limits the solver to the financing domain for
+// which this behaviour has been validated: original acquisition finance
+// <= 100% of the original purchase price. Inputs above that ratio never
+// reach this binary search at all — analyzeNegotiation's guard withholds
+// all four objectives before any evaluate() call runs, so the previously
+// unproven >100%-LTV case can no longer enter here.
 // ---------------------------------------------------------------------------
 
 const PRICE_TOLERANCE = 1; // R1 (section 24)
@@ -431,6 +444,28 @@ export function analyzeNegotiation(inputs: DealInputs, strategyId: string): Nego
   // ---- Guard: zero/invalid purchase price (section 9) -------------------
   if (!isFiniteNumber(currentPrice) || currentPrice <= 0) {
     return { currentPrice, currentVerdict, ...unavailableAllObjectives("invalid_purchase_price"), modelAssumptions: BASE_MODEL_ASSUMPTIONS };
+  }
+
+  // ---- Guard: original acquisition finance > purchase price (Phase 4.15.1)
+  // The fixed-LTV search domain has only been validated for original LTV
+  // <= 100% (see negotiation.test.ts's monotonicity spot-checks). Above
+  // that, the solver's monotonicity assumption is unproven, so V1
+  // deliberately withholds ALL FOUR objectives rather than run an unproven
+  // binary search. Uses raw total loan vs. raw price — never the rounded
+  // `metrics.ltv` percentage — and sums across every finance source, so a
+  // combined over-financing case (no single source individually > price)
+  // is still caught. Exactly 100% (originalTotalLoan === currentPrice)
+  // remains supported — only strictly-greater-than is blocked. This does
+  // NOT touch the deal's own verdict/metrics in any way; only negotiation
+  // analysis is withheld.
+  const originalTotalLoan = calcTotalLoanAmount(inputs);
+  if (originalTotalLoan > currentPrice) {
+    return {
+      currentPrice,
+      currentVerdict,
+      ...unavailableAllObjectives("unsupported_financing_structure"),
+      modelAssumptions: BASE_MODEL_ASSUMPTIONS,
+    };
   }
 
   const meetRequiredReturn = solveObjective({

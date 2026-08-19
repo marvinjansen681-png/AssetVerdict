@@ -84,6 +84,18 @@ function expectSolvableOrAlreadyMeets(result: NegotiationTargetResult) {
 // Deal fixtures (mirrors the "Deal A..H" manual-verification set from the
 // Phase 4.15 brief, section 88) — each constructed to unambiguously land in
 // the regime it's meant to test, verified below rather than hand-calculated.
+//
+// IMPORTANT (Phase 4.15.1 report reconciliation): these A-H letters are
+// SYNTHETIC fixtures private to this file — they are NOT the same records as
+// the pre-existing seeded database deals that happen to share similar names
+// (e.g. "Deal C - High Risk (DSCR)", "Deal E - Does Not Meet Target"), which
+// were seeded independently for Phase 4.14 verdict-engine manual testing and
+// use a different, coincidental lettering. The two schemes were conflated in
+// one sentence of Phase 4.15's live-verification narration ("Deal E's
+// high-LTV blocker scenario" while inspecting the real seeded "Deal C"),
+// which is the root cause of the apparent report contradiction — see the
+// Phase 4.15.1 report, section N. Never cross-reference a letter here
+// against the live seeded database or vice versa.
 // ---------------------------------------------------------------------------
 
 /** Deal A: cash purchase, zero opex, cheap relative to rent — should already exceed Required Return and already be Strong. */
@@ -187,6 +199,17 @@ const dealG_multiFinance: DealInputs = {
   discountRate: 10,
 };
 
+/** Deal H (Phase 4.15.1): original acquisition finance exceeds purchase price — outside the negotiation solver's validated domain; every objective must resolve to unavailable/unsupported_financing_structure. */
+const dealH_over100LTV: DealInputs = {
+  ...baseInputs,
+  purchasePrice: 1_000_000,
+  marketValue: 1_000_000,
+  financeSources: [{ loanAmount: 1_100_000, interestRate: 11, termYears: 20 }],
+  monthlyRent: 15_000,
+  occupancyRate: 90,
+  discountRate: 10,
+};
+
 describe("buildNegotiatedInputs (sections 4-16)", () => {
   it("replaces only purchasePrice + financeSources; every other field is byte-identical", () => {
     const negotiated = buildNegotiatedInputs(dealG_multiFinance, 1_500_000);
@@ -278,6 +301,122 @@ describe("analyzeNegotiation — invalid purchase price (section 9)", () => {
   it("negative purchasePrice → invalid_purchase_price, no crash", () => {
     const result = analyzeFor({ ...dealA_alreadyMeets, purchasePrice: -100 });
     expect(result.meetRequiredReturn.status).toBe("unavailable");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.15.1 — original LTV > 100% is excluded from the negotiation
+// solver's validated domain (sections 1-13 of the 4.15.1 brief). These
+// fixtures share a base shape with dealC_structuralFailure so only the
+// financing changes are exercised.
+// ---------------------------------------------------------------------------
+const ltvGuardBase: DealInputs = {
+  ...baseInputs,
+  purchasePrice: 1_000_000,
+  marketValue: 1_000_000,
+  monthlyRent: 15_000,
+  occupancyRate: 90,
+  managementFeeValue: 8,
+  maintenanceCostValue: 3,
+  badDebtsPct: 1,
+  ratesAndTaxes: 500,
+  insurance: 300,
+  discountRate: 10,
+};
+
+describe("analyzeNegotiation — original LTV > 100% guard (Phase 4.15.1)", () => {
+  it("exactly 100% LTV (loan === price) remains supported — section 9/H", () => {
+    const deal: DealInputs = { ...ltvGuardBase, financeSources: [{ loanAmount: 1_000_000, interestRate: 11, termYears: 20 }] };
+    const result = analyzeFor(deal);
+    for (const objective of [result.meetRequiredReturn, result.clearStructuralSafety, result.reachPromising, result.reachStrong]) {
+      if (objective.status === "unavailable") {
+        expect(objective.reason).not.toBe("unsupported_financing_structure");
+      }
+    }
+    // At least one objective actually executed (not merely "unavailable" across the board).
+    expect(["already_meets", "solvable", "not_achievable_by_price"]).toContain(result.meetRequiredReturn.status);
+  });
+
+  it("100% + R1 (loan exceeds price by the smallest tested margin) → all four unavailable/unsupported_financing_structure — section 10/I", () => {
+    const deal: DealInputs = { ...ltvGuardBase, financeSources: [{ loanAmount: 1_000_001, interestRate: 11, termYears: 20 }] };
+    const result = analyzeFor(deal);
+    for (const objective of [result.meetRequiredReturn, result.clearStructuralSafety, result.reachPromising, result.reachStrong]) {
+      expect(objective.status).toBe("unavailable");
+      expect((objective as { reason: string }).reason).toBe("unsupported_financing_structure");
+    }
+    // The deal's own verdict/metrics are entirely unaffected by the guard.
+    expect(result.currentVerdict.status).toBe("available");
+  });
+
+  it("multi-source combined LTV > 100% (no single source individually exceeds price) → unavailable — section 6/11/J", () => {
+    const deal: DealInputs = {
+      ...ltvGuardBase,
+      financeSources: [
+        { loanAmount: 800_000, interestRate: 11, termYears: 20 },
+        { loanAmount: 250_000, interestRate: 13, termYears: 15 },
+      ],
+    };
+    const result = analyzeFor(deal);
+    for (const objective of [result.meetRequiredReturn, result.clearStructuralSafety, result.reachPromising, result.reachStrong]) {
+      expect(objective.status).toBe("unavailable");
+      expect((objective as { reason: string }).reason).toBe("unsupported_financing_structure");
+    }
+  });
+
+  it("a single source individually > price, combined with a second source, is still caught by the TOTAL check", () => {
+    const deal: DealInputs = {
+      ...ltvGuardBase,
+      financeSources: [
+        { loanAmount: 1_050_000, interestRate: 11, termYears: 20 },
+        { loanAmount: 0, interestRate: 10, termYears: 10 },
+      ],
+    };
+    const result = analyzeFor(deal);
+    expect(result.meetRequiredReturn.status).toBe("unavailable");
+  });
+
+  it("cash deal (no finance) is never affected by the guard — section 12/K", () => {
+    const result = analyzeFor(dealF_debtFree);
+    for (const objective of [result.meetRequiredReturn, result.clearStructuralSafety, result.reachPromising, result.reachStrong]) {
+      if (objective.status === "unavailable") {
+        expect(objective.reason).not.toBe("unsupported_financing_structure");
+      }
+    }
+    expect(result.clearStructuralSafety.status).toBe("already_meets");
+  });
+
+  it("ordinary <=100% LTV deals are byte-identical to pre-hardening behaviour — section 13/L", () => {
+    // dealE_highLTV (80% LTV) and dealC_structuralFailure (90% LTV) are both
+    // well inside the validated domain — re-assert their exact, previously-
+    // established results are unchanged by this guard.
+    const dealEResult = analyzeFor(dealE_highLTV);
+    expect(dealEResult.clearStructuralSafety.status).toBe("already_meets");
+    expect(dealEResult.reachStrong.status).toBe("not_achievable_by_price");
+    if (dealEResult.reachStrong.status === "not_achievable_by_price") {
+      expect(dealEResult.reachStrong.blockers.some((b) => b.code === "high_ltv")).toBe(true);
+    }
+
+    const dealCResult = analyzeFor(dealC_structuralFailure);
+    expect(dealCResult.currentVerdict.status).toBe("available");
+    if (dealCResult.currentVerdict.status === "available") {
+      expect(dealCResult.currentVerdict.verdict).toBe("high_risk");
+    }
+    expect(dealCResult.clearStructuralSafety.status).toBe("solvable");
+    if (dealCResult.clearStructuralSafety.status === "solvable") {
+      expect(dealCResult.clearStructuralSafety.targetPrice).toBeLessThan(dealC_structuralFailure.purchasePrice);
+    }
+  });
+
+  it("never invokes the binary search for a blocked financing structure (no resultingMetrics/resultingVerdict ever computed for it)", () => {
+    const deal: DealInputs = { ...ltvGuardBase, financeSources: [{ loanAmount: 2_000_000, interestRate: 11, termYears: 20 }] };
+    const result = analyzeFor(deal);
+    // "unavailable" is structurally the only variant with no resultingMetrics
+    // field at all — TypeScript already enforces this at the type level;
+    // this assertion documents that guarantee at runtime too.
+    for (const objective of [result.meetRequiredReturn, result.clearStructuralSafety, result.reachPromising, result.reachStrong]) {
+      expect(objective).not.toHaveProperty("resultingMetrics");
+      expect(objective).not.toHaveProperty("targetPrice");
+    }
   });
 });
 
@@ -479,7 +618,7 @@ describe("Original inputs are never mutated by a full analysis (section 79)", ()
 });
 
 describe("promising_if_negotiated is never produced (section 82, mandatory)", () => {
-  const allDeals = [dealA_alreadyMeets, dealB_doesNotMeetTarget, dealC_structuralFailure, dealD_weakOER, dealE_highLTV, dealF_debtFree, dealG_multiFinance];
+  const allDeals = [dealA_alreadyMeets, dealB_doesNotMeetTarget, dealC_structuralFailure, dealD_weakOER, dealE_highLTV, dealF_debtFree, dealG_multiFinance, dealH_over100LTV];
 
   it("no resultingVerdict, currentVerdict, or blocker across any fixture ever carries the label promising_if_negotiated", () => {
     for (const deal of allDeals) {
