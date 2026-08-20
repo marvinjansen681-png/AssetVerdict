@@ -6,6 +6,7 @@ import { calcScenarios } from "@/lib/calculations/scenarios";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
 import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
 import { deriveDealVerdict } from "@/lib/calculations/verdict";
+import { calcFlipExitValueAnalysis, type FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
 import type { DealWithRelations } from "@/types";
 
 export async function GET(
@@ -45,11 +46,32 @@ export async function GET(
   const strategyId = deal.investmentStrategy ?? "commercial";
   const verdict = deriveDealVerdict({ strategyId, inputs, metrics });
 
+  // Phase 4.19 — server-authoritative exit-value evidence/scenario model,
+  // Fix & Flip only. Deliberately mapped onto the narrow FlipExitValuationInput
+  // shape here (see fixFlipExitValue.ts's own doc comment) rather than
+  // passed as the full Prisma-hydrated relation, keeping lib/calculations
+  // decoupled from the DB schema.
+  const propertyValuation = dealWithRelations.propertyValuation;
+  const flipValuationInput: FlipExitValuationInput | null = propertyValuation
+    ? {
+        estimatedValue: propertyValuation.estimatedValue ?? null,
+        valueConfidenceLow: propertyValuation.valueConfidenceLow ?? null,
+        valueConfidenceHigh: propertyValuation.valueConfidenceHigh ?? null,
+        valuationConfidence: propertyValuation.valuationConfidence ?? null,
+        reportSource: propertyValuation.reportSource ?? null,
+        reportDate: propertyValuation.reportDate ?? null,
+        comparableCount: propertyValuation.comparables?.length ?? 0,
+      }
+    : null;
+  const fixFlipExitValueAnalysis =
+    strategyId === "fix_and_flip" ? calcFlipExitValueAnalysis({ inputs, valuation: flipValuationInput }) : undefined;
+
   const primaryDealSuburb =
     dealWithRelations.dealSuburbs.find((ds) => ds.isPrimary) ?? dealWithRelations.dealSuburbs[0] ?? null;
 
   return NextResponse.json({
     propertyValuation: dealWithRelations.propertyValuation,
+    fixFlipExitValueAnalysis,
     suburbProfile: primaryDealSuburb?.suburbProfile ?? null,
     metrics,
     verdict,

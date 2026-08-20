@@ -6,6 +6,7 @@ import { calcScenarios } from "@/lib/calculations/scenarios";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
 import { getMetricDefinition } from "@/lib/education/metricDefinitions";
 import { buildDealCoachContext } from "@/lib/ai/buildDealCoachContext";
+import type { FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
 import { buildDealCoachSystemPrompt, DEAL_COACH_RESPONSE_TOOL } from "@/lib/ai/dealCoachPrompt";
 import { callAnthropicMessages, DEAL_COACH_MODEL, type AnthropicMessage } from "@/lib/ai/anthropicClient";
 import type { DealCoachIntent, DealCoachResponse, DealCoachSelection, ScenarioKey } from "@/lib/ai/dealCoachTypes";
@@ -143,6 +144,22 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     ? { type: "metric", metricKey: body.selectedMetric }
     : { type: "deal" };
 
+  // Phase 4.19 — same narrow mapping /calculate uses, so Deal Coach's
+  // exit-value evidence is built from exactly the same server-authoritative
+  // record the Summary UI/PDF read, never a client-supplied figure.
+  const propertyValuationRecord = dealWithRelations.propertyValuation;
+  const flipValuationInput: FlipExitValuationInput | null = propertyValuationRecord
+    ? {
+        estimatedValue: propertyValuationRecord.estimatedValue ?? null,
+        valueConfidenceLow: propertyValuationRecord.valueConfidenceLow ?? null,
+        valueConfidenceHigh: propertyValuationRecord.valueConfidenceHigh ?? null,
+        valuationConfidence: propertyValuationRecord.valuationConfidence ?? null,
+        reportSource: propertyValuationRecord.reportSource ?? null,
+        reportDate: propertyValuationRecord.reportDate ?? null,
+        comparableCount: propertyValuationRecord.comparables?.length ?? 0,
+      }
+    : null;
+
   const context = buildDealCoachContext({
     inputs,
     metrics: activeMetrics,
@@ -166,6 +183,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       numUnits: deal.numUnits ?? null,
     },
     leaseTermMonths: dealWithRelations.cashflowInputs?.leaseTermMonths ?? null,
+    propertyValuation: flipValuationInput,
   });
 
   const system = buildDealCoachSystemPrompt(context);

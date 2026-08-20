@@ -43,6 +43,7 @@ import { formatMetricValue } from "../education/format";
 import { getMetricGroupsForStrategy, getMetricDefinition } from "../education/metricDefinitions";
 import { getKeyLabel } from "../education/relationshipChains";
 import { getStrategy, type StrategyId } from "../strategies";
+import { calcFlipExitValueAnalysis, type FlipExitValuationInput, type FlipExitValueScenarioCase } from "../calculations/fixFlipExitValue";
 import { calcRentSuggestion } from "../area-suggestions";
 import type { SuburbProfile } from "../../types";
 import { deriveDealVerdict, type DealVerdictResult } from "../calculations/verdict";
@@ -389,6 +390,71 @@ function buildDealCoachFixFlipAnalysis(metrics: DealMetrics, currency: string): 
   };
 }
 
+/**
+ * Compact, pre-formatted Fix & Flip exit-value evidence/scenario model
+ * (Phase 4.19) — reuses the ONE exit-value engine (calcFlipExitValueAnalysis,
+ * which itself reuses calcFixFlipAnalysis for every scenario). No second
+ * calculation, comparison, or haircut of any kind exists here — every field
+ * is a direct read of that function's own output, formatted with the SAME
+ * formatMetricValue the Summary UI/PDF use.
+ */
+function buildDealCoachFlipScenario(scenarioCase: { salePrice: number; sameAsBase: boolean; summary: FlipExitValueScenarioCase["summary"] }, currency: string) {
+  const cur = (v: number) => formatMetricValue(v, "currency", currency);
+  const pct = (v: number | null) => (v === null ? undefined : `${v.toFixed(1)}%`);
+  const { summary } = scenarioCase;
+  return {
+    salePrice: cur(scenarioCase.salePrice),
+    sameAsBase: scenarioCase.sameAsBase,
+    estimatedProfitBeforeTax: cur(summary.estimatedProfitBeforeTax),
+    preTaxProjectROI: pct(summary.preTaxProjectROI) ?? "N/A",
+    equityIRR: pct(summary.equityIRR),
+    salePriceBufferRand: summary.salePriceBufferRand === null ? undefined : cur(summary.salePriceBufferRand),
+    salePriceBufferPercent: pct(summary.salePriceBufferPercent),
+    targetState: summary.targetState,
+  };
+}
+
+function buildDealCoachFlipExitValueAnalysis(
+  inputs: DealInputs,
+  valuation: FlipExitValuationInput | null,
+  currency: string
+): DealCoachContext["fixFlipExitValueAnalysis"] {
+  const result = calcFlipExitValueAnalysis({ inputs, valuation });
+  if (result.status === "unavailable") return { status: "unavailable" };
+
+  const { evidence } = result;
+  const cur = (v: number) => formatMetricValue(v, "currency", currency);
+
+  return {
+    status: "available",
+    expectedSalePrice: cur(result.expectedSalePrice),
+    evidenceStatus: evidence.status,
+    reportSource: evidence.reportSource ?? undefined,
+    reportDate: evidence.reportDate ? new Date(evidence.reportDate).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" }) : undefined,
+    valuationAgeDays: evidence.valuationAgeDays,
+    recordedEstimate: evidence.estimatedValue !== undefined ? cur(evidence.estimatedValue) : undefined,
+    recordedRangeLow: evidence.valueConfidenceLow !== undefined ? cur(evidence.valueConfidenceLow) : undefined,
+    recordedRangeHigh: evidence.valueConfidenceHigh !== undefined ? cur(evidence.valueConfidenceHigh) : undefined,
+    rangePosition: evidence.rangePosition,
+    expectedVsEstimate:
+      evidence.expectedVsEstimateRand !== undefined
+        ? `${evidence.expectedVsEstimateRand >= 0 ? "+" : ""}${cur(evidence.expectedVsEstimateRand)}${
+            evidence.expectedVsEstimatePercent !== undefined ? ` (${evidence.expectedVsEstimatePercent >= 0 ? "+" : ""}${evidence.expectedVsEstimatePercent.toFixed(1)}%)` : ""
+          }`
+        : undefined,
+    valuationConfidenceLabel: evidence.valuationConfidence ?? undefined,
+    comparableCount: evidence.comparableCount,
+    valuationPointCase: result.valuationPointCase ? buildDealCoachFlipScenario(result.valuationPointCase, currency) : undefined,
+    conservativeCase: result.conservativeCase
+      ? {
+          ...buildDealCoachFlipScenario(result.conservativeCase, currency),
+          survivesConservativeCase: result.conservativeCase.survivesConservativeCase,
+          meetsRequiredReturnInConservativeCase: result.conservativeCase.meetsRequiredReturnInConservativeCase,
+        }
+      : undefined,
+  };
+}
+
 function resolveRelatedMetricKeys(definitionKeys: string[], strategyId: string): string[] {
   const strategyKeys = new Set(getMetricGroupsForStrategy(strategyId).flatMap((g) => g.metricKeys));
   const related: string[] = [];
@@ -446,10 +512,19 @@ export interface BuildDealCoachContextParams {
    * outside Commercial.
    */
   leaseTermMonths?: number | null;
+  /**
+   * Fix & Flip only (Phase 4.19) — raw property-valuation evidence, mapped
+   * onto the narrow FlipExitValuationInput shape by the caller (see
+   * fixFlipExitValue.ts's own doc comment on why this stays decoupled from
+   * the full Prisma-hydrated PropertyValuation relation). Omit or pass null
+   * when no valuation record exists — the coach then simply has no numeric
+   * evidence to compare against, never an invented one.
+   */
+  propertyValuation?: FlipExitValuationInput | null;
 }
 
 export function buildDealCoachContext(params: BuildDealCoachContextParams): DealCoachContext {
-  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, baseMetrics, scenarios, areaSuggestionInputs, leaseTermMonths } = params;
+  const { inputs, metrics, dealName, address, currency, strategyId, activeScenario, selection, intent, dealSummary, baseMetrics, scenarios, areaSuggestionInputs, leaseTermMonths, propertyValuation } = params;
   const strategy = getStrategy(strategyId);
   const applicabilityCtx: ApplicabilityContext = {
     ...applicabilityContextFromInputs(inputs),
@@ -457,6 +532,8 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
   const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics });
   const negotiation = buildDealCoachNegotiation(inputs, strategyId, currency, verdict);
   const fixFlipAnalysis = strategyId === "fix_and_flip" ? buildDealCoachFixFlipAnalysis(metrics, currency) : undefined;
+  const fixFlipExitValueAnalysis =
+    strategyId === "fix_and_flip" ? buildDealCoachFlipExitValueAnalysis(inputs, propertyValuation ?? null, currency) : undefined;
 
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved
@@ -544,7 +621,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
       comparison![key] = row;
     });
-    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, negotiation, fixFlipAnalysis, selection };
+    return { deal, scenario, metrics: [], scenarioComparison: comparison, verdict, negotiation, fixFlipAnalysis, fixFlipExitValueAnalysis, selection };
   }
 
   // ---- Single selected metric: full detail + a few close drivers --------
@@ -581,7 +658,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       }
     }
 
-    return { deal, scenario, metrics: entries, verdict, negotiation, fixFlipAnalysis, selection };
+    return { deal, scenario, metrics: entries, verdict, negotiation, fixFlipAnalysis, fixFlipExitValueAnalysis, selection };
   }
 
   // ---- Broad deal context: every strategy-relevant metric, light detail --
@@ -620,6 +697,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
     verdict,
     negotiation,
     fixFlipAnalysis,
+    fixFlipExitValueAnalysis,
     selection,
   };
 }

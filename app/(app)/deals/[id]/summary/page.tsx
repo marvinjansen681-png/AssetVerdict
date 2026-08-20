@@ -16,6 +16,7 @@ import DealCoachDrawer from "@/components/DealCoachDrawer";
 import Button from "@/components/ui/Button";
 import StrategyBadge from "@/components/StrategyBadge";
 import FlipDashboard from "@/components/FlipDashboard";
+import FlipExitValueCard from "@/components/FlipExitValueCard";
 import FallbackAnalysisCard from "@/components/FallbackAnalysisCard";
 import ExitAnalysisCard from "@/components/ExitAnalysisCard";
 import { hasFallbackAnalysisContent, hasExitAnalysisContent } from "@/lib/areaIntelligence";
@@ -63,6 +64,7 @@ export default function DealSummaryPage({
     dealSummary,
     propertyValuation,
     suburbProfile,
+    fixFlipExitValueAnalysis,
     isLoading,
     error,
   } = useDealMetrics(id);
@@ -109,6 +111,7 @@ export default function DealSummaryPage({
           renovationItems={renovationItems}
           propertyValuation={propertyValuation}
           suburbProfile={suburbProfile}
+          fixFlipExitValueAnalysis={fixFlipExitValueAnalysis}
         />
       ).toBlob();
 
@@ -276,7 +279,10 @@ export default function DealSummaryPage({
       </section>
 
       {isFlip && activeMetrics.flipMetrics ? (
-        <FlipDashboard flipMetrics={activeMetrics.flipMetrics} fixFlipAnalysis={activeMetrics.fixFlipAnalysis} currency="R" />
+        <div className="flex flex-col gap-8">
+          <FlipDashboard flipMetrics={activeMetrics.flipMetrics} fixFlipAnalysis={activeMetrics.fixFlipAnalysis} currency="R" />
+          <FlipExitValueCard analysis={fixFlipExitValueAnalysis} discountRate={discountRate ?? 10} currency="R" />
+        </div>
       ) : (
         <>
       <section>

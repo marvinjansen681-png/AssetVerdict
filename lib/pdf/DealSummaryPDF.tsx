@@ -21,6 +21,7 @@ import { getStrategy } from "@/lib/strategies";
 import type { DealVerdictResult, VerdictLabel } from "@/lib/calculations/verdict";
 import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
 import type { NegotiationAnalysis, NegotiationObjective, NegotiationOpportunity } from "@/lib/calculations/negotiation";
+import type { FlipExitValueAnalysis, FlipExitValueConservativeCase, FlipSalePriceScenarioSummary } from "@/lib/calculations/fixFlipExitValue";
 import {
   NEGOTIATION_OBJECTIVE_LABEL,
   NEGOTIATION_UNAVAILABLE_COPY,
@@ -145,6 +146,67 @@ function fmt(n: number | null | undefined, currency = "R") {
   return `${sign}${currency} ${Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
+/** One Point/Conservative scenario box (Phase 4.19) — reads only fields already computed by fixFlipExitValue.ts, no PDF-local arithmetic. */
+function renderFlipScenarioBox(
+  title: string,
+  scenarioCase: { salePrice: number; summary: FlipSalePriceScenarioSummary } | FlipExitValueConservativeCase,
+  currencySymbol: string
+) {
+  const { summary } = scenarioCase;
+  const conservativeFields = "survivesConservativeCase" in scenarioCase ? (scenarioCase as FlipExitValueConservativeCase) : null;
+  return (
+    <View style={styles.flipBox} key={title}>
+      <Text style={styles.flipBoxTitle}>{title}</Text>
+      <View style={styles.row}>
+        <Text style={styles.label}>Sale Price</Text>
+        <Text style={styles.value}>{fmt(scenarioCase.salePrice, currencySymbol)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Estimated Profit Before Tax</Text>
+        <Text style={styles.value}>{fmt(summary.estimatedProfitBeforeTax, currencySymbol)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Pre-Tax Project ROI</Text>
+        <Text style={styles.value}>{summary.preTaxProjectROI.toFixed(1)}%</Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Equity IRR</Text>
+        <Text style={styles.value}>{summary.equityIRR === null ? "N/A" : `${summary.equityIRR.toFixed(1)}%`}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Sale-Price Buffer</Text>
+        <Text style={styles.value}>
+          {summary.salePriceBufferPercent === null
+            ? "N/A"
+            : `${fmt(summary.salePriceBufferRand, currencySymbol)} (${summary.salePriceBufferPercent.toFixed(1)}%)`}
+        </Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Target vs. Required Return</Text>
+        <Text style={styles.value}>{summary.targetState === "met" ? "Met" : summary.targetState === "missed" ? "Missed" : "Unknown"}</Text>
+      </View>
+      {conservativeFields && (
+        <>
+          <View style={styles.row}>
+            <Text style={styles.label}>Remains profitable at this price</Text>
+            <Text style={styles.value}>{conservativeFields.survivesConservativeCase ? "Yes" : "No"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Still meets Required Return</Text>
+            <Text style={styles.value}>
+              {conservativeFields.meetsRequiredReturnInConservativeCase === null
+                ? "N/A"
+                : conservativeFields.meetsRequiredReturnInConservativeCase
+                ? "Yes"
+                : "No"}
+            </Text>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
 function ShieldLogo() {
   return (
     <Svg width={40} height={40} viewBox="0 0 32 32">
@@ -176,6 +238,8 @@ interface DealSummaryPDFProps {
   renovationItems?: RenovationItem[];
   propertyValuation?: PropertyValuation | null;
   suburbProfile?: SuburbProfile | null;
+  /** Pre-computed by the caller (Phase 4.19) — the same deterministic exit-value evidence/scenario model the Summary page shows, never recalculated here. Fix & Flip only. */
+  fixFlipExitValueAnalysis?: FlipExitValueAnalysis;
 }
 
 const SCENARIO_COLORS = { bear: COLORS.red, base: COLORS.gold, bull: COLORS.green };
@@ -236,6 +300,7 @@ export default function DealSummaryPDF({
   renovationItems = [],
   propertyValuation = null,
   suburbProfile = null,
+  fixFlipExitValueAnalysis,
 }: DealSummaryPDFProps) {
   const currencySymbol = currency === "ZAR" ? "R" : currency;
   const reportDate = new Date().toLocaleDateString("en-US");
@@ -623,6 +688,75 @@ export default function DealSummaryPDF({
               </Text>
               <Text style={styles.verdictFootnote}>{metrics.fixFlipAnalysis.modelAssumptions.taxAssumption}</Text>
             </View>
+          </>
+        )}
+
+        {/* Exit-Value Evidence (Phase 4.19) — same fixFlipExitValueAnalysis object the Summary UI reads, no duplicated arithmetic. Evidence and scenarios only — never a verdict. */}
+        {isFlip && fixFlipExitValueAnalysis?.status === "available" && (
+          <>
+            <View style={styles.flipBox}>
+              <Text style={styles.flipBoxTitle}>Exit-Value Evidence</Text>
+              <View style={styles.row}>
+                <Text style={styles.label}>Expected Sale Price (your assumption)</Text>
+                <Text style={styles.value}>{fmt(fixFlipExitValueAnalysis.expectedSalePrice, currencySymbol)}</Text>
+              </View>
+              {fixFlipExitValueAnalysis.evidence.status === "no_numeric_valuation" && (
+                <Text style={styles.verdictFootnote}>No numeric property valuation is recorded for comparison.</Text>
+              )}
+              {fixFlipExitValueAnalysis.evidence.status === "invalid_valuation" && (
+                <Text style={styles.verdictFootnote}>
+                  The recorded valuation figures are internally inconsistent, so AssetVerdict cannot use them for a comparison.
+                </Text>
+              )}
+              {fixFlipExitValueAnalysis.evidence.estimatedValue !== undefined && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Recorded Valuation Estimate</Text>
+                  <Text style={styles.value}>{fmt(fixFlipExitValueAnalysis.evidence.estimatedValue, currencySymbol)}</Text>
+                </View>
+              )}
+              {fixFlipExitValueAnalysis.evidence.valueConfidenceLow !== undefined && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>
+                    {fixFlipExitValueAnalysis.evidence.valueConfidenceHigh !== undefined ? "Recorded Range" : "Recorded Lower Valuation Bound"}
+                  </Text>
+                  <Text style={styles.value}>
+                    {fixFlipExitValueAnalysis.evidence.valueConfidenceHigh !== undefined
+                      ? `${fmt(fixFlipExitValueAnalysis.evidence.valueConfidenceLow, currencySymbol)} – ${fmt(fixFlipExitValueAnalysis.evidence.valueConfidenceHigh, currencySymbol)}`
+                      : fmt(fixFlipExitValueAnalysis.evidence.valueConfidenceLow, currencySymbol)}
+                  </Text>
+                </View>
+              )}
+              {fixFlipExitValueAnalysis.evidence.rangePosition && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Expected Sale Price Position</Text>
+                  <Text style={styles.value}>
+                    {fixFlipExitValueAnalysis.evidence.rangePosition === "below_range"
+                      ? "Below recorded range"
+                      : fixFlipExitValueAnalysis.evidence.rangePosition === "above_range"
+                      ? "Above recorded range"
+                      : "Within recorded range"}
+                  </Text>
+                </View>
+              )}
+              {(fixFlipExitValueAnalysis.evidence.reportSource || fixFlipExitValueAnalysis.evidence.reportDate) && (
+                <Text style={styles.verdictFootnote}>
+                  {fixFlipExitValueAnalysis.evidence.reportSource ?? "Recorded valuation"}
+                  {fixFlipExitValueAnalysis.evidence.reportDate
+                    ? ` — as of ${new Date(fixFlipExitValueAnalysis.evidence.reportDate).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}`
+                    : ""}
+                </Text>
+              )}
+            </View>
+
+            {fixFlipExitValueAnalysis.valuationPointCase &&
+              renderFlipScenarioBox("Valuation Point Case", fixFlipExitValueAnalysis.valuationPointCase, currencySymbol)}
+            {fixFlipExitValueAnalysis.conservativeCase &&
+              renderFlipScenarioBox("Conservative Valuation Case", fixFlipExitValueAnalysis.conservativeCase, currencySymbol)}
+
+            <Text style={styles.verdictFootnote}>
+              This compares your assumption with recorded evidence and re-runs the same deterministic Fix &amp; Flip model at evidence-backed
+              prices — it does not predict what the property will actually sell for, and it is not a Fix &amp; Flip verdict.
+            </Text>
           </>
         )}
       </Page>

@@ -152,6 +152,18 @@ export interface DealCoachNegotiationOpportunity {
   disclaimer?: string;
 }
 
+/** One Fix & Flip exit-value scenario (Base/Valuation Point/Conservative), pre-formatted (Phase 4.19) — every field is a direct read of a real calcFixFlipAnalysis() result, never independently computed. */
+export interface FlipExitValueScenarioSummaryCopy {
+  salePrice: string;
+  sameAsBase: boolean;
+  estimatedProfitBeforeTax: string;
+  preTaxProjectROI: string;
+  equityIRR?: string;
+  salePriceBufferRand?: string;
+  salePriceBufferPercent?: string;
+  targetState: "met" | "missed" | "unknown";
+}
+
 /** Compact, pre-formatted negotiation/target-purchase-price summary (Phase 4.15/4.16) — never present for Fix & Flip/Instalment Sale in a way that implies a target price exists. */
 export interface DealCoachNegotiation {
   currentPrice: string;
@@ -235,6 +247,39 @@ export interface DealCoachContext {
     financingAssumption?: string;
     taxAssumption?: string;
     renovationTimingAssumption?: string;
+  };
+  /**
+   * Fix & Flip only (Phase 4.19) — the deterministic exit-value evidence
+   * and scenario model (lib/calculations/fixFlipExitValue.ts), pre-formatted.
+   * Undefined for every non-Flip strategy. Every scenario figure here comes
+   * from re-running the SAME calcFixFlipAnalysis engine at an evidence-backed
+   * sale price — the coach must never invent its own haircut, compute a
+   * different conservative price, or judge whether Expected Sale Price is
+   * "realistic" (see the guardrail in dealCoachPrompt.ts). This is evidence
+   * and scenario comparison only — it is not a Fix & Flip verdict, and does
+   * not make one available.
+   */
+  fixFlipExitValueAnalysis?: {
+    status: "available" | "unavailable";
+    expectedSalePrice?: string;
+    evidenceStatus?: "no_numeric_valuation" | "point_estimate_only" | "lower_bound_only" | "valuation_range_available" | "invalid_valuation";
+    reportSource?: string;
+    reportDate?: string;
+    valuationAgeDays?: number;
+    recordedEstimate?: string;
+    recordedRangeLow?: string;
+    recordedRangeHigh?: string;
+    rangePosition?: "below_range" | "within_range" | "above_range";
+    expectedVsEstimate?: string;
+    valuationConfidenceLabel?: string;
+    comparableCount?: number;
+    /** Present only when a usable point estimate exists (never above Expected Sale Price). */
+    valuationPointCase?: FlipExitValueScenarioSummaryCopy;
+    /** Present only when a usable lower confidence bound exists (never above Expected Sale Price, never an invented percentage). */
+    conservativeCase?: FlipExitValueScenarioSummaryCopy & {
+      survivesConservativeCase: boolean;
+      meetsRequiredReturnInConservativeCase: boolean | null;
+    };
   };
   scenario: {
     active: ScenarioKey;

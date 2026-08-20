@@ -4,6 +4,7 @@ import useSWR from "swr";
 import type { DealMetrics, YearlyProjection } from "@/lib/calculations";
 import type { Scenarios } from "@/lib/calculations/scenarios";
 import type { DealVerdictResult } from "@/lib/calculations/verdict";
+import type { FlipExitValueAnalysis } from "@/lib/calculations/fixFlipExitValue";
 import type { CapexItem, RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
 
 export interface DealSummaryInputs {
@@ -64,6 +65,8 @@ export interface CalculateResponse {
   dealSummary: DealSummaryInputs;
   propertyValuation: PropertyValuation | null;
   suburbProfile: SuburbProfile | null;
+  /** Phase 4.19 — Fix & Flip only; undefined for every other strategy. */
+  fixFlipExitValueAnalysis?: FlipExitValueAnalysis;
 }
 
 export interface CalculateErrorBody {
@@ -111,6 +114,7 @@ export function useDealMetrics(dealId: string) {
     dealSummary: data?.dealSummary,
     propertyValuation: data?.propertyValuation,
     suburbProfile: data?.suburbProfile,
+    fixFlipExitValueAnalysis: data?.fixFlipExitValueAnalysis,
     isLoading,
     error: error as CalculateError | undefined,
     refresh: mutate,

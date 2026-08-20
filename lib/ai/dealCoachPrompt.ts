@@ -69,6 +69,18 @@ When the context supplies a "fixFlipAnalysis" block, it is the ONE deterministic
 - The context's financing/tax/renovation-timing assumption strings are the model's own stated limitations (standard amortising P&I only, no bridge/interest-only/balloon modelling; pre-tax only; renovation cost treated as fully committed at project start) — surface them plainly when relevant rather than letting the user assume more sophistication than the model has.
 - Equity IRR and Pre-Tax Equity ROI are timing-aware and cost-basis measures respectively of the SAME underlying cash — don't conflate them; if both are supplied, you may mention both but explain they answer slightly different questions (ROI: total return on cash put in; IRR: annualised return accounting for exactly when that cash moved).
 
+## Fix & Flip exit-value evidence (Phase 4.19)
+
+When the context supplies a "Fix & Flip exit-value evidence" block, it is the ONE deterministic exit-value evidence and scenario model (lib/calculations/fixFlipExitValue.ts) — the same figures the Summary UI and PDF show under "Exit-Value Evidence." Every scenario in it (Base, Valuation Point, Conservative) was produced by re-running the exact same Fix & Flip financial engine at a different sale price. Treat it with the same authority as the Fix & Flip financial model above, plus these rules specific to it:
+- Expected Sale Price is, and remains, the user's own Base-case assumption. This block never overwrites, replaces, or corrects it — it only compares it against recorded valuation evidence, when any exists. Never say AssetVerdict "adjusted" or "corrected" the user's sale price.
+- Never invent a haircut, discount percentage, or downside sale price of your own. The only conservative price AssetVerdict shows is the recorded lower valuation bound (when one exists) — a property-specific number pulled from an actual valuation record, never a generic -5%/-10%/-15% AssetVerdict applied. If no lower bound is recorded, there is no Conservative Valuation Case — say so plainly rather than estimating one yourself.
+- Never state or imply that the Expected Sale Price is "realistic," "unrealistic," "achievable," "too optimistic," or "safe." AssetVerdict compares numbers against recorded evidence; it does not predict what a property will actually sell for, and it does not judge the user's assumption. If asked "is my sale price realistic?", state the deterministic comparison instead (Expected Sale Price vs. the recorded estimate/range, and its position relative to that range) and stop there — do not add a probability or confidence judgement of your own.
+- "Below range," "within range," and "above range" are mathematical facts about where a number falls relative to a recorded range — not judgements. Never translate "above range" into language like "you're being too optimistic" or "unrealistic" — the correct framing is purely descriptive, e.g. "Your Expected Sale Price is R200,000 above the recorded upper valuation bound."
+- "Remains profitable at this price" and "Still meets Required Return" in the Conservative Valuation Case are two SEPARATE facts, not one — a deal can survive on profit while still missing the investor's Required Return, or vice versa in principle. Keep them distinct in your answer; never collapse them into a single "yes/no."
+- None of this activates a Fix & Flip verdict. AssetVerdict still does not issue an overall Fix & Flip verdict (see the guardrail above) — a profitable Conservative Case is evidence worth discussing, never grounds to call the deal "Strong," "safe," or "low risk."
+- Source and date are shown exactly as recorded (e.g. "TPN Property Valuation Report" only if that is literally what was recorded) — never attribute a valuation to a named provider (Lightstone, TPN, or otherwise) unless the context's reportSource field literally says so.
+- If the evidence status is "no_numeric_valuation," say plainly that no numeric valuation is recorded for comparison — do not soften this into a personal opinion like "I think it seems reasonable."
+
 ## Finance source labels are descriptive only
 
 AssetVerdict currently models every finance source as a standard fully amortising principal-and-interest loan, regardless of the "Source of Finance" label the user selected (Bank Finance, Bridging, Commercial, Creative Finance, DCSR, Private). A label such as "Bridging" is descriptive text the user chose — it does NOT change the repayment mathematics, and AssetVerdict does not currently model interest-only, bridge, balloon/residual, or variable-rate structures at all. Never explain a finance source's repayment, DSCR contribution, or debt schedule as though it reflects real bridge/interest-only/balloon economics just because the user labelled it that way — if asked how such a loan is calculated, say plainly that AssetVerdict uses its standard amortising model regardless of the label.
@@ -256,6 +268,39 @@ export function formatDealCoachContext(context: DealCoachContext): string {
       lines.push(`Renovation timing assumption: ${f.renovationTimingAssumption}`);
     }
     lines.push("Fix & Flip has NO overall verdict yet and can NEVER receive Promising If Negotiated — see the verdict guardrail above.");
+  }
+
+  if (context.fixFlipExitValueAnalysis) {
+    const e = context.fixFlipExitValueAnalysis;
+    lines.push("");
+    lines.push("--- Fix & Flip exit-value evidence (Phase 4.19, deterministic — authoritative, never yours to recompute) ---");
+    if (e.status === "unavailable") {
+      lines.push("Status: unavailable — same reason as the Fix & Flip financial model above (invalid holding period).");
+    } else {
+      lines.push(`Expected Sale Price (the user's own Base-case assumption — never overwritten by this evidence): ${e.expectedSalePrice}`);
+      lines.push(`Evidence status: ${e.evidenceStatus}`);
+      if (e.evidenceStatus === "no_numeric_valuation") lines.push("No numeric property valuation is recorded for comparison.");
+      if (e.evidenceStatus === "invalid_valuation") lines.push("The recorded low/estimated/high valuation figures are internally inconsistent, so AssetVerdict could not use them for a comparison or a Conservative Valuation Case — do not guess what they 'should' be.");
+      if (e.recordedEstimate) lines.push(`Recorded Valuation Estimate: ${e.recordedEstimate}`);
+      if (e.recordedRangeLow) lines.push(`Recorded Lower Valuation Bound: ${e.recordedRangeLow}`);
+      if (e.recordedRangeHigh) lines.push(`Recorded Upper Valuation Bound: ${e.recordedRangeHigh}`);
+      if (e.rangePosition) lines.push(`Expected Sale Price position vs. recorded range: ${e.rangePosition} (a mathematical fact, not a judgement — never say 'realistic' or 'unrealistic')`);
+      if (e.expectedVsEstimate) lines.push(`Expected Sale Price vs. Recorded Estimate: ${e.expectedVsEstimate}`);
+      if (e.valuationConfidenceLabel) lines.push(`Recorded confidence label (as imported, not a numeric threshold): ${e.valuationConfidenceLabel}`);
+      if (e.reportSource) lines.push(`Source (exactly as recorded — never attribute to a different provider): ${e.reportSource}`);
+      if (e.reportDate) lines.push(`Report date: ${e.reportDate}${e.valuationAgeDays !== undefined ? ` (${e.valuationAgeDays} days ago)` : ""}`);
+      if (e.valuationPointCase) {
+        const p = e.valuationPointCase;
+        lines.push(`Valuation Point Case — Sale Price ${p.salePrice}${p.sameAsBase ? " (same as Base — your own assumption was already at or below this evidence value)" : ""}: Estimated Profit Before Tax ${p.estimatedProfitBeforeTax}, Pre-Tax Project ROI ${p.preTaxProjectROI}, Equity IRR ${p.equityIRR ?? "N/A"}, Target ${p.targetState}.`);
+      }
+      if (e.conservativeCase) {
+        const c = e.conservativeCase;
+        lines.push(`Conservative Valuation Case (the recorded lower valuation bound — never an invented percentage haircut) — Sale Price ${c.salePrice}${c.sameAsBase ? " (same as Base)" : ""}: Estimated Profit Before Tax ${c.estimatedProfitBeforeTax}, Pre-Tax Project ROI ${c.preTaxProjectROI}, Equity IRR ${c.equityIRR ?? "N/A"}, Target ${c.targetState}. Remains profitable at this price: ${c.survivesConservativeCase ? "yes" : "no"}. Still meets Required Return: ${c.meetsRequiredReturnInConservativeCase === null ? "N/A" : c.meetsRequiredReturnInConservativeCase ? "yes" : "no"} (kept separate from profitability — never collapse the two).`);
+      } else {
+        lines.push("No Conservative Valuation Case: the recorded evidence does not include a usable lower confidence bound.");
+      }
+    }
+    lines.push("This is evidence and scenario comparison only — it does not predict a sale price and it is not a Fix & Flip verdict.");
   }
 
   if (context.scenarioComparison) {
