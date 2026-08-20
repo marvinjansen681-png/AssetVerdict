@@ -77,8 +77,30 @@ export type FlipExitValueEvidenceStatus =
 
 export type FlipExitValueRangePosition = "below_range" | "within_range" | "above_range";
 
+/**
+ * Whether the recorded valuation reflects the property's current
+ * condition, its post-renovation/completed condition, or something else
+ * (Phase 4.19.1, section 11-13). `PropertyValuation` has no field that
+ * records this today, and this module never infers it — not from
+ * `reportSource`, not from the strategy being Fix & Flip, not from
+ * anything else — so this is a literal singleton type: it can only ever
+ * be "unknown" until a future phase adds a real, explicit basis field and
+ * deliberately widens this type. That narrowness is the point (section 15,
+ * 39): it is a compile-time guardrail against a future verdict phase
+ * silently treating "a valuation is recorded" as "post-renovation exit
+ * value is confirmed" — two very different claims this module refuses to
+ * conflate. Unknown basis does NOT invalidate the valuation, does NOT
+ * block the Point/Conservative scenarios below, and does NOT change any
+ * financial figure — it only limits how much interpretive authority a
+ * future verdict may give this evidence (supporting evidence, not
+ * confirmed exit-price proof).
+ */
+export type FlipExitValueValuationBasis = "unknown";
+
 export interface FlipExitValueEvidence {
   status: FlipExitValueEvidenceStatus;
+  /** See FlipExitValueValuationBasis's own doc comment — always "unknown" today, deliberately. */
+  valuationBasis: FlipExitValueValuationBasis;
 
   reportSource: string | null;
   reportDate: Date | string | null;
@@ -235,16 +257,20 @@ function buildEvidence(
   const hasEst = isUsableNumber(rawEst);
   const hasHigh = isUsableNumber(rawHigh);
 
-  // Validate ONLY the relationships that exist — never silently reorder or
-  // "fix" imported data (section 6). A lone value is never contradictory by
-  // itself; contradiction only arises when two or more related values
-  // disagree about their own ordering.
+  // Validate every relationship that CAN be tested from the values actually
+  // present — never a missing one, never an inferred one (Phase 4.19.1,
+  // section 2). Three independent pairwise checks, each firing only when
+  // both its values exist, together cover every combination: a lone value
+  // is never contradictory by itself, but low>estimate or estimate>high is
+  // just as contradictory when the third value is absent as when all three
+  // are present — the previous version only validated the full triple and
+  // the low/high pair, silently accepting low>estimate (or estimate>high)
+  // whenever the missing third value happened to be the one that would
+  // otherwise have exposed it.
   let invalid = false;
-  if (hasLow && hasEst && hasHigh) {
-    if (!(rawLow! <= rawEst! && rawEst! <= rawHigh!)) invalid = true;
-  } else if (hasLow && hasHigh && !hasEst) {
-    if (!(rawLow! <= rawHigh!)) invalid = true;
-  }
+  if (hasLow && hasEst && !(rawLow! <= rawEst!)) invalid = true;
+  if (hasEst && hasHigh && !(rawEst! <= rawHigh!)) invalid = true;
+  if (hasLow && hasHigh && !(rawLow! <= rawHigh!)) invalid = true;
 
   const fullRangeValid = hasLow && hasEst && hasHigh && !invalid;
   const pointEstimate = hasEst && !invalid ? rawEst! : null;
@@ -283,6 +309,13 @@ function buildEvidence(
 
   const evidence: FlipExitValueEvidence = {
     status,
+    // Always "unknown" — see FlipExitValueValuationBasis's doc comment.
+    // Set unconditionally, independent of `status`/`invalid`: even a
+    // no-valuation or invalid-valuation record has an (unknown) basis in
+    // the trivial sense that there's nothing to know a basis about, and a
+    // future reader must never be able to read a missing field as "basis
+    // confirmed" by omission.
+    valuationBasis: "unknown",
     reportSource,
     reportDate,
     valuationAgeDays,

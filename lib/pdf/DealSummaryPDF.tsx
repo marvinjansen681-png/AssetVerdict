@@ -746,6 +746,14 @@ export default function DealSummaryPDF({
                     : ""}
                 </Text>
               )}
+              {(fixFlipExitValueAnalysis.evidence.estimatedValue !== undefined || fixFlipExitValueAnalysis.evidence.valueConfidenceLow !== undefined) &&
+                fixFlipExitValueAnalysis.evidence.valuationBasis === "unknown" && (
+                  <Text style={styles.verdictFootnote}>
+                    Valuation basis not recorded. This valuation does not currently state whether it reflects the property&apos;s current condition
+                    or post-renovation condition — AssetVerdict treats it as supporting evidence only, not proof of the eventual post-renovation
+                    sale value.
+                  </Text>
+                )}
             </View>
 
             {fixFlipExitValueAnalysis.valuationPointCase &&

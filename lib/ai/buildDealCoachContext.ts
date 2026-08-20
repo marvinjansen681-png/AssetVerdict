@@ -429,6 +429,7 @@ function buildDealCoachFlipExitValueAnalysis(
     status: "available",
     expectedSalePrice: cur(result.expectedSalePrice),
     evidenceStatus: evidence.status,
+    valuationBasis: evidence.valuationBasis,
     reportSource: evidence.reportSource ?? undefined,
     reportDate: evidence.reportDate ? new Date(evidence.reportDate).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" }) : undefined,
     valuationAgeDays: evidence.valuationAgeDays,

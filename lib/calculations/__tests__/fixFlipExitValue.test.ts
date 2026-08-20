@@ -192,6 +192,74 @@ describe("Section 70 — malformed range", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 4.19.1 — partial-pair ordering contradictions (sections 1, 5-9, 43-45).
+// The Phase 4.19 validator only checked the full triple and the low/high
+// pair; low>estimate (high missing) and estimate>high (low missing) slipped
+// through undetected. Every pairwise relationship that CAN be tested must
+// now be validated, and only that relationship — never a missing value,
+// never an inferred one.
+// ---------------------------------------------------------------------------
+describe("Phase 4.19.1 — complete partial-pair ordering policy", () => {
+  it("section 5 / 43A: low > estimate, high missing -> invalid_valuation, no Point/Conservative case", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_600_000, estimatedValue: 1_400_000 }));
+    expect(a.evidence.status).toBe("invalid_valuation");
+    expect(a.evidence.rangePosition).toBeUndefined();
+    expect(a.valuationPointCase).toBeUndefined();
+    expect(a.conservativeCase).toBeUndefined();
+    expect(a.baseCase.salePrice).toBe(1_500_000);
+  });
+
+  it("section 6 / 43B: estimate > high, low missing -> invalid_valuation, no Point/Conservative case", () => {
+    const a = available(baseInputs, valuation({ estimatedValue: 1_600_000, valueConfidenceHigh: 1_500_000 }));
+    expect(a.evidence.status).toBe("invalid_valuation");
+    expect(a.valuationPointCase).toBeUndefined();
+    expect(a.conservativeCase).toBeUndefined();
+  });
+
+  it("section 43C: low > high, estimate missing -> invalid_valuation, no Conservative case", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_600_000, valueConfidenceHigh: 1_500_000 }));
+    expect(a.evidence.status).toBe("invalid_valuation");
+    expect(a.valuationPointCase).toBeUndefined();
+    expect(a.conservativeCase).toBeUndefined();
+  });
+
+  it("section 45: raw values are preserved exactly for every malformed partial pair, never reordered", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_600_000, estimatedValue: 1_400_000 }));
+    expect(a.evidence.valueConfidenceLow).toBe(1_600_000);
+    expect(a.evidence.estimatedValue).toBe(1_400_000);
+    expect(a.evidence.valueConfidenceHigh).toBeUndefined();
+  });
+
+  it("section 7 / 44: valid low + estimate (high missing) is NOT falsely invalidated — both Point and Conservative available, no rangePosition", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_300_000, estimatedValue: 1_400_000 }));
+    expect(a.evidence.status).not.toBe("invalid_valuation");
+    expect(a.valuationPointCase?.salePrice).toBe(1_400_000);
+    expect(a.conservativeCase?.salePrice).toBe(1_300_000);
+    expect(a.evidence.rangePosition).toBeUndefined();
+    expect(a.evidence.rangeWidthRand).toBeUndefined();
+  });
+
+  it("section 8 / 44: valid estimate + high (low missing) is NOT falsely invalidated — Point available, Conservative absent, no rangePosition", () => {
+    const a = available(baseInputs, valuation({ estimatedValue: 1_400_000, valueConfidenceHigh: 1_500_000 }));
+    expect(a.evidence.status).not.toBe("invalid_valuation");
+    expect(a.valuationPointCase?.salePrice).toBe(1_400_000);
+    expect(a.conservativeCase).toBeUndefined();
+    expect(a.evidence.rangePosition).toBeUndefined();
+  });
+
+  it("section 9: valid low + high, no estimate -> Conservative uses low, Point absent, no fabricated estimate, no expected-vs-estimate comparison", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_300_000, valueConfidenceHigh: 1_500_000 }));
+    expect(a.evidence.status).not.toBe("invalid_valuation");
+    expect(a.evidence.estimatedValue).toBeUndefined();
+    expect(a.valuationPointCase).toBeUndefined();
+    expect(a.conservativeCase?.salePrice).toBe(1_300_000);
+    expect(a.evidence.expectedVsEstimateRand).toBeUndefined();
+    expect(a.evidence.expectedVsEstimatePercent).toBeUndefined();
+    expect(a.evidence.rangePosition).toBeUndefined();
+  });
+});
+
 describe("Section 71 — lower bound only", () => {
   it("no estimate, no high, valid low: lower_bound_only, conservative uses low, no fabricated estimate, no Point case", () => {
     const a = available(baseInputs, valuation({ valueConfidenceLow: 1_300_000 }));
@@ -407,5 +475,53 @@ describe("Unavailable propagation", () => {
     const inputs = { ...baseInputs, holdingPeriodMonths: 0 };
     const result = calcFlipExitValueAnalysis({ inputs, valuation: valuation({ estimatedValue: 1_400_000 }), now: NOW });
     expect(result).toEqual({ status: "unavailable", reason: "invalid_holding_period" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.19.1 — valuation basis (sections 11-13, 40-42, 46-47). The current
+// PropertyValuation model has no field recording whether a valuation
+// reflects current condition or post-renovation condition, so this must
+// always read "unknown" — never inferred from source, strategy, or any
+// other field — and unknown basis must never block a scenario or change a
+// financial figure.
+// ---------------------------------------------------------------------------
+describe("Phase 4.19.1 — valuation basis is always 'unknown', never inferred", () => {
+  it("section 40: basis is 'unknown' for a full valid range", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_300_000, estimatedValue: 1_400_000, valueConfidenceHigh: 1_500_000 }));
+    expect(a.evidence.valuationBasis).toBe("unknown");
+  });
+
+  it("section 46: basis is 'unknown' even with no valuation recorded at all", () => {
+    const a = available(baseInputs, null);
+    expect(a.evidence.status).toBe("no_numeric_valuation");
+    expect(a.evidence.valuationBasis).toBe("unknown");
+  });
+
+  it("section 47: basis is 'unknown' for a comparables/bonds-only record with no numeric evidence", () => {
+    const a = available(baseInputs, valuation({ comparableCount: 3 }));
+    expect(a.evidence.status).toBe("no_numeric_valuation");
+    expect(a.evidence.valuationBasis).toBe("unknown");
+  });
+
+  it("basis is 'unknown' regardless of reportSource — never inferred from a named provider (e.g. TPN)", () => {
+    const a = available(baseInputs, valuation({ estimatedValue: 1_400_000, reportSource: "TPN Property Valuation Report" }));
+    expect(a.evidence.valuationBasis).toBe("unknown");
+  });
+
+  it("section 41: unknown basis does not block the Point or Conservative scenarios", () => {
+    const a = available(baseInputs, valuation({ valueConfidenceLow: 1_380_000, estimatedValue: 1_400_000, valueConfidenceHigh: 1_500_000 }));
+    expect(a.evidence.valuationBasis).toBe("unknown");
+    expect(a.valuationPointCase).toBeDefined();
+    expect(a.conservativeCase).toBeDefined();
+  });
+
+  it("section 42: unknown basis does not change any scenario financial result versus an identical valuation with basis unspecified", () => {
+    const val = valuation({ valueConfidenceLow: 1_380_000, estimatedValue: 1_400_000, valueConfidenceHigh: 1_500_000 });
+    const a1 = available(baseInputs, val);
+    const a2 = available(baseInputs, val);
+    expect(a1.conservativeCase?.summary).toEqual(a2.conservativeCase?.summary);
+    expect(a1.valuationPointCase?.summary).toEqual(a2.valuationPointCase?.summary);
+    expect(a1.baseCase.summary).toEqual(a2.baseCase.summary);
   });
 });

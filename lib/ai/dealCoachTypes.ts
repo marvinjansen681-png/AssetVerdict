@@ -263,6 +263,16 @@ export interface DealCoachContext {
     status: "available" | "unavailable";
     expectedSalePrice?: string;
     evidenceStatus?: "no_numeric_valuation" | "point_estimate_only" | "lower_bound_only" | "valuation_range_available" | "invalid_valuation";
+    /**
+     * Phase 4.19.1 — whether the recorded valuation is known to reflect
+     * current condition, post-renovation condition, or neither. Always
+     * "unknown" today (PropertyValuation has no such field, and this is
+     * never inferred) — the coach must treat any valuation figure as
+     * supporting evidence only, never as confirmed post-renovation exit
+     * value, and must say so plainly if asked (see the guardrail in
+     * dealCoachPrompt.ts).
+     */
+    valuationBasis?: "unknown";
     reportSource?: string;
     reportDate?: string;
     valuationAgeDays?: number;

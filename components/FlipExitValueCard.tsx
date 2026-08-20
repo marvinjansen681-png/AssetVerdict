@@ -110,8 +110,8 @@ export default function FlipExitValueCard({ analysis, discountRate, currency = "
 
           {ev.status === "invalid_valuation" && (
             <p className="text-sm text-av-slate py-2">
-              The recorded valuation figures are internally inconsistent (the low/estimated/high values do not form a valid order), so AssetVerdict
-              cannot use them for a comparison or a Conservative Valuation Case. The figures are shown below exactly as recorded.
+              The recorded valuation figures are internally inconsistent, so AssetVerdict cannot use them for scenario analysis. The figures are
+              shown below exactly as recorded — nothing has been reordered or corrected.
             </p>
           )}
 
@@ -143,6 +143,12 @@ export default function FlipExitValueCard({ analysis, discountRate, currency = "
               {ev.reportSource ?? "Recorded valuation"}
               {fmtDate(ev.reportDate) ? ` — as of ${fmtDate(ev.reportDate)}` : ""}
               {ev.valuationAgeDays !== undefined ? ` (${ev.valuationAgeDays} day${ev.valuationAgeDays === 1 ? "" : "s"} ago)` : ""}
+            </p>
+          )}
+          {(ev.estimatedValue !== undefined || ev.valueConfidenceLow !== undefined) && ev.valuationBasis === "unknown" && (
+            <p className="text-xs text-av-slate/70 pt-2 border-t border-av-light-grey mt-2">
+              Valuation basis not recorded. This valuation does not currently state whether it reflects the property&apos;s current condition or
+              post-renovation condition — AssetVerdict treats it as supporting evidence only, not proof of the eventual post-renovation sale value.
             </p>
           )}
         </div>
