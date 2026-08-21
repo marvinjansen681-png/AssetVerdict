@@ -956,6 +956,7 @@ export default function DealSummaryPDF({
             <View style={styles.tableRow}>
               <Text style={styles.tableCellSmall}>Category</Text>
               <Text style={styles.tableCellSmall}>Description</Text>
+              <Text style={styles.tableCellSmall}>Qty x Unit Cost</Text>
               <Text style={styles.tableCellSmall}>Budgeted</Text>
               <Text style={styles.tableCellSmall}>Quoted</Text>
               <Text style={styles.tableCellSmall}>Status</Text>
@@ -964,6 +965,11 @@ export default function DealSummaryPDF({
               <View style={styles.tableRow} key={item.id}>
                 <Text style={styles.tableCellSmall}>{item.category}</Text>
                 <Text style={styles.tableCellSmall}>{item.description}</Text>
+                <Text style={styles.tableCellSmall}>
+                  {item.quantity != null && item.unitCost != null
+                    ? `${item.quantity} x ${fmt(item.unitCost, currencySymbol)}`
+                    : ""}
+                </Text>
                 <Text style={styles.tableCellSmall}>{fmt(item.budgeted, currencySymbol)}</Text>
                 <Text style={styles.tableCellSmall}>{fmt(item.quoted, currencySymbol)}</Text>
                 <Text style={styles.tableCellSmall}>{item.status}</Text>

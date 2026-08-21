@@ -194,6 +194,12 @@ model RenovationItem {
   quoted      Float?
   status      String @default("Not Started")
   order       Int    @default(0)
+  // Optional unit pricing (added later): when both are set, `budgeted` is
+  // the UI-computed product quantity * unitCost, saved as the ordinary
+  // budgeted total — the calculation engine only ever reads `budgeted`.
+  // Left null for lump-sum items entered directly, unchanged from before.
+  quantity    Float?
+  unitCost    Float?
 
   @@index([dealId])
 }

@@ -154,6 +154,9 @@ export interface RenovationItem {
   quoted?: number | null;
   status: string;
   order: number;
+  /** Optional unit pricing: when both are set, `budgeted` is quantity * unitCost. Null for lump-sum items entered directly. */
+  quantity?: number | null;
+  unitCost?: number | null;
 }
 
 export interface PropertyTransaction {

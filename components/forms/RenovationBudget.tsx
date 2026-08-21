@@ -82,6 +82,9 @@ interface LocalItem {
   budgeted: number;
   quoted: number | null;
   status: string;
+  /** Optional unit pricing: when both are set, budgeted is quantity * unitCost and the Budgeted field becomes read-only. Null for a directly-typed lump sum, unchanged from before this feature existed. */
+  quantity: number | null;
+  unitCost: number | null;
 }
 
 function toLocal(item: RenovationItem): LocalItem {
@@ -92,6 +95,8 @@ function toLocal(item: RenovationItem): LocalItem {
     budgeted: item.budgeted,
     quoted: item.quoted ?? null,
     status: item.status,
+    quantity: item.quantity ?? null,
+    unitCost: item.unitCost ?? null,
   };
 }
 
@@ -151,6 +156,8 @@ export default function RenovationBudget({
             budgeted: Number(i.budgeted) || 0,
             quoted: i.quoted === null ? null : Number(i.quoted) || 0,
             status: i.status,
+            quantity: i.quantity === null ? null : Number(i.quantity) || 0,
+            unitCost: i.unitCost === null ? null : Number(i.unitCost) || 0,
           })),
         }),
       });
@@ -186,6 +193,8 @@ export default function RenovationBudget({
           budgeted: 0,
           quoted: null,
           status: "Not Started",
+          quantity: null,
+          unitCost: null,
         })),
       ]);
       setCollapsed((prev) => {
@@ -206,6 +215,8 @@ export default function RenovationBudget({
         budgeted: defaultBudgeted,
         quoted: null,
         status: "Not Started",
+        quantity: null,
+        unitCost: null,
       },
     ]);
     setCollapsed((prev) => {
@@ -216,7 +227,21 @@ export default function RenovationBudget({
   }
 
   function updateItem(id: string, patch: Partial<LocalItem>) {
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.id !== id) return i;
+        const next = { ...i, ...patch };
+        // Unit pricing is optional (section: "Do you understand?" furniture
+        // feature) — whenever both Quantity and Unit Cost are present,
+        // Budgeted is derived from them, never typed directly. Clearing
+        // either one reverts Budgeted to a normal, directly-editable lump
+        // sum (its last value is kept as the starting point).
+        if (("quantity" in patch || "unitCost" in patch) && next.quantity !== null && next.unitCost !== null) {
+          next.budgeted = next.quantity * next.unitCost;
+        }
+        return next;
+      })
+    );
   }
 
   function removeItem(id: string) {
@@ -309,10 +334,12 @@ export default function RenovationBudget({
 
                   {!isCollapsed && (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm font-body min-w-[700px]">
+                      <table className="w-full text-sm font-body min-w-[980px]">
                         <thead>
                           <tr className="text-left text-xs text-av-slate border-b border-av-light-grey">
                             <th className="py-2 px-4">Description</th>
+                            <th className="py-2 pr-2">Qty</th>
+                            <th className="py-2 pr-2">Unit Cost</th>
                             <th className="py-2 pr-2">Budgeted</th>
                             <th className="py-2 pr-2">Quoted</th>
                             <th className="py-2 pr-2">Status</th>
@@ -320,21 +347,51 @@ export default function RenovationBudget({
                           </tr>
                         </thead>
                         <tbody>
-                          {categoryItems.map((item) => (
+                          {categoryItems.map((item) => {
+                            const isUnitPriced = item.quantity !== null && item.unitCost !== null;
+                            return (
                             <tr key={item.id} className="border-b border-av-light-grey last:border-0">
-                              <td className="py-2 px-4 min-w-[180px]">
+                              <td className="py-2 px-4 min-w-[160px]">
                                 <Input
                                   value={item.description}
                                   onChange={(e) => updateItem(item.id, { description: e.target.value })}
                                   placeholder="Description"
                                 />
                               </td>
+                              <td className="py-2 pr-2 min-w-[90px]">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={item.quantity ?? ""}
+                                  onChange={(e) =>
+                                    updateItem(item.id, {
+                                      quantity: e.target.value === "" ? null : Number(e.target.value),
+                                    })
+                                  }
+                                  placeholder="Qty"
+                                  className="text-right"
+                                />
+                              </td>
+                              <td className="py-2 pr-2 min-w-[130px]">
+                                <CurrencyInput
+                                  value={item.unitCost ?? ""}
+                                  onChange={(e) =>
+                                    updateItem(item.id, {
+                                      unitCost: e.target.value === "" ? null : Number(e.target.value),
+                                    })
+                                  }
+                                />
+                              </td>
                               <td className="py-2 pr-2 min-w-[130px]">
                                 <CurrencyInput
                                   value={item.budgeted}
-                                  onChange={(e) =>
-                                    updateItem(item.id, { budgeted: Number(e.target.value) || 0 })
-                                  }
+                                  readOnly={isUnitPriced}
+                                  title={isUnitPriced ? "Computed from Qty x Unit Cost" : undefined}
+                                  onChange={(e) => {
+                                    if (isUnitPriced) return;
+                                    updateItem(item.id, { budgeted: Number(e.target.value) || 0 });
+                                  }}
                                 />
                               </td>
                               <td className="py-2 pr-2 min-w-[130px]">
@@ -371,7 +428,7 @@ export default function RenovationBudget({
                                 </button>
                               </td>
                             </tr>
-                          ))}
+                          );})}
                         </tbody>
                       </table>
                     </div>

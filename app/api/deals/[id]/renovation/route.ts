@@ -10,6 +10,8 @@ const itemSchema = z.object({
   budgeted: z.number().nonnegative(),
   quoted: z.number().nonnegative().nullable().optional(),
   status: z.string(),
+  quantity: z.number().nonnegative().nullable().optional(),
+  unitCost: z.number().nonnegative().nullable().optional(),
 });
 
 export async function GET(
