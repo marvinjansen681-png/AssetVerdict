@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { mutate as globalMutate } from "swr";
-import { ChevronDown, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import Input from "@/components/ui/Input";
@@ -226,6 +226,23 @@ export default function RenovationBudget({
     });
   }
 
+  /** Always adds one blank, custom line item to a category — unlike addItem(), never limited to (or blocked by) that category's preset list, so a cost the presets don't cover can still be captured. */
+  function addCustomItem(category: string) {
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}-${Math.random()}`,
+        category,
+        description: "",
+        budgeted: 0,
+        quoted: null,
+        status: "Not Started",
+        quantity: null,
+        unitCost: null,
+      },
+    ]);
+  }
+
   function updateItem(id: string, patch: Partial<LocalItem>) {
     setItems((prev) =>
       prev.map((i) => {
@@ -431,6 +448,15 @@ export default function RenovationBudget({
                           );})}
                         </tbody>
                       </table>
+                      <div className="px-4 py-2 border-t border-av-light-grey">
+                        <button
+                          type="button"
+                          onClick={() => addCustomItem(category)}
+                          className="inline-flex items-center gap-1 text-xs font-body text-av-navy hover:text-av-gold transition-colors min-h-[32px]"
+                        >
+                          <Plus size={14} /> Add Item
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
