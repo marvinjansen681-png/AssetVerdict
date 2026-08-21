@@ -39,6 +39,11 @@ import {
   type ApplicabilityContext,
 } from "./applicability";
 import type { MetricClassification } from "./thresholds";
+// Deliberate circular import (Phase 4.20) — flipVerdict.ts imports types and
+// the unavailable()/available() helpers back from this module. Safe under
+// the same rule as index.ts <-> fixFlip.ts (Phase 4.17): every use on both
+// sides is inside a function body, never at module-evaluation time.
+import { deriveFlipVerdict } from "./flipVerdict";
 
 // ---------------------------------------------------------------------------
 // Strategy eligibility (Phase 4.14 section 1)
@@ -82,8 +87,10 @@ export type VerdictLabel = "strong" | "promising" | "promising_if_negotiated" | 
  */
 export type VerdictUnavailableReason =
   | "strategy_model_incomplete"
-  | "insufficient_calibrated_evidence"
-  | "insufficient_required_inputs";
+  | "insufficient_required_inputs"
+  // Fix & Flip only (Phase 4.20) — see lib/calculations/flipVerdict.ts.
+  | "flip_model_unavailable"
+  | "flip_return_evidence_unavailable";
 
 export type SafetyState = "strong" | "acceptable" | "weak" | "unknown";
 export type OperatingState = "strong" | "acceptable" | "weak" | "unknown";
@@ -108,10 +115,28 @@ export interface VerdictReason {
   params?: Record<string, number | string | boolean | null>;
 }
 
+/**
+ * One flat, all-optional shape shared by every strategy rather than a
+ * discriminated union (Phase 4.20) — a true union would force every
+ * existing rental call site (tests, dealCoachPrompt.ts) to type-narrow
+ * before reading `.safety`/`.operating`, for zero behavioural benefit.
+ * `target` is the one field every strategy actually populates. Rental sets
+ * `safety`/`operating`; Fix & Flip sets `viability`/`exitEvidence` instead
+ * — deliberately NOT a repurposing of `safety`/`operating` with different
+ * meanings (e.g. "operating" standing in for "exit evidence quality" would
+ * risk "operating=weak" reading as a safety judgement it isn't — unknown or
+ * absent exit evidence is never a safety weakness; see flipVerdict.ts's own
+ * doc comment). `viability` mirrors the structural-loss concept
+ * `SafetyState`'s "strong"/"weak" already capture, as a plain boolean pair
+ * since Flip's structural check has only two states, never a graduated
+ * one. `exitEvidence` names the Strong-eligibility gate directly.
+ */
 export interface DealVerdictCategoryStates {
-  safety: SafetyState;
-  operating: OperatingState;
+  safety?: SafetyState;
+  operating?: OperatingState;
   target: TargetState;
+  viability?: "profitable" | "loss";
+  exitEvidence?: "strong" | "insufficient" | "unavailable";
 }
 
 export interface DealVerdictAvailable {
@@ -375,19 +400,31 @@ export interface DeriveDealVerdictParams {
   strategyId: string;
   inputs: DealInputs;
   metrics: DealMetrics;
+  /**
+   * Fix & Flip only (Phase 4.20) — the same server-computed
+   * FlipExitValueAnalysis the /calculate response returns, fed here so the
+   * Flip verdict never recomputes it (section 48). Ignored by every other
+   * strategy; rental callers may omit it entirely.
+   */
+  flipExitValueAnalysis?: import("./fixFlipExitValue").FlipExitValueAnalysis;
 }
 
-function unavailable(reason: VerdictUnavailableReason, reasons: VerdictReason[]): DealVerdictUnavailable {
-  return { status: "unavailable", reason, reasons, verdictModelVersion: VERDICT_MODEL_VERSION };
+export function unavailable(
+  reason: VerdictUnavailableReason,
+  reasons: VerdictReason[],
+  verdictModelVersion: string = VERDICT_MODEL_VERSION
+): DealVerdictUnavailable {
+  return { status: "unavailable", reason, reasons, verdictModelVersion };
 }
 
-function available(
+export function available(
   verdict: VerdictLabel,
   categoryStates: DealVerdictCategoryStates,
   reasons: VerdictReason[],
-  blockers: VerdictReason[]
+  blockers: VerdictReason[],
+  verdictModelVersion: string = VERDICT_MODEL_VERSION
 ): DealVerdictAvailable {
-  return { status: "available", verdict, categoryStates, reasons, blockers, verdictModelVersion: VERDICT_MODEL_VERSION };
+  return { status: "available", verdict, categoryStates, reasons, blockers, verdictModelVersion };
 }
 
 /**
@@ -399,13 +436,24 @@ function available(
  * guarantee is the caller's responsibility (Phase 4.14 section 78).
  */
 export function deriveDealVerdict(params: DeriveDealVerdictParams): DealVerdictResult {
-  const { strategyId, inputs, metrics } = params;
+  const { strategyId, inputs, metrics, flipExitValueAnalysis } = params;
 
   // ---- Step 1: strategy eligibility (section 1-3, 41) -------------------
   if (strategyId === "fix_and_flip") {
-    return unavailable("insufficient_calibrated_evidence", [
-      { code: "flip_calibration_incomplete", category: "availability", severity: "informational", params: { strategyId } },
-    ]);
+    // Phase 4.20 — Fix & Flip's own decision tree (structural viability →
+    // target → post-renovation downside evidence) is different enough from
+    // rental's DSCR/OER-based one that it lives in its own module rather
+    // than being force-fit into this function's rental-shaped steps below.
+    // Delegated, not duplicated: deriveFlipVerdict reads only already-
+    // computed metrics.fixFlipAnalysis and the caller-supplied
+    // flipExitValueAnalysis, and returns the exact same DealVerdictResult
+    // shape every other strategy does. deriveFlipVerdict is imported at the
+    // top of this file — a deliberate circular import (flipVerdict.ts
+    // imports types/helpers back from here) that is safe under the exact
+    // same rule already proven by index.ts <-> fixFlip.ts (Phase 4.17):
+    // every cross-reference is inside a function body, never at
+    // module-evaluation time.
+    return deriveFlipVerdict({ inputs, metrics, flipExitValueAnalysis });
   }
   if (strategyId === "instalment_sale") {
     return unavailable("strategy_model_incomplete", [

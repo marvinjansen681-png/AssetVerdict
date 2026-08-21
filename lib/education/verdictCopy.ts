@@ -48,12 +48,50 @@ export const VERDICT_LABEL_COPY: Record<VerdictLabel, { title: string; descripti
   },
 };
 
-export const VERDICT_UNAVAILABLE_COPY: Record<VerdictUnavailableReason, { title: string; description: string }> = {
-  insufficient_calibrated_evidence: {
-    title: "Not yet available for Fix & Flip",
+/**
+ * Fix & Flip's own label copy (Phase 4.20) — the rental copy above talks
+ * about DSCR/NOI/operating weakness, none of which this strategy's verdict
+ * (lib/calculations/flipVerdict.ts) is derived from. Only the four labels
+ * Flip can actually return get an entry; "promising_if_negotiated" falls
+ * through to the shared rental copy above (unreachable for Flip either way
+ * — see the guardrail in dealCoachPrompt.ts).
+ */
+const FLIP_VERDICT_LABEL_COPY: Partial<Record<VerdictLabel, { title: string; description: string }>> = {
+  strong: {
+    title: "Strong",
     description:
-      "AssetVerdict has not yet calibrated enough strategy-specific safety and return evidence to issue an overall Fix & Flip verdict.",
+      "The Base case is profitable before tax and meets your Required Return. A recorded post-renovation valuation includes a lower confidence bound, and the project remains profitable when AssetVerdict reruns the deal at that lower value — under the current assumptions.",
   },
+  promising: {
+    title: "Promising",
+    description:
+      "The Base case is profitable and meets your Required Return, but AssetVerdict does not have enough confirmed post-renovation downside evidence to classify the deal as Strong.",
+  },
+  high_risk: {
+    title: "High Risk",
+    description: "The Base case is estimated to break even or lose money before tax.",
+  },
+  does_not_meet_target: {
+    title: "Does Not Meet Target",
+    description: "The Base case is profitable before tax, but the estimated Equity IRR is below your Required Return.",
+  },
+};
+
+/**
+ * Strategy-aware label lookup (Phase 4.20) — Fix & Flip gets its own
+ * title/description; every other strategy keeps the original shared
+ * `VERDICT_LABEL_COPY`, unchanged. Callers (VerdictCard, VerdictExplainer,
+ * DealSummaryPDF) should use this instead of indexing `VERDICT_LABEL_COPY`
+ * directly whenever a `strategyId` is available.
+ */
+export function getVerdictLabelCopy(label: VerdictLabel, strategyId?: string): { title: string; description: string } {
+  if (strategyId === "fix_and_flip") {
+    return FLIP_VERDICT_LABEL_COPY[label] ?? VERDICT_LABEL_COPY[label];
+  }
+  return VERDICT_LABEL_COPY[label];
+}
+
+export const VERDICT_UNAVAILABLE_COPY: Record<VerdictUnavailableReason, { title: string; description: string }> = {
   strategy_model_incomplete: {
     title: "Not yet available for this strategy",
     description:
@@ -63,6 +101,17 @@ export const VERDICT_UNAVAILABLE_COPY: Record<VerdictUnavailableReason, { title:
     title: "Not enough evidence yet",
     description:
       "AssetVerdict cannot currently determine either financial safety or your Required Return status for this deal well enough to issue an overall verdict — check that your finance and cashflow inputs are complete.",
+  },
+  // Fix & Flip only (Phase 4.20).
+  flip_model_unavailable: {
+    title: "Not enough evidence yet",
+    description:
+      "AssetVerdict cannot currently calculate this Flip's financial model — check that your Holding Period is a valid positive number of months.",
+  },
+  flip_return_evidence_unavailable: {
+    title: "Not enough evidence yet",
+    description:
+      "AssetVerdict cannot currently confirm this Flip's Equity IRR, so it cannot determine whether your Required Return is met.",
   },
 };
 
@@ -89,9 +138,25 @@ const REASON_TEMPLATES: Record<string, (r: VerdictReason, currency: string) => s
   target_unknown: () => "AssetVerdict cannot confirm whether your Required Return is met — Equity IRR isn't available for this deal's current structure.",
   npv_supporting: (r, c) => `Equity NPV: ${fmt(r, c)} — supporting context only, does not independently change the target result.`,
   cap_rate_context: () => "The acquisition cap rate is outside AssetVerdict's current reference range for this strategy — informational only, it does not affect the verdict.",
-  flip_calibration_incomplete: () => "Fix & Flip Pre-Tax ROI and Annualised Pre-Tax ROI are not yet calibrated for an overall verdict.",
   instalment_sale_model_incomplete: () => "Instalment Sale is currently modelled like a standard rental income stream; the seller-financing structure itself isn't yet captured.",
   strategy_not_verdict_ready: () => "This strategy does not yet have a calibrated overall verdict.",
+
+  // ---- Fix & Flip (Phase 4.20) --------------------------------------------
+  flip_model_unavailable: () => "AssetVerdict cannot currently calculate this Flip's financial model — check that your Holding Period is a valid positive number of months.",
+  flip_structural_loss: (r, c) => `The Base case is estimated to break even or lose money before tax (Estimated Profit Before Tax ${fmt(r, c)}).`,
+  flip_return_evidence_unavailable: () => "AssetVerdict cannot currently confirm this Flip's Equity IRR, so it cannot determine whether your Required Return is met.",
+  flip_profitable: (r, c) => `The Base case is estimated to be profitable before tax (Estimated Profit Before Tax ${fmt(r, c)}).`,
+  flip_sale_price_buffer_context: (r, c) => `Base Sale-Price Buffer: ${fmt(r, c)} — descriptive only, AssetVerdict has not calibrated an execution-risk threshold for this figure.`,
+  no_exit_value_evidence: () => "No numeric property valuation is recorded to test downside resilience, so AssetVerdict cannot classify this deal as Strong.",
+  invalid_valuation_evidence: () => "The recorded valuation figures are internally inconsistent, so AssetVerdict cannot use them as downside evidence for Strong.",
+  valuation_basis_unknown: () => "The recorded valuation's basis (current condition vs. post-renovation) is not recorded, so AssetVerdict cannot treat it as confirmed post-renovation exit evidence.",
+  valuation_current_condition: () => "The recorded valuation reflects the property's current condition, not its post-renovation value, so AssetVerdict cannot use it as post-renovation exit evidence.",
+  no_conservative_lower_bound: () => "The recorded valuation includes a point estimate but no lower confidence bound, so AssetVerdict cannot produce a property-specific downside test.",
+  conservative_case_not_profitable: (r, c) => `At the recorded post-renovation lower valuation bound, the project is estimated to break even or lose money before tax (${fmt(r, c)}).`,
+  conservative_case_profitable: (r, c) => `At the recorded post-renovation lower valuation bound, the project remains profitable before tax (${fmt(r, c)}).`,
+  conservative_target_met: (r, c) => `At that recorded lower valuation bound, the project also continues to meet your Required Return (Equity IRR ${fmt(r, c)}).`,
+  conservative_target_missed: (r, c) => `At that recorded lower valuation bound, the project falls below your Required Return (Equity IRR ${fmt(r, c)}) — shown for transparency, this does not block Strong on its own.`,
+  conservative_target_unknown: () => "AssetVerdict could not confirm whether the Required Return is met at the recorded lower valuation bound.",
 };
 
 function fmt(r: VerdictReason, currency: string): string {

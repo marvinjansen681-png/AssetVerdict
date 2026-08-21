@@ -221,12 +221,12 @@ export default function DealSummaryPage({
         </div>
       </div>
 
-      {verdict && <VerdictCard verdict={verdict} currency={currency ?? "R"} />}
+      {verdict && <VerdictCard verdict={verdict} currency={currency ?? "R"} strategyId={strategyId} />}
 
       {negotiation && <NegotiationCard negotiation={negotiation} opportunity={opportunity} currency={negotiationCurrency ?? "R"} />}
 
       <AccordionSection title="How AssetVerdict reaches your verdict" defaultOpen={false}>
-        <VerdictExplainer />
+        <VerdictExplainer strategyId={strategyId} />
       </AccordionSection>
 
       <AccordionSection title="Scenarios" defaultOpen={false}>

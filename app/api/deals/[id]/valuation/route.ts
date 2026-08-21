@@ -33,6 +33,9 @@ const valuationSchema = z.object({
   reportDate: z.string().nullable().optional(),
   sgCode: z.string().nullable().optional(),
   reportSource: z.string().optional(),
+  // Phase 4.20 — only these three; reject anything else rather than accept
+  // an arbitrary string a future verdict phase might mistakenly trust.
+  valuationBasis: z.enum(["unknown", "current_condition", "post_renovation"]).optional(),
   propertyDescription: z.string().nullable().optional(),
   extentSqm: z.number().nullable().optional(),
   zoning: z.string().nullable().optional(),

@@ -49,6 +49,8 @@ export interface FlipExitValuationInput {
   valueConfidenceLow: number | null;
   valueConfidenceHigh: number | null;
   valuationConfidence: string | null;
+  /** Defaults to "unknown" when omitted (e.g. a caller predating Phase 4.20) — never inferred. */
+  valuationBasis?: FlipExitValueValuationBasis;
   reportSource: string | null;
   reportDate: Date | string | null;
   comparableCount: number;
@@ -79,27 +81,28 @@ export type FlipExitValueRangePosition = "below_range" | "within_range" | "above
 
 /**
  * Whether the recorded valuation reflects the property's current
- * condition, its post-renovation/completed condition, or something else
- * (Phase 4.19.1, section 11-13). `PropertyValuation` has no field that
- * records this today, and this module never infers it — not from
- * `reportSource`, not from the strategy being Fix & Flip, not from
- * anything else — so this is a literal singleton type: it can only ever
- * be "unknown" until a future phase adds a real, explicit basis field and
- * deliberately widens this type. That narrowness is the point (section 15,
- * 39): it is a compile-time guardrail against a future verdict phase
- * silently treating "a valuation is recorded" as "post-renovation exit
- * value is confirmed" — two very different claims this module refuses to
- * conflate. Unknown basis does NOT invalidate the valuation, does NOT
- * block the Point/Conservative scenarios below, and does NOT change any
- * financial figure — it only limits how much interpretive authority a
- * future verdict may give this evidence (supporting evidence, not
- * confirmed exit-price proof).
+ * condition, its post-renovation/completed condition, or is unrecorded
+ * (Phase 4.20, widened from Phase 4.19.1's deliberate "unknown"-only
+ * singleton now that `PropertyValuation.valuationBasis` is a real, persisted
+ * field — see types/index.ts's `PropertyValuationBasis`). This module never
+ * infers the value itself — not from `reportSource`, not from the strategy
+ * being Fix & Flip, not from the numbers — it only reads whatever the caller
+ * supplies (the user's own explicit choice, or "unknown" if never set).
+ * "unknown" does NOT invalidate the valuation, does NOT block the
+ * Point/Conservative scenarios below, and does NOT change any financial
+ * figure — basis only affects how much *interpretive/verdict* authority
+ * this evidence is given (lib/calculations/flipVerdict.ts): only
+ * "post_renovation" can ever provide Strong-authoritative exit-price
+ * evidence; "current_condition" and "unknown" remain supporting evidence
+ * only, for different reasons (current-condition describes a value the
+ * renovation is specifically intended to change; unknown simply isn't
+ * known).
  */
-export type FlipExitValueValuationBasis = "unknown";
+export type FlipExitValueValuationBasis = "unknown" | "current_condition" | "post_renovation";
 
 export interface FlipExitValueEvidence {
   status: FlipExitValueEvidenceStatus;
-  /** See FlipExitValueValuationBasis's own doc comment — always "unknown" today, deliberately. */
+  /** See FlipExitValueValuationBasis's own doc comment. Read from the stored PropertyValuation record — never inferred. */
   valuationBasis: FlipExitValueValuationBasis;
 
   reportSource: string | null;
@@ -309,13 +312,13 @@ function buildEvidence(
 
   const evidence: FlipExitValueEvidence = {
     status,
-    // Always "unknown" — see FlipExitValueValuationBasis's doc comment.
-    // Set unconditionally, independent of `status`/`invalid`: even a
-    // no-valuation or invalid-valuation record has an (unknown) basis in
-    // the trivial sense that there's nothing to know a basis about, and a
-    // future reader must never be able to read a missing field as "basis
-    // confirmed" by omission.
-    valuationBasis: "unknown",
+    // Read directly from the stored record — never inferred (section 12 of
+    // the doc comment above). Set unconditionally, independent of
+    // `status`/`invalid`: even a no-valuation or invalid-valuation record
+    // has a basis value in the trivial sense that there's nothing to know a
+    // basis about, and a reader must never be able to read a missing field
+    // as "basis confirmed" by omission.
+    valuationBasis: valuation?.valuationBasis ?? "unknown",
     reportSource,
     reportDate,
     valuationAgeDays,

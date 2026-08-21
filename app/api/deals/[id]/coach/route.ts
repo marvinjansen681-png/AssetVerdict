@@ -154,6 +154,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         valueConfidenceLow: propertyValuationRecord.valueConfidenceLow ?? null,
         valueConfidenceHigh: propertyValuationRecord.valueConfidenceHigh ?? null,
         valuationConfidence: propertyValuationRecord.valuationConfidence ?? null,
+        valuationBasis: (propertyValuationRecord.valuationBasis as FlipExitValuationInput["valuationBasis"]) ?? "unknown",
         reportSource: propertyValuationRecord.reportSource ?? null,
         reportDate: propertyValuationRecord.reportDate ?? null,
         comparableCount: propertyValuationRecord.comparables?.length ?? 0,

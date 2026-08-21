@@ -8,7 +8,7 @@ import CurrencyInput from "@/components/ui/CurrencyInput";
 import FormField from "@/components/ui/FormField";
 import { useToast } from "@/components/ui/Toast";
 import ReportImportButton, { type ExtractedReport } from "@/components/forms/ReportImportButton";
-import type { PropertyValuation } from "@/types";
+import type { PropertyValuation, PropertyValuationBasis } from "@/types";
 import { hasMeaningfulPropertyValuation } from "@/lib/propertyValuation";
 
 interface TxnLocal {
@@ -69,6 +69,7 @@ export default function PropertyValuationPanel({
   const [valueConfidenceLow, setValueConfidenceLow] = useState<number | null>(initial?.valueConfidenceLow ?? null);
   const [valueConfidenceHigh, setValueConfidenceHigh] = useState<number | null>(initial?.valueConfidenceHigh ?? null);
   const [valuationConfidence, setValuationConfidence] = useState(initial?.valuationConfidence ?? "");
+  const [valuationBasis, setValuationBasis] = useState<PropertyValuationBasis>(initial?.valuationBasis ?? "unknown");
   const [extentSqm, setExtentSqm] = useState<number | null>(initial?.extentSqm ?? null);
   const [buildingSizeSqm, setBuildingSizeSqm] = useState<number | null>(initial?.buildingSizeSqm ?? null);
   const [zoning, setZoning] = useState(initial?.zoning ?? "");
@@ -128,6 +129,7 @@ export default function PropertyValuationPanel({
     valueConfidenceLow,
     valueConfidenceHigh,
     valuationConfidence,
+    valuationBasis,
     extentSqm,
     buildingSizeSqm,
     zoning,
@@ -150,6 +152,7 @@ export default function PropertyValuationPanel({
         valueConfidenceLow,
         valueConfidenceHigh,
         valuationConfidence: valuationConfidence || null,
+        valuationBasis,
         extentSqm,
         buildingSizeSqm,
         zoning: zoning || null,
@@ -287,6 +290,17 @@ export default function PropertyValuationPanel({
                 <option value="High">High</option>
                 <option value="Medium">Medium</option>
                 <option value="Low">Low</option>
+              </select>
+            </FormField>
+            <FormField label="Valuation Basis" helperText="What condition of the property does this valuation describe?">
+              <select
+                value={valuationBasis}
+                onChange={(e) => setValuationBasis(e.target.value as PropertyValuationBasis)}
+                className="w-full rounded-md border border-av-light-grey bg-white px-3 py-2.5 min-h-[44px] font-body text-sm text-av-navy focus:outline-none focus:border-av-gold focus:ring-1 focus:ring-av-gold"
+              >
+                <option value="unknown">Unknown</option>
+                <option value="current_condition">Current condition</option>
+                <option value="post_renovation">Post-renovation / completed condition</option>
               </select>
             </FormField>
             <FormField label="Confidence Range Low">

@@ -222,6 +222,13 @@ model PropertyValuation {
   sgCode       String?
   reportSource String    @default("TPN Property Valuation Report")
 
+  // Basis (Phase 4.20) — what condition this valuation describes: "unknown"
+  // (default; never inferred), "current_condition", or "post_renovation".
+  // Only "post_renovation" can ever provide Strong-authoritative Fix & Flip
+  // exit-price evidence — see lib/calculations/fixFlipExitValue.ts. Existing
+  // rows are backfilled to "unknown" by the migration, never inferred.
+  valuationBasis String @default("unknown")
+
   // Property Characteristics
   propertyDescription String?
   extentSqm           Float?

@@ -1,12 +1,13 @@
 "use client";
 
 import type { DealVerdictResult, VerdictLabel } from "@/lib/calculations/verdict";
-import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
+import { getVerdictLabelCopy, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
 import clsx from "clsx";
 
 interface VerdictCardProps {
   verdict: DealVerdictResult;
   currency?: string;
+  strategyId?: string;
 }
 
 /**
@@ -25,7 +26,7 @@ const VERDICT_STYLES: Record<VerdictLabel, { border: string; bg: string; text: s
   does_not_meet_target: { border: "border-av-navy", bg: "bg-av-navy/5", text: "text-av-navy", dot: "bg-av-navy" },
 };
 
-export default function VerdictCard({ verdict, currency = "R" }: VerdictCardProps) {
+export default function VerdictCard({ verdict, currency = "R", strategyId }: VerdictCardProps) {
   if (verdict.status === "unavailable") {
     const copy = VERDICT_UNAVAILABLE_COPY[verdict.reason];
     return (
@@ -40,11 +41,18 @@ export default function VerdictCard({ verdict, currency = "R" }: VerdictCardProp
     );
   }
 
-  const copy = VERDICT_LABEL_COPY[verdict.verdict];
+  const copy = getVerdictLabelCopy(verdict.verdict, strategyId);
   const style = VERDICT_STYLES[verdict.verdict];
+  // Fix & Flip's reason set is small and fully curated by flipVerdict.ts —
+  // every entry (Base Profit, target comparison, Conservative Case result)
+  // is meaningful, so informational-severity reasons are shown too (Phase
+  // 4.20 section 65 — a clean Strong verdict must still show its concise
+  // supporting facts, not an empty card). Rental's reason set stays
+  // filtered to blocking/high/moderate only, unchanged.
+  const isFlip = strategyId === "fix_and_flip";
   const topReasons = (verdict.blockers.length > 0 ? verdict.blockers : verdict.reasons)
-    .filter((r) => r.severity === "blocking" || r.severity === "high" || r.severity === "moderate")
-    .slice(0, 3);
+    .filter((r) => isFlip || r.severity === "blocking" || r.severity === "high" || r.severity === "moderate")
+    .slice(0, isFlip ? 4 : 3);
 
   return (
     <div className={clsx("rounded-lg border p-5", style.border, style.bg)}>

@@ -822,9 +822,10 @@ describe("Deal E — High LTV: no conditional opportunity under fixed-LTV semant
 });
 
 describe("Negotiation-unavailable cases never produce a conditional label (section 43, required)", () => {
-  it("Fix & Flip: opportunity unavailable/current_verdict_unavailable", () => {
+  it("Fix & Flip: opportunity still unavailable (Phase 4.20: verdict is now active, but the negotiation ANALYSIS layer still excludes fix_and_flip via VERDICT_ENABLED_STRATEGIES, so the reason changes but the outcome doesn't)", () => {
     const { opportunity } = opportunityFor({ ...dealA_alreadyMeets, strategy: "fix_and_flip" }, "fix_and_flip");
-    expect(opportunity).toEqual({ status: "unavailable", reason: "current_verdict_unavailable" });
+    expect(opportunity.status).toBe("unavailable");
+    expect(opportunity).toEqual({ status: "unavailable", reason: "strategy_not_supported" });
   });
 
   it("Instalment Sale: opportunity unavailable/current_verdict_unavailable", () => {

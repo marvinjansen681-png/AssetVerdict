@@ -80,7 +80,7 @@ export default async function DealsPage() {
           {deals.map((deal) => (
             <DealCard
               key={deal.id}
-              deal={deal}
+              deal={deal as unknown as DealWithRelations}
               quickStats={quickStatsFor(deal as unknown as DealWithRelations)}
             />
           ))}

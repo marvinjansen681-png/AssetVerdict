@@ -44,13 +44,14 @@ export async function GET(
   // doc comment). Base case only (Phase 4.14 section 97) — deliberately
   // uses `metrics`/`inputs` above, not any scenario variant.
   const strategyId = deal.investmentStrategy ?? "commercial";
-  const verdict = deriveDealVerdict({ strategyId, inputs, metrics });
 
-  // Phase 4.19 — server-authoritative exit-value evidence/scenario model,
-  // Fix & Flip only. Deliberately mapped onto the narrow FlipExitValuationInput
-  // shape here (see fixFlipExitValue.ts's own doc comment) rather than
-  // passed as the full Prisma-hydrated relation, keeping lib/calculations
-  // decoupled from the DB schema.
+  // Phase 4.19/4.20 — server-authoritative exit-value evidence/scenario
+  // model, Fix & Flip only. Deliberately mapped onto the narrow
+  // FlipExitValuationInput shape here (see fixFlipExitValue.ts's own doc
+  // comment) rather than passed as the full Prisma-hydrated relation,
+  // keeping lib/calculations decoupled from the DB schema. Computed ONCE
+  // and fed to both the verdict (below) and the API response — never
+  // recomputed for each consumer (Phase 4.20 section 48).
   const propertyValuation = dealWithRelations.propertyValuation;
   const flipValuationInput: FlipExitValuationInput | null = propertyValuation
     ? {
@@ -58,6 +59,7 @@ export async function GET(
         valueConfidenceLow: propertyValuation.valueConfidenceLow ?? null,
         valueConfidenceHigh: propertyValuation.valueConfidenceHigh ?? null,
         valuationConfidence: propertyValuation.valuationConfidence ?? null,
+        valuationBasis: (propertyValuation.valuationBasis as FlipExitValuationInput["valuationBasis"]) ?? "unknown",
         reportSource: propertyValuation.reportSource ?? null,
         reportDate: propertyValuation.reportDate ?? null,
         comparableCount: propertyValuation.comparables?.length ?? 0,
@@ -65,6 +67,8 @@ export async function GET(
     : null;
   const fixFlipExitValueAnalysis =
     strategyId === "fix_and_flip" ? calcFlipExitValueAnalysis({ inputs, valuation: flipValuationInput }) : undefined;
+
+  const verdict = deriveDealVerdict({ strategyId, inputs, metrics, flipExitValueAnalysis: fixFlipExitValueAnalysis });
 
   const primaryDealSuburb =
     dealWithRelations.dealSuburbs.find((ds) => ds.isPrimary) ?? dealWithRelations.dealSuburbs[0] ?? null;

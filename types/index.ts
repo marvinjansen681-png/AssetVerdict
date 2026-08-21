@@ -190,12 +190,23 @@ export interface ComparableSale {
   order: number;
 }
 
+/**
+ * What condition a recorded valuation describes (Phase 4.20). "unknown" is
+ * the default and is never inferred from reportSource, strategy, or the
+ * numbers themselves — only an explicit user choice (or, in a future phase,
+ * explicit report text) sets it to "current_condition" or "post_renovation".
+ * Only "post_renovation" can ever provide Strong-authoritative Fix & Flip
+ * exit-price evidence — see lib/calculations/fixFlipExitValue.ts.
+ */
+export type PropertyValuationBasis = "unknown" | "current_condition" | "post_renovation";
+
 export interface PropertyValuation {
   id: string;
   dealId: string;
   reportDate?: string | Date | null;
   sgCode?: string | null;
   reportSource: string;
+  valuationBasis: PropertyValuationBasis;
   propertyDescription?: string | null;
   extentSqm?: number | null;
   zoning?: string | null;

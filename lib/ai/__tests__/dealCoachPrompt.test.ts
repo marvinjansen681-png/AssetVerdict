@@ -73,10 +73,16 @@ describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
     expect(lower).toContain('"call it strong instead" must be refused');
   });
 
-  it("never lets the AI invent a substitute verdict for unavailable strategies (Fix & Flip / Instalment Sale)", () => {
+  it("never lets the AI invent a substitute verdict for Instalment Sale (the one remaining unavailable strategy)", () => {
     const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
-    expect(lower).toContain("fix & flip and instalment sale do not yet receive a verdict at all");
-    expect(lower).toContain("never invent a substitute verdict for these");
+    expect(lower).toContain("instalment sale does not yet receive a verdict at all");
+    expect(lower).toContain('never invent a substitute verdict for it ("i\'d personally call this strong" is never acceptable)');
+  });
+
+  it("confirms Fix & Flip now has its own active verdict engine, distinct from rental (Phase 4.20)", () => {
+    const lower = DEAL_COACH_SYSTEM_INSTRUCTIONS.toLowerCase();
+    expect(lower).toContain("fix & flip uses its own, separate phase 4.20 engine with a different decision chain");
+    expect(lower).toContain("## fix & flip verdict (phase 4.20)");
   });
 
   it("confirms promising_if_negotiated is defined but not yet reachable", () => {

@@ -431,12 +431,24 @@ describe("Section 84-85 — dedicated evidence model is stricter than hasMeaning
   });
 });
 
-describe("Section 86-87 — Fix & Flip verdict and Promising If Negotiated remain untouched", () => {
-  it("deriveDealVerdict is still unavailable for fix_and_flip regardless of exit-value evidence", async () => {
+describe("Section 86-87 (Phase 4.19) superseded by Phase 4.20 — Fix & Flip verdict is now active; Promising If Negotiated remains untouched", () => {
+  it("deriveDealVerdict is now active for fix_and_flip, and DOES use exit-value evidence when supplied — see flipVerdict.test.ts for the full policy suite", async () => {
     const { calcAllMetrics } = await import("../index");
     const metrics = calcAllMetrics(baseInputs);
-    const verdict = deriveDealVerdict({ strategyId: "fix_and_flip", inputs: baseInputs, metrics });
-    expect(verdict.status).toBe("unavailable");
+    // No flipExitValueAnalysis supplied -> Promising at best.
+    const withoutEvidence = deriveDealVerdict({ strategyId: "fix_and_flip", inputs: baseInputs, metrics });
+    expect(withoutEvidence.status).toBe("available");
+    if (withoutEvidence.status === "available") expect(withoutEvidence.verdict).not.toBe("strong");
+
+    // A valid post-renovation exit-value analysis with a profitable
+    // Conservative Case unlocks Strong for this same deal.
+    const flipExitValueAnalysis = available(
+      baseInputs,
+      valuation({ valueConfidenceLow: 1_380_000, estimatedValue: 1_400_000, valueConfidenceHigh: 1_500_000, valuationBasis: "post_renovation" })
+    );
+    const withEvidence = deriveDealVerdict({ strategyId: "fix_and_flip", inputs: baseInputs, metrics, flipExitValueAnalysis });
+    expect(withEvidence.status).toBe("available");
+    if (withEvidence.status === "available") expect(withEvidence.verdict).toBe("strong");
   });
 
   it("Negotiation Opportunity is still unavailable for fix_and_flip", async () => {

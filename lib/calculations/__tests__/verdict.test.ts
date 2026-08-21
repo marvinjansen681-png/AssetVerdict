@@ -235,17 +235,20 @@ describe("buildPerformanceContextReasons (Phase 4.14 sections 26-27, 56, 69)", (
 });
 
 describe("deriveDealVerdict — strategy eligibility (Phase 4.14 sections 1-3, 111-112)", () => {
-  it("Fix & Flip is always unavailable, regardless of financials (test 111)", () => {
+  it("Fix & Flip now receives an active verdict, delegated to flipVerdict.ts (Phase 4.20, supersedes test 111)", () => {
+    // A profitable, target-meeting Flip with no exit-value evidence supplied
+    // (deriveFor doesn't pass flipExitValueAnalysis) lands on Promising, not
+    // "unavailable" — Fix & Flip is no longer excluded from the rental-style
+    // strategy-eligibility gate the way Instalment Sale still is below. See
+    // lib/calculations/__tests__/flipVerdict.test.ts for the full Flip
+    // verdict policy test suite.
     const inputs: DealInputs = { ...baseInputs, strategy: "fix_and_flip", purchasePrice: 1_000_000, marketValue: 1_000_000, renovationCost: 200_000, expectedSalePrice: 2_000_000, holdingPeriodMonths: 6 };
     const result = deriveFor(inputs);
-    expect(result.status).toBe("unavailable");
-    if (result.status === "unavailable") {
-      expect(result.reason).toBe("insufficient_calibrated_evidence");
-      expect(result.reasons[0].code).toBe("flip_calibration_incomplete");
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(result.verdict).toBe("promising");
+      expect(result.blockers[0].code).toBe("no_exit_value_evidence");
     }
-    // changing ROI-driving inputs must not manufacture a normal verdict
-    const better = deriveFor({ ...inputs, expectedSalePrice: 5_000_000 });
-    expect(better.status).toBe("unavailable");
   });
 
   it("Instalment Sale is always unavailable (test 112)", () => {
@@ -263,8 +266,15 @@ describe("deriveDealVerdict — strategy eligibility (Phase 4.14 sections 1-3, 1
   });
 
   it("every verdict result carries the model version tag", () => {
-    const result = deriveFor({ ...baseInputs, strategy: "fix_and_flip" });
+    const result = deriveFor(baseInputs);
     expect(result.verdictModelVersion).toBe(VERDICT_MODEL_VERSION);
+  });
+
+  it("Fix & Flip verdicts carry the Flip engine's own model version tag, not the rental one (Phase 4.20)", () => {
+    const inputs: DealInputs = { ...baseInputs, strategy: "fix_and_flip", purchasePrice: 1_000_000, marketValue: 1_000_000, renovationCost: 200_000, expectedSalePrice: 2_000_000, holdingPeriodMonths: 6 };
+    const result = deriveFor(inputs);
+    expect(result.verdictModelVersion).toBe("4.20");
+    expect(result.verdictModelVersion).not.toBe(VERDICT_MODEL_VERSION);
   });
 });
 

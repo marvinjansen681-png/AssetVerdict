@@ -43,7 +43,7 @@ import { formatMetricValue } from "../education/format";
 import { getMetricGroupsForStrategy, getMetricDefinition } from "../education/metricDefinitions";
 import { getKeyLabel } from "../education/relationshipChains";
 import { getStrategy, type StrategyId } from "../strategies";
-import { calcFlipExitValueAnalysis, type FlipExitValuationInput, type FlipExitValueScenarioCase } from "../calculations/fixFlipExitValue";
+import { calcFlipExitValueAnalysis, type FlipExitValuationInput, type FlipExitValueScenarioCase, type FlipExitValueAnalysis } from "../calculations/fixFlipExitValue";
 import { calcRentSuggestion } from "../area-suggestions";
 import type { SuburbProfile } from "../../types";
 import { deriveDealVerdict, type DealVerdictResult } from "../calculations/verdict";
@@ -415,11 +415,9 @@ function buildDealCoachFlipScenario(scenarioCase: { salePrice: number; sameAsBas
 }
 
 function buildDealCoachFlipExitValueAnalysis(
-  inputs: DealInputs,
-  valuation: FlipExitValuationInput | null,
+  result: FlipExitValueAnalysis,
   currency: string
 ): DealCoachContext["fixFlipExitValueAnalysis"] {
-  const result = calcFlipExitValueAnalysis({ inputs, valuation });
   if (result.status === "unavailable") return { status: "unavailable" };
 
   const { evidence } = result;
@@ -530,11 +528,15 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
   const applicabilityCtx: ApplicabilityContext = {
     ...applicabilityContextFromInputs(inputs),
   };
-  const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics });
+  // Computed ONCE (Phase 4.20 section 48) and fed to both the verdict below
+  // and the Deal Coach copy block — never recomputed per consumer.
+  const flipExitValueAnalysisRaw: FlipExitValueAnalysis | undefined =
+    strategyId === "fix_and_flip" ? calcFlipExitValueAnalysis({ inputs, valuation: propertyValuation ?? null }) : undefined;
+  const verdict = deriveDealVerdict({ strategyId, inputs, metrics: baseMetrics ?? metrics, flipExitValueAnalysis: flipExitValueAnalysisRaw });
   const negotiation = buildDealCoachNegotiation(inputs, strategyId, currency, verdict);
   const fixFlipAnalysis = strategyId === "fix_and_flip" ? buildDealCoachFixFlipAnalysis(metrics, currency) : undefined;
   const fixFlipExitValueAnalysis =
-    strategyId === "fix_and_flip" ? buildDealCoachFlipExitValueAnalysis(inputs, propertyValuation ?? null, currency) : undefined;
+    flipExitValueAnalysisRaw !== undefined ? buildDealCoachFlipExitValueAnalysis(flipExitValueAnalysisRaw, currency) : undefined;
 
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved

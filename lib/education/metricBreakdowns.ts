@@ -116,6 +116,10 @@ export const METRIC_VALUE_FORMAT: Record<string, BreakdownFormat> = {
   roi: "percent",
   annualisedROI: "percent",
   profitMargin: "percent",
+  // Fix & Flip verdict reasons (Phase 4.20) — flipVerdict.ts's own metric keys.
+  estimatedProfitBeforeTax: "currency",
+  salePriceBufferPercent: "percent",
+  equityIRR: "percent",
 };
 
 /**

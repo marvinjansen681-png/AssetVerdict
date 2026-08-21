@@ -264,15 +264,16 @@ export interface DealCoachContext {
     expectedSalePrice?: string;
     evidenceStatus?: "no_numeric_valuation" | "point_estimate_only" | "lower_bound_only" | "valuation_range_available" | "invalid_valuation";
     /**
-     * Phase 4.19.1 — whether the recorded valuation is known to reflect
-     * current condition, post-renovation condition, or neither. Always
-     * "unknown" today (PropertyValuation has no such field, and this is
-     * never inferred) — the coach must treat any valuation figure as
-     * supporting evidence only, never as confirmed post-renovation exit
-     * value, and must say so plainly if asked (see the guardrail in
-     * dealCoachPrompt.ts).
+     * Phase 4.20 (widened from 4.19.1's deliberate "unknown"-only type) —
+     * whether the recorded valuation is known to reflect current condition,
+     * post-renovation condition, or is unrecorded. Read from the stored
+     * PropertyValuation record, never inferred by this module or by the
+     * coach — only "post_renovation" evidence can ever carry Strong-verdict
+     * authority (lib/calculations/flipVerdict.ts); "current_condition" and
+     * "unknown" remain supporting evidence only. See the guardrail in
+     * dealCoachPrompt.ts.
      */
-    valuationBasis?: "unknown";
+    valuationBasis?: "unknown" | "current_condition" | "post_renovation";
     reportSource?: string;
     reportDate?: string;
     valuationAgeDays?: number;

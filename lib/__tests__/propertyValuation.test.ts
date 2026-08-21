@@ -9,6 +9,7 @@ function makeStub(overrides: Partial<PropertyValuation> = {}): PropertyValuation
     reportDate: null,
     sgCode: null,
     reportSource: "TPN Property Valuation Report", // always populated by default — never itself evidence
+    valuationBasis: "unknown",
     propertyDescription: null,
     extentSqm: null,
     zoning: null,

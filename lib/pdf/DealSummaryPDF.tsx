@@ -19,7 +19,7 @@ import {
 } from "@/lib/calculations/applicability";
 import { getStrategy } from "@/lib/strategies";
 import type { DealVerdictResult, VerdictLabel } from "@/lib/calculations/verdict";
-import { VERDICT_LABEL_COPY, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
+import { getVerdictLabelCopy, VERDICT_UNAVAILABLE_COPY, formatVerdictReason } from "@/lib/education/verdictCopy";
 import type { NegotiationAnalysis, NegotiationObjective, NegotiationOpportunity } from "@/lib/calculations/negotiation";
 import type { FlipExitValueAnalysis, FlipExitValueConservativeCase, FlipSalePriceScenarioSummary } from "@/lib/calculations/fixFlipExitValue";
 import {
@@ -401,15 +401,15 @@ export default function DealSummaryPDF({
             ]}
           >
             <Text style={[styles.verdictTitle, { color: VERDICT_COLOR_HEX[verdict.verdict] }]}>
-              Overall Verdict: {VERDICT_LABEL_COPY[verdict.verdict].title}
+              Overall Verdict: {getVerdictLabelCopy(verdict.verdict, strategyId).title}
             </Text>
-            <Text style={styles.verdictDescription}>{VERDICT_LABEL_COPY[verdict.verdict].description}</Text>
+            <Text style={styles.verdictDescription}>{getVerdictLabelCopy(verdict.verdict, strategyId).description}</Text>
             {(verdict.blockers.length > 0 ? verdict.blockers : verdict.reasons).length > 0 && (
               <>
                 <Text style={styles.verdictReasonsLabel}>TOP REASONS</Text>
                 {(verdict.blockers.length > 0 ? verdict.blockers : verdict.reasons)
-                  .filter((r) => r.severity === "blocking" || r.severity === "high" || r.severity === "moderate")
-                  .slice(0, 3)
+                  .filter((r) => isFlip || r.severity === "blocking" || r.severity === "high" || r.severity === "moderate")
+                  .slice(0, isFlip ? 4 : 3)
                   .map((r, i) => (
                     <Text key={`${r.code}-${i}`} style={styles.verdictReason}>
                       • {formatVerdictReason(r, currencySymbol)}

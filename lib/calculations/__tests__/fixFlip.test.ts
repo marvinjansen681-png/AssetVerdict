@@ -497,15 +497,14 @@ describe("No automatic CGT / tax (section 88 #31, mandatory)", () => {
   });
 });
 
-describe("No Fix & Flip verdict, no negotiation opportunity (section 88 #32-33, mandatory)", () => {
-  it("deriveDealVerdict remains unavailable for fix_and_flip", async () => {
+describe("No Fix & Flip negotiation opportunity (section 88 #32-33) / Fix & Flip verdict now active (Phase 4.20, supersedes the original #32)", () => {
+  it("deriveDealVerdict is now active for fix_and_flip — see lib/calculations/__tests__/flipVerdict.test.ts for the full policy suite", async () => {
     const { deriveDealVerdict } = await import("../verdict");
     const metrics = calcAllMetrics(cashProfitable);
     const verdict = deriveDealVerdict({ strategyId: "fix_and_flip", inputs: cashProfitable, metrics });
-    expect(verdict.status).toBe("unavailable");
-    if (verdict.status === "unavailable") {
-      expect(verdict.reason).toBe("insufficient_calibrated_evidence");
-    }
+    // No flipExitValueAnalysis supplied here -> Promising at best (Strong
+    // requires post-renovation downside evidence this call doesn't provide).
+    expect(verdict.status).toBe("available");
   });
 
   it("analyzeNegotiation remains unavailable for fix_and_flip", async () => {
