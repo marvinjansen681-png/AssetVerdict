@@ -100,6 +100,30 @@ export type FlipExitValueRangePosition = "below_range" | "within_range" | "above
  */
 export type FlipExitValueValuationBasis = "unknown" | "current_condition" | "post_renovation";
 
+/**
+ * The ONLY safe way to turn a raw, un-trusted value (a Prisma `String`
+ * column with no DB-level enum/check constraint, JSON from a request body,
+ * or anything else that isn't already known to be one of the three literal
+ * values) into a `FlipExitValueValuationBasis` (Phase 4.20.1 trust-boundary
+ * hardening). A plain `as FlipExitValueValuationBasis` cast provides zero
+ * runtime protection — if the database ever holds something unexpected
+ * (a typo, a manual edit, a future migration bug, `null`), the cast lets
+ * that string flow straight into evidence.valuationBasis, where a
+ * comparison written as "reject 'unknown', reject 'current_condition',
+ * assume the rest is 'post_renovation'" would fail OPEN and hand the
+ * corrupted value Strong-verdict authority it never earned. This function
+ * fails CLOSED instead: only the two recognised non-default literals pass
+ * through unchanged, and every other input — malformed strings, `null`,
+ * `undefined`, numbers, anything — normalizes to "unknown". Call this at
+ * every point a `PropertyValuation.valuationBasis` DB value crosses into
+ * domain code; never re-introduce a raw cast.
+ */
+export function normalizePropertyValuationBasis(value: unknown): FlipExitValueValuationBasis {
+  if (value === "current_condition") return "current_condition";
+  if (value === "post_renovation") return "post_renovation";
+  return "unknown";
+}
+
 export interface FlipExitValueEvidence {
   status: FlipExitValueEvidenceStatus;
   /** See FlipExitValueValuationBasis's own doc comment. Read from the stored PropertyValuation record — never inferred. */

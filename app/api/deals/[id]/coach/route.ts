@@ -6,7 +6,7 @@ import { calcScenarios } from "@/lib/calculations/scenarios";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
 import { getMetricDefinition } from "@/lib/education/metricDefinitions";
 import { buildDealCoachContext } from "@/lib/ai/buildDealCoachContext";
-import type { FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
+import { normalizePropertyValuationBasis, type FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
 import { buildDealCoachSystemPrompt, DEAL_COACH_RESPONSE_TOOL } from "@/lib/ai/dealCoachPrompt";
 import { callAnthropicMessages, DEAL_COACH_MODEL, type AnthropicMessage } from "@/lib/ai/anthropicClient";
 import type { DealCoachIntent, DealCoachResponse, DealCoachSelection, ScenarioKey } from "@/lib/ai/dealCoachTypes";
@@ -154,7 +154,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         valueConfidenceLow: propertyValuationRecord.valueConfidenceLow ?? null,
         valueConfidenceHigh: propertyValuationRecord.valueConfidenceHigh ?? null,
         valuationConfidence: propertyValuationRecord.valuationConfidence ?? null,
-        valuationBasis: (propertyValuationRecord.valuationBasis as FlipExitValuationInput["valuationBasis"]) ?? "unknown",
+        valuationBasis: normalizePropertyValuationBasis(propertyValuationRecord.valuationBasis),
         reportSource: propertyValuationRecord.reportSource ?? null,
         reportDate: propertyValuationRecord.reportDate ?? null,
         comparableCount: propertyValuationRecord.comparables?.length ?? 0,

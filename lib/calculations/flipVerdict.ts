@@ -82,8 +82,22 @@ function evaluateStrongEvidence(
 
   if (evidence.status === "no_numeric_valuation") return { cleared: false, blocker: "no_exit_value_evidence" };
   if (evidence.status === "invalid_valuation") return { cleared: false, blocker: "invalid_valuation_evidence" };
-  if (evidence.valuationBasis === "unknown") return { cleared: false, blocker: "valuation_basis_unknown" };
-  if (evidence.valuationBasis === "current_condition") return { cleared: false, blocker: "valuation_current_condition" };
+  // Positive proof required (Phase 4.20.1 trust-boundary hardening): ONLY
+  // "post_renovation" may unlock Strong valuation authority. This is
+  // deliberately NOT written as two exclusions ("reject unknown, reject
+  // current_condition") followed by an implicit pass-through — that shape
+  // fails OPEN for any value that isn't exactly one of the three known
+  // literals (a malformed/corrupted/future-added string reaching this far
+  // would have silently been treated as post_renovation). Failing closed to
+  // the unknown-basis blocker for anything that isn't the literal string
+  // "post_renovation" means Strong can never be reached by evidence this
+  // module doesn't positively recognise.
+  if (evidence.valuationBasis !== "post_renovation") {
+    return {
+      cleared: false,
+      blocker: evidence.valuationBasis === "current_condition" ? "valuation_current_condition" : "valuation_basis_unknown",
+    };
+  }
   if (!conservativeCase) return { cleared: false, blocker: "no_conservative_lower_bound" };
   // Strict > 0 (section 76, mandatory) — exactly zero does NOT survive.
   if (!conservativeCase.survivesConservativeCase) return { cleared: false, blocker: "conservative_case_not_profitable" };

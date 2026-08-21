@@ -65,7 +65,7 @@ const FLIP_VERDICT_LABEL_COPY: Partial<Record<VerdictLabel, { title: string; des
   promising: {
     title: "Promising",
     description:
-      "The Base case is profitable and meets your Required Return, but AssetVerdict does not have enough confirmed post-renovation downside evidence to classify the deal as Strong.",
+      "The Base case is profitable and meets your Required Return, but AssetVerdict does not have a recorded post-renovation valuation with a profitable lower confidence bound, so it cannot classify the deal as Strong.",
   },
   high_risk: {
     title: "High Risk",
@@ -149,7 +149,7 @@ const REASON_TEMPLATES: Record<string, (r: VerdictReason, currency: string) => s
   flip_sale_price_buffer_context: (r, c) => `Base Sale-Price Buffer: ${fmt(r, c)} — descriptive only, AssetVerdict has not calibrated an execution-risk threshold for this figure.`,
   no_exit_value_evidence: () => "No numeric property valuation is recorded to test downside resilience, so AssetVerdict cannot classify this deal as Strong.",
   invalid_valuation_evidence: () => "The recorded valuation figures are internally inconsistent, so AssetVerdict cannot use them as downside evidence for Strong.",
-  valuation_basis_unknown: () => "The recorded valuation's basis (current condition vs. post-renovation) is not recorded, so AssetVerdict cannot treat it as confirmed post-renovation exit evidence.",
+  valuation_basis_unknown: () => "The recorded valuation's basis (current condition vs. post-renovation) was not set, so AssetVerdict cannot treat it as post-renovation exit evidence.",
   valuation_current_condition: () => "The recorded valuation reflects the property's current condition, not its post-renovation value, so AssetVerdict cannot use it as post-renovation exit evidence.",
   no_conservative_lower_bound: () => "The recorded valuation includes a point estimate but no lower confidence bound, so AssetVerdict cannot produce a property-specific downside test.",
   conservative_case_not_profitable: (r, c) => `At the recorded post-renovation lower valuation bound, the project is estimated to break even or lose money before tax (${fmt(r, c)}).`,

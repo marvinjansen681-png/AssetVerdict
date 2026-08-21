@@ -4,6 +4,7 @@ import { calcFixFlipAnalysis } from "../fixFlip";
 import {
   calcFlipExitValueAnalysis,
   buildFlipSalePriceScenarioInputs,
+  normalizePropertyValuationBasis,
   type FlipExitValuationInput,
   type FlipExitValueAnalysisAvailable,
 } from "../fixFlipExitValue";
@@ -309,6 +310,29 @@ describe("Section 74 — immutability", () => {
     expect(scenario.financeSources).toEqual(financedInputs.financeSources);
     expect(scenario.holdingPeriodMonths).toBe(financedInputs.holdingPeriodMonths);
     expect(scenario.agentCommission).toBe(financedInputs.agentCommission);
+  });
+});
+
+describe("Phase 4.20.1 — normalizePropertyValuationBasis fails closed on any untrusted input", () => {
+  it("passes through the two recognised non-default literals unchanged", () => {
+    expect(normalizePropertyValuationBasis("current_condition")).toBe("current_condition");
+    expect(normalizePropertyValuationBasis("post_renovation")).toBe("post_renovation");
+  });
+
+  it("passes through the literal default unchanged", () => {
+    expect(normalizePropertyValuationBasis("unknown")).toBe("unknown");
+  });
+
+  it("normalizes null, undefined, and any unrecognised value to 'unknown' — never fails open", () => {
+    expect(normalizePropertyValuationBasis(null)).toBe("unknown");
+    expect(normalizePropertyValuationBasis(undefined)).toBe("unknown");
+    expect(normalizePropertyValuationBasis("")).toBe("unknown");
+    expect(normalizePropertyValuationBasis("Post_Renovation")).toBe("unknown"); // case-sensitive, no fuzzy matching
+    expect(normalizePropertyValuationBasis("post-renovation")).toBe("unknown"); // hyphen typo
+    expect(normalizePropertyValuationBasis("foo")).toBe("unknown");
+    expect(normalizePropertyValuationBasis(123)).toBe("unknown");
+    expect(normalizePropertyValuationBasis(true)).toBe("unknown");
+    expect(normalizePropertyValuationBasis({})).toBe("unknown");
   });
 });
 

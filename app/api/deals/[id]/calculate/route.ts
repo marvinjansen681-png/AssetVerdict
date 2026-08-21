@@ -6,7 +6,7 @@ import { calcScenarios } from "@/lib/calculations/scenarios";
 import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInputs";
 import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
 import { deriveDealVerdict } from "@/lib/calculations/verdict";
-import { calcFlipExitValueAnalysis, type FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
+import { calcFlipExitValueAnalysis, normalizePropertyValuationBasis, type FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
 import type { DealWithRelations } from "@/types";
 
 export async function GET(
@@ -59,7 +59,7 @@ export async function GET(
         valueConfidenceLow: propertyValuation.valueConfidenceLow ?? null,
         valueConfidenceHigh: propertyValuation.valueConfidenceHigh ?? null,
         valuationConfidence: propertyValuation.valuationConfidence ?? null,
-        valuationBasis: (propertyValuation.valuationBasis as FlipExitValuationInput["valuationBasis"]) ?? "unknown",
+        valuationBasis: normalizePropertyValuationBasis(propertyValuation.valuationBasis),
         reportSource: propertyValuation.reportSource ?? null,
         reportDate: propertyValuation.reportDate ?? null,
         comparableCount: propertyValuation.comparables?.length ?? 0,

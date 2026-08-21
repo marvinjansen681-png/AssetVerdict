@@ -172,6 +172,33 @@ describe("Section 95 — Promising: current-condition basis", () => {
   });
 });
 
+describe("Phase 4.20.1 — trust-boundary hardening: malformed valuationBasis fails closed, never open", () => {
+  it("an unrecognised valuationBasis string reaching evaluateStrongEvidence is treated as unknown, NOT as post_renovation", () => {
+    // Simulates data that bypassed normalizePropertyValuationBasis() (e.g. a
+    // corrupted DB row, since PropertyValuation.valuationBasis has no DB-level
+    // enum/check constraint) reaching the verdict engine directly. Before
+    // Phase 4.20.1, the Strong gate was written as two exclusions ("reject
+    // 'unknown', reject 'current_condition'") with an implicit pass-through —
+    // that shape would have treated this malformed value as if it were
+    // "post_renovation" and granted it Strong authority it never earned. The
+    // hardened gate requires a POSITIVE match on "post_renovation", so this
+    // must fail closed to Promising/valuation_basis_unknown instead.
+    const corrupted = valuation({
+      valueConfidenceLow: 1_380_000,
+      estimatedValue: 1_400_000,
+      valueConfidenceHigh: 1_500_000,
+      valuationBasis: "some_corrupted_value" as unknown as FlipExitValuationInput["valuationBasis"],
+    });
+    const result = verdictFor(baseInputs, corrupted);
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(result.verdict).toBe("promising");
+      expect(result.blockers[0].code).toBe("valuation_basis_unknown");
+      expect(result.verdict).not.toBe("strong");
+    }
+  });
+});
+
 describe("Section 96 — Promising: post-renovation point estimate only", () => {
   it("basis post_renovation, estimate exists, no lower bound -> Promising, reason no_conservative_lower_bound", () => {
     const val = valuation({ estimatedValue: 1_400_000, valuationBasis: "post_renovation" });
