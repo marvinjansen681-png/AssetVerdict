@@ -46,7 +46,11 @@ export default function AcquisitionTab() {
     defaultValues: {
       askingPrice: deal.askingPrice ?? 0,
       purchasePrice: deal.purchasePrice ?? 0,
-      marketValue: deal.marketValue ?? 0,
+      // Phase 4.24.1 — "" (not 0) renders a genuinely blank number input
+      // when the deal has no estimate yet, so a save that never touches
+      // this field submits NaN -> null (blank), not a false explicit 0
+      // that the new "must be > R0 if entered" validation would reject.
+      marketValue: (deal.marketValue ?? "") as number,
       transferBondCost: deal.transferBondCost ?? 0,
       sourcingFee: deal.sourcingFee ?? 0,
       agentCommission: deal.agentCommission ?? 0,
@@ -143,10 +147,12 @@ export default function AcquisitionTab() {
             <CurrencyInput
               {...register("marketValue", {
                 valueAsNumber: true,
+                // Blank (NaN from an empty number input) is valid — only an
+                // explicitly-entered value is held to > R0 (Phase 4.24.1).
                 validate: (v) =>
-                  !v ||
-                  Number(v) >= 0 ||
-                  "Estimated Current Market Value cannot be negative",
+                  Number.isNaN(v) ||
+                  v > 0 ||
+                  "Estimated Current Market Value must be greater than R0",
               })}
             />
           </FormField>

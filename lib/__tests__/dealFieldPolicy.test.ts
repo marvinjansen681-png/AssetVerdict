@@ -66,7 +66,7 @@ describe("dealFieldPolicy — allowlist/denylist design (Phase 4.22.1)", () => {
     });
   });
 
-  describe("validateDealFieldValues (Phase 4.24, Tasks 21/22)", () => {
+  describe("validateDealFieldValues (Phase 4.24/4.24.1, Tasks 21/22)", () => {
     it("rejects purchasePrice of exactly 0", () => {
       expect(validateDealFieldValues({ purchasePrice: 0 })).toBe(
         "Purchase Price must be greater than R0"
@@ -95,16 +95,18 @@ describe("dealFieldPolicy — allowlist/denylist design (Phase 4.22.1)", () => {
 
     it("rejects a negative marketValue", () => {
       expect(validateDealFieldValues({ marketValue: -1 })).toBe(
-        "Estimated Current Market Value cannot be negative"
+        "Estimated Current Market Value must be greater than R0"
+      );
+    });
+
+    it("rejects marketValue of exactly 0 (Phase 4.24.1 — explicit 0 is no longer 'blank')", () => {
+      expect(validateDealFieldValues({ marketValue: 0 })).toBe(
+        "Estimated Current Market Value must be greater than R0"
       );
     });
 
     it("allows marketValue of null (cleared/blank)", () => {
       expect(validateDealFieldValues({ marketValue: null })).toBeNull();
-    });
-
-    it("allows marketValue of 0", () => {
-      expect(validateDealFieldValues({ marketValue: 0 })).toBeNull();
     });
 
     it("allows a positive marketValue", () => {

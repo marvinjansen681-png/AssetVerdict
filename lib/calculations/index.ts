@@ -57,9 +57,9 @@ export interface DealInputs {
    * Phase 4.23.1 — the RAW, never-defaulted "Estimated Current Market
    * Value" the investor explicitly typed (or null if they left it blank).
    * Unlike `marketValue` above, this NEVER falls back to purchasePrice —
-   * see assembleInputs.ts. The one and only consumer is
-   * calcEstimatedValueLTV(); every other calculation continues reading
-   * `marketValue` unchanged.
+   * see assembleInputs.ts. Consumed by calcEstimatedValueLTV() and (Phase
+   * 4.24.1) calcCapRateEstimatedValue(); every other calculation continues
+   * reading `marketValue` unchanged.
    *
    * Optional (rather than required), mirroring `wantToSell?`/`saleYear?`
    * above — so the many literal DealInputs fixtures across the test suite
@@ -678,6 +678,40 @@ export function calcCapRatePP(inputs: DealInputs): number {
   return (calcNOIAnnual(inputs) / inputs.purchasePrice) * 100;
 }
 
+/**
+ * Cap Rate on Estimated Value (Phase 4.24.1) — the ONE authoritative
+ * formula for this denominator. Reads `inputs.estimatedMarketValue`, the
+ * RAW, never-defaulted "Estimated Current Market Value" the investor
+ * explicitly typed (the same field calcEstimatedValueLTV uses) — NEVER
+ * `inputs.marketValue`, which silently defaults to purchasePrice when the
+ * investor left the field blank (see DealInputs's own doc comment). A
+ * blank estimate must never silently read as Cap Rate on Purchase Price
+ * under a different name.
+ *
+ * Returns the module's usual `0` sentinel (see this file's header
+ * comment) when no positive estimate exists — applicability.ts's
+ * `capRateMV` rule turns that into "N/A" for display, exactly as
+ * calcCapRatePP's sentinel does for a missing purchase price.
+ */
+export function calcCapRateEstimatedValue(inputs: DealInputs): number {
+  const value = inputs.estimatedMarketValue;
+  if (!isFiniteNumber(value) || value <= 0) return 0;
+  return (calcNOIAnnual(inputs) / value) * 100;
+}
+
+/**
+ * @deprecated Legacy alias only (Phase 4.24.1) — retired from user-facing
+ * use. Divides by `inputs.marketValue`, which silently defaults to
+ * purchasePrice when the investor left the estimate blank, so unlike
+ * calcCapRateEstimatedValue() above, a blank estimate here would silently
+ * read as Cap Rate on Purchase Price under a different name — exactly the
+ * defect Phase 4.24.1 fixed. Not called anywhere in the metrics pipeline
+ * (calcAllMetrics uses calcCapRateEstimatedValue instead); kept only so
+ * any external or historical reference to the old name still compiles.
+ * There is exactly one authoritative formula per denominator:
+ * calcCapRatePP() for Purchase Price, calcCapRateEstimatedValue() for
+ * Estimated Value.
+ */
 export function calcCapRateMV(inputs: DealInputs): number {
   if (!inputs.marketValue) return 0;
   return (calcNOIAnnual(inputs) / inputs.marketValue) * 100;
@@ -1530,7 +1564,7 @@ export function calcAllMetrics(inputs: DealInputs): DealMetrics {
     cashflowAnnualPreTax: calcCashflowAnnual(inputs, true),
     noiAnnual: calcNOIAnnual(inputs),
     capRatePP: calcCapRatePP(inputs),
-    capRateMV: calcCapRateMV(inputs),
+    capRateMV: calcCapRateEstimatedValue(inputs),
     grossYield: calcGrossYield(inputs),
     netYieldPreTax: calcNetYieldPreTax(inputs),
     netYieldPostTax: calcNetYieldPostTax(inputs),

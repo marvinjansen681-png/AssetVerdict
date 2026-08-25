@@ -158,14 +158,15 @@ export function pickAllowedDealFields(body: Record<string, unknown>): Record<str
 }
 
 /**
- * Phase 4.24 (Tasks 21/22) — value-level guards for the two fields
- * `calcPurchaseLTV`/`calcCapRatePP`/`calcTransferDuty` etc. divide by or
- * otherwise treat as load-bearing. Server-side because the Acquisition
- * form's client-side validation (react-hook-form `validate`) is only a UX
- * convenience — it never protects an endpoint reachable directly. Only
- * checks a field when the (already-coerced, allowlisted) payload actually
- * contains it, so a PATCH that doesn't touch these fields is unaffected.
- * Returns the first violation message, or null if the payload is clean.
+ * Phase 4.24/4.24.1 — value-level guards for the two fields
+ * `calcPurchaseLTV`/`calcCapRatePP`/`calcCapRateEstimatedValue`/
+ * `calcTransferDuty` etc. divide by or otherwise treat as load-bearing.
+ * Server-side because the Acquisition form's client-side validation
+ * (react-hook-form `validate`) is only a UX convenience — it never
+ * protects an endpoint reachable directly. Only checks a field when the
+ * (already-coerced, allowlisted) payload actually contains it, so a PATCH
+ * that doesn't touch these fields is unaffected. Returns the first
+ * violation message, or null if the payload is clean.
  */
 export function validateDealFieldValues(coerced: Record<string, unknown>): string | null {
   if ("purchasePrice" in coerced) {
@@ -176,9 +177,10 @@ export function validateDealFieldValues(coerced: Record<string, unknown>): strin
   }
   if ("marketValue" in coerced) {
     const v = coerced.marketValue;
-    // null (cleared/blank) remains allowed — only a negative number is rejected.
-    if (v !== null && typeof v === "number" && v < 0) {
-      return "Estimated Current Market Value cannot be negative";
+    // null (cleared/blank) remains allowed — an explicitly-entered value
+    // (including exactly 0) must be > R0 (Phase 4.24.1, Task 1).
+    if (v !== null && (typeof v !== "number" || !(v > 0))) {
+      return "Estimated Current Market Value must be greater than R0";
     }
   }
   return null;

@@ -109,7 +109,7 @@ describe("PATCH /api/deals/[id] — explicit allowlist (Phase 4.22.1)", () => {
   });
 });
 
-describe("PATCH /api/deals/[id] — Purchase Price / Estimated Market Value guards (Phase 4.24, Tasks 21/22)", () => {
+describe("PATCH /api/deals/[id] — Purchase Price / Estimated Market Value guards (Phase 4.24/4.24.1, Tasks 21/22)", () => {
   it("rejects purchasePrice of 0 with a 400 and never calls updateDeal", async () => {
     const res = await PATCH(makeRequest({ purchasePrice: 0 }), { params: { id: "deal-1" } });
     expect(res.status).toBe(400);
@@ -140,7 +140,15 @@ describe("PATCH /api/deals/[id] — Purchase Price / Estimated Market Value guar
     const res = await PATCH(makeRequest({ marketValue: -1 }), { params: { id: "deal-1" } });
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toBe("Estimated Current Market Value cannot be negative");
+    expect(json.error).toBe("Estimated Current Market Value must be greater than R0");
+    expect(mockedUpdateDeal).not.toHaveBeenCalled();
+  });
+
+  it("rejects marketValue of exactly 0 (Phase 4.24.1 — explicit 0 is no longer 'blank')", async () => {
+    const res = await PATCH(makeRequest({ marketValue: 0 }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Estimated Current Market Value must be greater than R0");
     expect(mockedUpdateDeal).not.toHaveBeenCalled();
   });
 

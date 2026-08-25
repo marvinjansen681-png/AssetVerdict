@@ -9,6 +9,7 @@ import {
   calcLTV,
   calcCapRatePP,
   calcCapRateMV,
+  calcCapRateEstimatedValue,
   calcGrossYield,
   calcNetYieldPreTax,
   calcNetYieldPostTax,
@@ -663,9 +664,10 @@ describe("calcLTV — Phase 4.23 characterization baseline (current formula: loa
 
   it("marketValue defaults to purchasePrice when left blank (assembleInputs), so a market-value-based ratio would silently collapse to the purchase-price-based one for any deal that never filled it in — see the audit report §7", () => {
     const inputs: DealInputs = { ...sampleInputs, purchasePrice: 1_000_000, marketValue: 1_000_000 };
-    // calcCapRateMV is the one existing metric that actually reads marketValue;
-    // proving it here documents the shared "blank defaults to purchase price"
-    // risk any future market-value-based LTV would inherit unchanged.
+    // Phase 4.24.1: calcCapRateMV (the function that reads this defaulting
+    // `marketValue` field) was retired from the metrics pipeline for exactly
+    // this reason. This assertion documents the underlying defaulting
+    // behaviour itself (assembleInputs.ts), not any current metric's formula.
     expect(inputs.marketValue).toBe(inputs.purchasePrice);
   });
 
@@ -707,6 +709,95 @@ describe("calcCapRatePP / calcCapRateMV", () => {
 
   it("is unaffected by financing choices (NOI excludes debt service)", () => {
     expect(calcCapRatePP(noFinanceInputs)).toBeCloseTo(calcCapRatePP(sampleInputs), 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cap Rate on Estimated Value (Phase 4.24.1) — calcCapRateEstimatedValue is
+// the ONE authoritative formula for this denominator; calcCapRateMV is a
+// retired legacy alias no longer called by calcAllMetrics (see its own
+// @deprecated doc comment).
+// ---------------------------------------------------------------------------
+
+/** Purchase R1,000,000, NOI exactly R100,000/yr (100% occupancy, zero operating costs) — the brief's own worked example (Phase 4.24.1, tests 6-8). */
+const capRateWorkedExampleInputs: DealInputs = {
+  ...sampleInputs,
+  purchasePrice: 1_000_000,
+  marketValue: 1_000_000,
+  estimatedMarketValue: undefined,
+  financeSources: [],
+  monthlyRent: 100_000 / 12,
+  occupancyRate: 100,
+  additionalIncome: 0,
+  recoveries: 0,
+  managementFeeMode: "amount",
+  managementFeeValue: 0,
+  maintenanceCostMode: "amount",
+  maintenanceCostValue: 0,
+  levies: 0,
+  ratesAndTaxes: 0,
+  insurance: 0,
+  waterSewerage: 0,
+  securityCleaning: 0,
+  electricity: 0,
+  badDebtsPct: 0,
+};
+
+describe("calcCapRateEstimatedValue — authoritative formula (Phase 4.24.1)", () => {
+  it("sanity check: this fixture's NOI is R100,000/yr", () => {
+    expect(calcNOIAnnual(capRateWorkedExampleInputs)).toBeCloseTo(100_000, 4);
+  });
+
+  it("test 6: estimate blank -> Cap Rate on Purchase Price 10%, Cap Rate on Estimated Value N/A (sentinel 0)", () => {
+    const inputs = { ...capRateWorkedExampleInputs, estimatedMarketValue: undefined };
+    expect(calcCapRatePP(inputs)).toBeCloseTo(10, 4);
+    expect(calcCapRateEstimatedValue(inputs)).toBe(0);
+  });
+
+  it("test 6b: blank is also represented by an explicit null (deal.marketValue never set)", () => {
+    expect(calcCapRateEstimatedValue({ ...capRateWorkedExampleInputs, estimatedMarketValue: null })).toBe(0);
+  });
+
+  it("test 7: estimate R1,250,000 -> Cap Rate on Purchase Price 10%, Cap Rate on Estimated Value 8%", () => {
+    const inputs = { ...capRateWorkedExampleInputs, estimatedMarketValue: 1_250_000 };
+    expect(calcCapRatePP(inputs)).toBeCloseTo(10, 4);
+    expect(calcCapRateEstimatedValue(inputs)).toBeCloseTo(8, 4);
+  });
+
+  it("test 8: estimate of exactly 0 is treated the same as blank -> N/A (sentinel 0), never a divide-by-zero", () => {
+    const inputs = { ...capRateWorkedExampleInputs, estimatedMarketValue: 0 };
+    expect(calcCapRateEstimatedValue(inputs)).toBe(0);
+    expect(Number.isFinite(calcCapRateEstimatedValue(inputs))).toBe(true);
+  });
+
+  it("never falls back to marketValue (which defaults to purchasePrice) — a high marketValue alongside a blank estimate still returns the N/A sentinel", () => {
+    const inputs = { ...capRateWorkedExampleInputs, marketValue: 1_000_000, estimatedMarketValue: null };
+    expect(calcCapRateEstimatedValue(inputs)).toBe(0);
+  });
+
+  it("never falls back to purchasePrice directly either", () => {
+    const inputs = { ...capRateWorkedExampleInputs, purchasePrice: 1_000_000, estimatedMarketValue: null };
+    expect(calcCapRateEstimatedValue(inputs)).not.toBeCloseTo(calcCapRatePP(inputs), 4);
+    expect(calcCapRateEstimatedValue(inputs)).toBe(0);
+  });
+
+  it("Cap Rate on Purchase Price and Cap Rate on Estimated Value never collapse into each other when the estimate genuinely differs from purchase price", () => {
+    const inputs = { ...capRateWorkedExampleInputs, estimatedMarketValue: 1_250_000 };
+    expect(calcCapRatePP(inputs)).not.toBeCloseTo(calcCapRateEstimatedValue(inputs), 1);
+  });
+
+  it("end-to-end via calcAllMetrics: capRateMV reflects calcCapRateEstimatedValue, not the retired calcCapRateMV", () => {
+    const inputs = { ...capRateWorkedExampleInputs, estimatedMarketValue: 1_250_000 };
+    const metrics = calcAllMetrics(inputs);
+    expect(metrics.capRateMV).toBeCloseTo(8, 4);
+    expect(metrics.capRateMV).toBeCloseTo(calcCapRateEstimatedValue(inputs), 6);
+    // The legacy alias would have read marketValue (1,000,000 here) and
+    // produced 10%, not 8% — proving the pipeline no longer calls it.
+    expect(metrics.capRateMV).not.toBeCloseTo(calcCapRateMV(inputs), 1);
+  });
+
+  it("calcCapRateMV (legacy alias) still compiles and still reads marketValue — kept for backward compatibility only, not called by calcAllMetrics", () => {
+    expect(calcCapRateMV({ ...capRateWorkedExampleInputs, marketValue: 1_000_000 })).toBeCloseTo(10, 4);
   });
 });
 

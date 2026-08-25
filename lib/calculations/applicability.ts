@@ -97,7 +97,11 @@ const APPLICABILITY_RULES: Record<string, (ctx: ApplicabilityContext) => MetricA
   estimatedValueLtv: (ctx) =>
     requiresExplicitPositive(ctx.estimatedMarketValue, "No estimated current market value entered"),
   projectLeverage: (ctx) => requiresPositive(ctx.totalInvestment, "No total investment amount available"),
-  capRateMV: (ctx) => requiresPositive(ctx.marketValue, "No estimated current market value set"),
+  // Phase 4.24.1 — gates on the RAW estimate (ctx.estimatedMarketValue),
+  // never ctx.marketValue (which silently defaults to purchasePrice), so a
+  // blank estimate correctly reads as N/A instead of a defaulted number.
+  capRateMV: (ctx) =>
+    requiresExplicitPositive(ctx.estimatedMarketValue, "No estimated current market value entered"),
   dscr: (ctx) => requiresPositive(ctx.annualDebtService, "No debt financing is being used"),
   netYieldPreTax: (ctx) =>
     requiresPositive(ctx.initialEquityInvestment, "No positive equity invested (fully or over-financed deal)"),

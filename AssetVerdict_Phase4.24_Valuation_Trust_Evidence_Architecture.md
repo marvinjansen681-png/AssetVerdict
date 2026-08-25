@@ -131,7 +131,7 @@ Confirmed by what was **not** touched: `lib/calculations/verdict.ts`, `lib/calcu
 - **Updated:** `lib/ai/__tests__/dealCoachPrompt.test.ts` — one existing assertion text updated for the §20 rename (its own subject, not a behaviour change).
 - **Unchanged and still passing (proof of numerical parity):** `lib/calculations/__tests__/leverageMetrics.test.ts` (Phase 4.23.1's Purchase LTV / Estimated Value LTV / Project Leverage tests — zero edits, zero failures), `lib/calculations/__tests__/verdict.test.ts` and `lib/calculations/__tests__/flipVerdict.test.ts` (verdict-parity — zero edits, zero failures), `lib/calculations/__tests__/index.test.ts`, `lib/calculations/__tests__/applicability.test.ts`, `lib/calculations/__tests__/thresholds.test.ts`.
 
-Full suite: **919/919 passing** (899 pre-existing + 20 new; zero removed, zero skipped).
+Full suite: **919/919 passing** (862 pre-existing + 57 new — 37 in `valuationEvidence.test.ts`, 9 in `route.test.ts`, 11 in `dealFieldPolicy.test.ts`; zero removed, zero skipped). *Correction (Phase 4.24.1): this section originally miscounted the new tests as 20; the correct breakdown is 862 + 57 = 919.*
 
 ## 25. Repository-wide ambiguous-term audit
 

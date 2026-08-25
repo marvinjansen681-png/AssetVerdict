@@ -81,8 +81,22 @@ describe("getMetricApplicability", () => {
     }
   });
 
-  it("flags Cap Rate (MV) as not applicable when market value is 0", () => {
-    expect(getMetricApplicability("capRateMV", { marketValue: 0 }).applicable).toBe(false);
+  it("flags Cap Rate on Estimated Value as not applicable when the raw estimate is 0 (Phase 4.24.1 — gates on estimatedMarketValue, not marketValue)", () => {
+    expect(getMetricApplicability("capRateMV", { estimatedMarketValue: 0 }).applicable).toBe(false);
+  });
+
+  it("flags Cap Rate on Estimated Value as not applicable when the raw estimate is null (blank)", () => {
+    expect(getMetricApplicability("capRateMV", { estimatedMarketValue: null }).applicable).toBe(false);
+  });
+
+  it("does NOT use marketValue (which defaults to purchasePrice) to decide Cap Rate on Estimated Value's applicability", () => {
+    // A high `marketValue` (e.g. defaulted from purchasePrice) alongside a
+    // blank raw estimate must still read as not_applicable — that would
+    // otherwise silently resurrect the pre-4.24.1 defect of falling back to
+    // Purchase Price.
+    expect(
+      getMetricApplicability("capRateMV", { marketValue: 5_000_000, estimatedMarketValue: null }).applicable
+    ).toBe(false);
   });
 
   it("flags DSCR as not applicable when there is no annual debt service", () => {

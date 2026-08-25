@@ -7,6 +7,10 @@ import { formatMetricValue } from "../format";
 const rentalInputs: DealInputs = {
   purchasePrice: 5_055_000,
   marketValue: 5_500_000,
+  // Phase 4.24.1 — mirrors marketValue, exactly as assembleInputs.ts does
+  // in production (both fields are derived from the same raw deal.marketValue
+  // column); calcCapRateEstimatedValue reads this one, never marketValue.
+  estimatedMarketValue: 5_500_000,
   askingPrice: 6_900_000,
   transferBondCost: 309_072,
   renovationCost: 200_000,
@@ -109,7 +113,7 @@ describe("getMetricBreakdown — deterministic formula breakdowns reconcile with
     expect((b.lines[0].value / b.lines[1].value) * 100).toBeCloseTo(metrics.capRatePP, 6);
   });
 
-  it("Cap Rate MV: Annual NOI ÷ Market Value reconciles to metrics.capRateMV", () => {
+  it("Cap Rate on Estimated Value: Annual NOI ÷ Estimated Current Market Value reconciles to metrics.capRateMV", () => {
     const b = getMetricBreakdown({ metricKey: "capRateMV", metrics, dealSummary })!;
     expect((b.lines[0].value / b.lines[1].value) * 100).toBeCloseTo(metrics.capRateMV, 6);
   });
