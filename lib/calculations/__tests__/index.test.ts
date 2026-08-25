@@ -605,6 +605,96 @@ describe("calcLTV", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 4.23 — LTV & Leverage Metric Definition Audit: characterization of
+// CURRENT calcLTV() behaviour, pinned exactly as the audit brief's own
+// worked examples. These tests intentionally change NOTHING about the
+// formula, thresholds, or verdict logic — see
+// AssetVerdict_Phase4.23_LTV_Leverage_Definition_Audit.md. They exist so any
+// future, approved change to the denominator has an explicit, named
+// "before" baseline to diff against.
+// ---------------------------------------------------------------------------
+describe("calcLTV — Phase 4.23 characterization baseline (current formula: loan / purchase price)", () => {
+  it("Purchase Price R1,000,000, Loan R800,000 -> 80% exactly", () => {
+    const inputs: DealInputs = {
+      ...sampleInputs,
+      purchasePrice: 1_000_000,
+      financeSources: [{ loanAmount: 800_000, interestRate: 11, termYears: 20 }],
+    };
+    expect(calcLTV(inputs)).toBe(80);
+  });
+
+  it("Loan = R0, Purchase Price = R1,000,000 -> 0%", () => {
+    const inputs: DealInputs = { ...sampleInputs, purchasePrice: 1_000_000, financeSources: [] };
+    expect(calcLTV(inputs)).toBe(0);
+  });
+
+  it("invalid denominator (purchasePrice = 0) -> a sentinel 0, never NaN/Infinity — caught upstream by applicability.ts, not by calcLTV itself", () => {
+    const inputs: DealInputs = {
+      ...sampleInputs,
+      purchasePrice: 0,
+      financeSources: [{ loanAmount: 800_000, interestRate: 11, termYears: 20 }],
+    };
+    const result = calcLTV(inputs);
+    expect(result).toBe(0);
+    expect(Number.isNaN(result)).toBe(false);
+    expect(Number.isFinite(result)).toBe(true);
+  });
+
+  it("a negative purchasePrice (not currently blocked by input validation) produces a negative, nonsensical percentage rather than throwing or NaN-ing — documented limitation, not fixed in this phase", () => {
+    const inputs: DealInputs = {
+      ...sampleInputs,
+      purchasePrice: -1_000_000,
+      financeSources: [{ loanAmount: 800_000, interestRate: 11, termYears: 20 }],
+    };
+    const result = calcLTV(inputs);
+    expect(result).toBe(-80);
+    expect(Number.isFinite(result)).toBe(true);
+  });
+
+  it("debt CAN exceed purchase price (>100%) without error — financing may legitimately fund more than the purchase price alone (renovation, fees, multiple sources)", () => {
+    const inputs: DealInputs = {
+      ...sampleInputs,
+      purchasePrice: 1_000_000,
+      financeSources: [{ loanAmount: 1_100_000, interestRate: 11, termYears: 20 }],
+    };
+    expect(calcLTV(inputs)).toBeCloseTo(110, 6);
+  });
+
+  it("marketValue defaults to purchasePrice when left blank (assembleInputs), so a market-value-based ratio would silently collapse to the purchase-price-based one for any deal that never filled it in — see the audit report §7", () => {
+    const inputs: DealInputs = { ...sampleInputs, purchasePrice: 1_000_000, marketValue: 1_000_000 };
+    // calcCapRateMV is the one existing metric that actually reads marketValue;
+    // proving it here documents the shared "blank defaults to purchase price"
+    // risk any future market-value-based LTV would inherit unchanged.
+    expect(inputs.marketValue).toBe(inputs.purchasePrice);
+  });
+
+  it("worked example (audit report §6): Purchase Price R1,000,000 / Market Value R1,400,000 / Total Investment R1,250,000 / Loan R800,000", () => {
+    const inputs: DealInputs = {
+      ...sampleInputs,
+      purchasePrice: 1_000_000,
+      marketValue: 1_400_000,
+      transferBondCost: 50_000,
+      renovationCost: 200_000,
+      sourcingFee: 0,
+      financeSources: [{ loanAmount: 800_000, interestRate: 11, termYears: 20 }],
+    };
+    const loanToPurchasePrice = calcLTV(inputs); // current formula
+    const loanToMarketValue = (800_000 / 1_400_000) * 100;
+    const loanToTotalInvestment = (800_000 / calcTotalInvestment(inputs)) * 100;
+
+    expect(loanToPurchasePrice).toBeCloseTo(80, 6);
+    expect(loanToMarketValue).toBeCloseTo(57.142857, 4);
+    expect(calcTotalInvestment(inputs)).toBe(1_250_000);
+    expect(loanToTotalInvestment).toBeCloseTo(64, 6);
+
+    // The three ratios genuinely diverge — proving no single metric can
+    // stand in for the others (audit report §5-6).
+    expect(loanToPurchasePrice).not.toBeCloseTo(loanToMarketValue, 0);
+    expect(loanToPurchasePrice).not.toBeCloseTo(loanToTotalInvestment, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Cap Rate (PP) / Cap Rate (MV)
 // ---------------------------------------------------------------------------
 
