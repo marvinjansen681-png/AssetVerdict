@@ -5,6 +5,7 @@ import type { DealMetrics, YearlyProjection } from "@/lib/calculations";
 import type { Scenarios } from "@/lib/calculations/scenarios";
 import type { DealVerdictResult } from "@/lib/calculations/verdict";
 import type { FlipExitValueAnalysis } from "@/lib/calculations/fixFlipExitValue";
+import type { ValuationSummary } from "@/lib/calculations/valuationEvidence";
 import type { CapexItem, RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
 
 export interface DealSummaryInputs {
@@ -67,6 +68,8 @@ export interface CalculateResponse {
   suburbProfile: SuburbProfile | null;
   /** Phase 4.19 — Fix & Flip only; undefined for every other strategy. */
   fixFlipExitValueAnalysis?: FlipExitValueAnalysis;
+  /** Phase 4.24 — the one valuation summary (Purchase Price is separate; see dealSummary.purchasePrice), every strategy. */
+  valuationSummary: ValuationSummary;
 }
 
 export interface CalculateErrorBody {
@@ -115,6 +118,7 @@ export function useDealMetrics(dealId: string) {
     propertyValuation: data?.propertyValuation,
     suburbProfile: data?.suburbProfile,
     fixFlipExitValueAnalysis: data?.fixFlipExitValueAnalysis,
+    valuationSummary: data?.valuationSummary,
     isLoading,
     error: error as CalculateError | undefined,
     refresh: mutate,

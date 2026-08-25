@@ -210,6 +210,29 @@ export interface DealCoachContext {
      * strategy, so the coach never mentions lease term outside Commercial.
      */
     commercialContext?: { leaseTermMonths: number | null };
+    /**
+     * Phase 4.24 — the ONE valuation evidence summary
+     * (lib/calculations/valuationEvidence.ts), pre-formatted for the coach.
+     * Distinguishes the investor's own estimate from evidence-based
+     * current value, post-renovation value, and (Fix & Flip only) the
+     * assumed future sale price — the coach must never blur these into one
+     * "market value." Undefined only when nothing at all is recorded
+     * (no user estimate, no valuation evidence).
+     */
+    valuationEvidence?: {
+      userEstimatedCurrentMarketValue: string | null;
+      evidenceBasedCurrentValue: string | null;
+      evidenceValueLow: string | null;
+      evidenceValueHigh: string | null;
+      evidenceBasedPostRenovationValue: string | null;
+      assumedFutureSalePrice: string | null;
+      valuationSource: string | null;
+      valuationBasis: string;
+      valuationDate: string | null;
+      valuationEvidenceQuality: string;
+      varianceRand: string | null;
+      variancePercent: string | null;
+    };
   };
   /**
    * Fix & Flip only (Phase 4.17) — the ONE deterministic Fix & Flip

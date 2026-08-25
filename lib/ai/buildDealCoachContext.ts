@@ -44,6 +44,7 @@ import { getMetricGroupsForStrategy, getMetricDefinition } from "../education/me
 import { getKeyLabel } from "../education/relationshipChains";
 import { getStrategy, type StrategyId } from "../strategies";
 import { calcFlipExitValueAnalysis, type FlipExitValuationInput, type FlipExitValueScenarioCase, type FlipExitValueAnalysis } from "../calculations/fixFlipExitValue";
+import { buildValuationSummary } from "../calculations/valuationEvidence";
 import { calcRentSuggestion } from "../area-suggestions";
 import type { SuburbProfile } from "../../types";
 import { deriveDealVerdict, type DealVerdictResult } from "../calculations/verdict";
@@ -545,6 +546,35 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
   const fixFlipExitValueAnalysis =
     flipExitValueAnalysisRaw !== undefined ? buildDealCoachFlipExitValueAnalysis(flipExitValueAnalysisRaw, currency) : undefined;
 
+  // Phase 4.24 — the ONE valuation summary, shared with the Summary UI/PDF
+  // (see /api/deals/[id]/calculate). Never let the AI see an ambiguous
+  // "marketValue" without this source/basis context attached.
+  const valuationSummaryRaw = buildValuationSummary({
+    userEstimatedCurrentMarketValue: inputs.estimatedMarketValue,
+    valuation: propertyValuation ?? null,
+    assumedFutureSalePrice: strategyId === "fix_and_flip" ? inputs.expectedSalePrice : null,
+  });
+  const hasValuationEvidence =
+    valuationSummaryRaw.userEstimatedCurrentMarketValue !== null ||
+    valuationSummaryRaw.evidenceBasedCurrentValue !== null ||
+    valuationSummaryRaw.evidenceBasedPostRenovationValue !== null;
+  const valuationEvidence: DealCoachContext["deal"]["valuationEvidence"] = hasValuationEvidence
+    ? {
+        userEstimatedCurrentMarketValue: formatMetricValue(valuationSummaryRaw.userEstimatedCurrentMarketValue, "currency", currency),
+        evidenceBasedCurrentValue: formatMetricValue(valuationSummaryRaw.evidenceBasedCurrentValue, "currency", currency),
+        evidenceValueLow: formatMetricValue(valuationSummaryRaw.evidenceValueLow, "currency", currency),
+        evidenceValueHigh: formatMetricValue(valuationSummaryRaw.evidenceValueHigh, "currency", currency),
+        evidenceBasedPostRenovationValue: formatMetricValue(valuationSummaryRaw.evidenceBasedPostRenovationValue, "currency", currency),
+        assumedFutureSalePrice: formatMetricValue(valuationSummaryRaw.assumedFutureSalePrice, "currency", currency),
+        valuationSource: valuationSummaryRaw.valuationSource,
+        valuationBasis: valuationSummaryRaw.valuationBasis,
+        valuationDate: valuationSummaryRaw.valuationDate ? new Date(valuationSummaryRaw.valuationDate).toLocaleDateString("en-ZA") : null,
+        valuationEvidenceQuality: valuationSummaryRaw.valuationEvidenceQuality,
+        varianceRand: valuationSummaryRaw.variance ? formatMetricValue(valuationSummaryRaw.variance.differenceRand, "currency", currency) : null,
+        variancePercent: valuationSummaryRaw.variance ? formatMetricValue(valuationSummaryRaw.variance.differencePercent, "percent", currency) : null,
+      }
+    : undefined;
+
   // ---- Area rent context: only when a suburb is linked AND the deal's own
   // assumption is known AND the strategy-specific estimate actually resolved
   // — never an invented figure (section 10/27).
@@ -606,6 +636,7 @@ export function buildDealCoachContext(params: BuildDealCoachContextParams): Deal
       : undefined,
     areaRentContext,
     commercialContext: strategyId === "commercial" ? { leaseTermMonths: leaseTermMonths ?? null } : undefined,
+    valuationEvidence,
   };
   const scenario: DealCoachContext["scenario"] = { active: activeScenario, note: SCENARIO_NOTE[activeScenario] };
 

@@ -489,7 +489,7 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     category: "valuation",
     perspective: "property",
     simpleExplanation: "The property's operating income as a percentage of what you're actually paying for it — AssetVerdict's primary acquisition cap-rate metric.",
-    whyItMatters: "It's the standard way investors compare a property's own, unleveraged return — ignoring how each one is financed. Contrast this with Equity IRR, which DOES depend on financing: a good cap rate does not automatically mean a good IRR, and a highly-financed deal can post a strong IRR on a middling cap rate. Unlike Cap Rate on Market Value, this is measured against purchase price — a verified, contracted number — which is why AssetVerdict treats it as the primary acquisition cap-rate signal (Phase 4.1).",
+    whyItMatters: "It's the standard way investors compare a property's own, unleveraged return — ignoring how each one is financed. Contrast this with Equity IRR, which DOES depend on financing: a good cap rate does not automatically mean a good IRR, and a highly-financed deal can post a strong IRR on a middling cap rate. Unlike Cap Rate on Estimated Value, this is measured against purchase price — a verified, contracted number — which is why AssetVerdict treats it as the primary acquisition cap-rate signal (Phase 4.1).",
     formulaLabel: "NOI ÷ Purchase Price",
     formulaExplanation: "AssetVerdict divides annual NOI by purchase price. Because NOI excludes debt service, this number is unaffected by how you finance the deal.",
     preferredDirection: "range",
@@ -506,20 +506,26 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
 
   capRateMV: def({
     key: "capRateMV",
-    name: "Cap Rate on Market Value",
-    shortName: "Cap Rate (MV)",
+    // Phase 4.24: renamed from "Cap Rate on Market Value" — the denominator
+    // is DealInputs.marketValue, an unverified investor estimate (which
+    // itself silently defaults to Purchase Price when left blank — see
+    // AssetVerdict_Phase4.23_LTV_Leverage_Definition_Audit.md §7), never a
+    // bank-confirmed or independently verified value. The name must not
+    // imply otherwise. Formula unchanged.
+    name: "Cap Rate on Estimated Value",
+    shortName: "Cap Rate (Est. Value)",
     category: "valuation",
     perspective: "property",
-    simpleExplanation: "The property's operating income as a percentage of its assumed market value, rather than what you're paying. This result depends on your assumed market value — AssetVerdict currently has no way to verify it, so this metric is contextual rather than independently classified.",
-    whyItMatters: "Comparing this to Cap Rate on Purchase Price shows whether you're buying below, at, or above your assumed market value. Cap Rate on Purchase Price remains AssetVerdict's primary acquisition cap-rate metric because purchase price is a contracted fact, not an assumption (Phase 4.1).",
-    formulaLabel: "NOI ÷ Market Value",
-    formulaExplanation: "AssetVerdict divides annual NOI by the property's assessed market value.",
+    simpleExplanation: "The property's operating income as a percentage of your own estimated current market value, rather than what you're paying. This result depends on your estimate — AssetVerdict currently has no way to verify it, so this metric is contextual rather than independently classified.",
+    whyItMatters: "Comparing this to Cap Rate on Purchase Price shows whether you're buying below, at, or above your own estimated value. Cap Rate on Purchase Price remains AssetVerdict's primary acquisition cap-rate metric because purchase price is a contracted fact, not an estimate (Phase 4.1).",
+    formulaLabel: "NOI ÷ Estimated Current Market Value",
+    formulaExplanation: "AssetVerdict divides annual NOI by the Estimated Current Market Value you entered on the Acquisition tab.",
     preferredDirection: "higher",
     affectedBy: ["noiAnnual"],
     affects: ["capRateSpread"],
     relatedMetrics: ["capRatePP", "capRateSpread"],
-    investorQuestion: "How does this property's income stack up against its true market value?",
-    strategies: ["Same levers as Cap Rate (PP) — increase NOI"],
+    investorQuestion: "How does this property's income stack up against my own estimate of its value?",
+    strategies: ["Same levers as Cap Rate on Estimated Value — increase NOI"],
   }),
 
   capRateSpread: def({
@@ -529,14 +535,14 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     perspective: "property",
     simpleExplanation: "How much better (or worse) your deal's cap rate is compared to your assumed market cap rate for similar property.",
     whyItMatters: "A positive spread is a signal you're buying below what you've assumed the market normally pays for this kind of income stream. The market cap rate is a figure you entered, not verified market data — treat this as \"based on your assumed market cap rate,\" not as confirmed fact.",
-    formulaLabel: "Cap Rate (MV) − Assumed Market Cap Rate",
-    formulaExplanation: "AssetVerdict subtracts the market cap rate you've entered (an assumption, not verified data) from this deal's Cap Rate on Market Value.",
+    formulaLabel: "Cap Rate (Est. Value) − Assumed Market Cap Rate",
+    formulaExplanation: "AssetVerdict subtracts the market cap rate you've entered (an assumption, not verified data) from this deal's Cap Rate on Estimated Value.",
     preferredDirection: "higher",
     affectedBy: ["capRateMV"],
     affects: [],
     relatedMetrics: ["capRatePP", "capRateMV"],
     investorQuestion: "Am I buying above or below what the market normally pays for this income?",
-    strategies: ["Same levers as Cap Rate (MV) — increase NOI or negotiate a lower price relative to market value"],
+    strategies: ["Same levers as Cap Rate on Estimated Value — increase NOI or negotiate a lower price relative to your estimated value"],
   }),
 
   grossYield: def({

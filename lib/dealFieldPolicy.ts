@@ -156,3 +156,30 @@ export function pickAllowedDealFields(body: Record<string, unknown>): Record<str
   }
   return picked;
 }
+
+/**
+ * Phase 4.24 (Tasks 21/22) — value-level guards for the two fields
+ * `calcPurchaseLTV`/`calcCapRatePP`/`calcTransferDuty` etc. divide by or
+ * otherwise treat as load-bearing. Server-side because the Acquisition
+ * form's client-side validation (react-hook-form `validate`) is only a UX
+ * convenience — it never protects an endpoint reachable directly. Only
+ * checks a field when the (already-coerced, allowlisted) payload actually
+ * contains it, so a PATCH that doesn't touch these fields is unaffected.
+ * Returns the first violation message, or null if the payload is clean.
+ */
+export function validateDealFieldValues(coerced: Record<string, unknown>): string | null {
+  if ("purchasePrice" in coerced) {
+    const v = coerced.purchasePrice;
+    if (typeof v !== "number" || !(v > 0)) {
+      return "Purchase Price must be greater than R0";
+    }
+  }
+  if ("marketValue" in coerced) {
+    const v = coerced.marketValue;
+    // null (cleared/blank) remains allowed — only a negative number is rejected.
+    if (v !== null && typeof v === "number" && v < 0) {
+      return "Estimated Current Market Value cannot be negative";
+    }
+  }
+  return null;
+}

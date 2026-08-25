@@ -97,7 +97,7 @@ const APPLICABILITY_RULES: Record<string, (ctx: ApplicabilityContext) => MetricA
   estimatedValueLtv: (ctx) =>
     requiresExplicitPositive(ctx.estimatedMarketValue, "No estimated current market value entered"),
   projectLeverage: (ctx) => requiresPositive(ctx.totalInvestment, "No total investment amount available"),
-  capRateMV: (ctx) => requiresPositive(ctx.marketValue, "No market value set"),
+  capRateMV: (ctx) => requiresPositive(ctx.marketValue, "No estimated current market value set"),
   dscr: (ctx) => requiresPositive(ctx.annualDebtService, "No debt financing is being used"),
   netYieldPreTax: (ctx) =>
     requiresPositive(ctx.initialEquityInvestment, "No positive equity invested (fully or over-financed deal)"),

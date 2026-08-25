@@ -97,7 +97,7 @@ export function interpretMetricValue(
       return `This property's operating income equals about ${pct(value)}% of what you're paying for it, each year — before any financing is considered.`;
 
     case "capRateMV":
-      return `This property's operating income equals about ${pct(value)}% of its current market value, each year.`;
+      return `This property's operating income equals about ${pct(value)}% of your estimated current market value, each year.`;
 
     case "capRateSpread":
       return value >= 0

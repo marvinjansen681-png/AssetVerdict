@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getDeal, updateDeal, deleteDeal } from "@/lib/db/deals";
 import { coerceNumericFields } from "@/lib/coerceNumeric";
-import { DEAL_PATCH_NUMERIC_FIELDS, pickAllowedDealFields } from "@/lib/dealFieldPolicy";
+import {
+  DEAL_PATCH_NUMERIC_FIELDS,
+  pickAllowedDealFields,
+  validateDealFieldValues,
+} from "@/lib/dealFieldPolicy";
 
 export async function GET(
   _req: Request,
@@ -42,6 +46,15 @@ export async function PATCH(
   // normally. See lib/dealFieldPolicy.ts for the full classification.
   const picked = pickAllowedDealFields(body);
   const coerced = coerceNumericFields(picked, DEAL_PATCH_NUMERIC_FIELDS);
+
+  // Phase 4.24 (Tasks 21/22) — reject an invalid Purchase Price or a
+  // negative Estimated Current Market Value at the API boundary, not just
+  // in the Acquisition form's client-side validation.
+  const validationError = validateDealFieldValues(coerced);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
+  }
+
   const updated = await updateDeal(params.id, session.user.id, coerced);
   if (!updated) {
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });

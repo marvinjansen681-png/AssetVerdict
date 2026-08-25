@@ -40,7 +40,7 @@ export default function AcquisitionTab() {
     register,
     handleSubmit,
     watch,
-    formState: { isDirty, isSubmitting },
+    formState: { isDirty, isSubmitting, errors },
     reset,
   } = useForm<AcquisitionForm>({
     defaultValues: {
@@ -100,7 +100,8 @@ export default function AcquisitionTab() {
     });
 
     if (!res.ok) {
-      showToast("error", "Could not save acquisition costs.");
+      const body = await res.json().catch(() => null);
+      showToast("error", body?.error || "Could not save acquisition costs.");
       return;
     }
 
@@ -122,14 +123,32 @@ export default function AcquisitionTab() {
           <FormField label="Asking Price">
             <CurrencyInput {...register("askingPrice")} />
           </FormField>
-          <FormField label="Purchase Price">
-            <CurrencyInput {...register("purchasePrice")} />
+          <FormField
+            label="Purchase Price"
+            errorText={errors.purchasePrice?.message}
+          >
+            <CurrencyInput
+              {...register("purchasePrice", {
+                valueAsNumber: true,
+                validate: (v) =>
+                  Number(v) > 0 || "Purchase Price must be greater than R0",
+              })}
+            />
           </FormField>
           <FormField
             label="Estimated Current Market Value"
             helperText="Your estimate of what the property is worth today. Do not use a future renovation value or expected sale price here. This is not a bank valuation. If you don't have a reasonable current-value estimate, leave this blank — that's better than false precision."
+            errorText={errors.marketValue?.message}
           >
-            <CurrencyInput {...register("marketValue")} />
+            <CurrencyInput
+              {...register("marketValue", {
+                valueAsNumber: true,
+                validate: (v) =>
+                  !v ||
+                  Number(v) >= 0 ||
+                  "Estimated Current Market Value cannot be negative",
+              })}
+            />
           </FormField>
           <div />
           <FormField label="Discount to Asking Price">

@@ -7,6 +7,7 @@ import { assembleInputs, getMissingFields } from "@/lib/calculations/assembleInp
 import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
 import { deriveDealVerdict } from "@/lib/calculations/verdict";
 import { calcFlipExitValueAnalysis, normalizePropertyValuationBasis, type FlipExitValuationInput } from "@/lib/calculations/fixFlipExitValue";
+import { buildValuationSummary } from "@/lib/calculations/valuationEvidence";
 import type { DealWithRelations } from "@/types";
 
 export async function GET(
@@ -68,6 +69,18 @@ export async function GET(
   const fixFlipExitValueAnalysis =
     strategyId === "fix_and_flip" ? calcFlipExitValueAnalysis({ inputs, valuation: flipValuationInput }) : undefined;
 
+  // Phase 4.24 — the ONE valuation summary (Purchase Price / User Estimate /
+  // Evidence-Based Current Value / Post-Renovation Value / assumption),
+  // computed once server-side and shared by the Summary UI, PDF, and Deal
+  // Coach. Reuses the exact same flipValuationInput mapping Fix & Flip
+  // already uses above — no second PropertyValuation-to-narrow-shape
+  // conversion. Informational only: never fed into `verdict` below.
+  const valuationSummary = buildValuationSummary({
+    userEstimatedCurrentMarketValue: inputs.estimatedMarketValue,
+    valuation: flipValuationInput,
+    assumedFutureSalePrice: strategyId === "fix_and_flip" ? inputs.expectedSalePrice : null,
+  });
+
   const verdict = deriveDealVerdict({ strategyId, inputs, metrics, flipExitValueAnalysis: fixFlipExitValueAnalysis });
 
   const primaryDealSuburb =
@@ -76,6 +89,7 @@ export async function GET(
   return NextResponse.json({
     propertyValuation: dealWithRelations.propertyValuation,
     fixFlipExitValueAnalysis,
+    valuationSummary,
     suburbProfile: primaryDealSuburb?.suburbProfile ?? null,
     metrics,
     verdict,

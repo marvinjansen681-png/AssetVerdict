@@ -19,6 +19,7 @@ import FlipDashboard from "@/components/FlipDashboard";
 import FlipExitValueCard from "@/components/FlipExitValueCard";
 import FallbackAnalysisCard from "@/components/FallbackAnalysisCard";
 import ExitAnalysisCard from "@/components/ExitAnalysisCard";
+import ValuationEvidenceCard from "@/components/ValuationEvidenceCard";
 import { hasFallbackAnalysisContent, hasExitAnalysisContent } from "@/lib/areaIntelligence";
 import UnderstandYourDeal from "@/components/education/UnderstandYourDeal";
 import VerdictCard from "@/components/VerdictCard";
@@ -65,6 +66,7 @@ export default function DealSummaryPage({
     propertyValuation,
     suburbProfile,
     fixFlipExitValueAnalysis,
+    valuationSummary,
     isLoading,
     error,
   } = useDealMetrics(id);
@@ -112,6 +114,7 @@ export default function DealSummaryPage({
           propertyValuation={propertyValuation}
           suburbProfile={suburbProfile}
           fixFlipExitValueAnalysis={fixFlipExitValueAnalysis}
+          valuationSummary={valuationSummary}
         />
       ).toBlob();
 
@@ -329,8 +332,8 @@ export default function DealSummaryPage({
           <GaugeDial
             value={activeMetrics.capRateMV}
             unit="%"
-            label="Cap Rate (MV)"
-            tooltipText="Net Operating Income as a % of market value. Contextual only — this depends on your assumed market value, which AssetVerdict can't currently verify, so it isn't independently classified. Cap Rate (PP) is the primary acquisition cap-rate metric."
+            label="Cap Rate (Est. Value)"
+            tooltipText="Net Operating Income as a % of your estimated current market value. Contextual only — this depends on your own estimate, which AssetVerdict can't currently verify, so it isn't independently classified. Cap Rate (PP) is the primary acquisition cap-rate metric."
             metricKey="capRateMV"
             strategyId={strategyId}
             max={20}
@@ -586,6 +589,12 @@ export default function DealSummaryPage({
           onItemAdded={(item) => setCapexItems((prev) => [...prev, item])}
         />
       </AccordionSection>
+
+      {valuationSummary && (
+        <AccordionSection title="Valuation Evidence">
+          <ValuationEvidenceCard summary={valuationSummary} />
+        </AccordionSection>
+      )}
 
       {dealSummary &&
         (hasFallbackAnalysisContent(strategyId as StrategyId) ||

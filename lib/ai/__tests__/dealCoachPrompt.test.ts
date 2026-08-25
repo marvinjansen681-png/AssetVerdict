@@ -134,10 +134,10 @@ describe("DEAL_COACH_SYSTEM_INSTRUCTIONS — guardrail coverage", () => {
     expect(lower).toContain("a safe financing profile is never proof a deal meets the investor's return objectives");
   });
 
-  it("distinguishes Cap Rate on Purchase Price (primary) from Cap Rate on Market Value (contextual) — Decision 5", () => {
+  it("distinguishes Cap Rate on Purchase Price (primary) from Cap Rate on Estimated Value (contextual) — Decision 5", () => {
     const text = DEAL_COACH_SYSTEM_INSTRUCTIONS;
     expect(text).toContain("Cap Rate on Purchase Price is AssetVerdict's primary acquisition cap-rate metric");
-    expect(text.toLowerCase()).toContain("cap rate on market value is contextual");
+    expect(text.toLowerCase()).toContain("cap rate on estimated value is contextual");
   });
 
   it("distinguishes 'AssetVerdict does not currently use this metric' from 'this concept does not exist' for Fix & Flip", () => {

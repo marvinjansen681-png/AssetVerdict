@@ -13,6 +13,7 @@ import type { DealSummaryInputs } from "@/hooks/useDealMetrics";
 import type { Scenarios } from "@/lib/calculations/scenarios";
 import type { RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
 import { calcFurnitureItemResult, CONTINGENCY_CATEGORY } from "@/lib/calculations/furnitureCosts";
+import type { ValuationSummary } from "@/lib/calculations/valuationEvidence";
 import { getGaugeColorForStrategy, type GaugeVisualColor } from "@/lib/calculations/thresholds";
 import {
   getMetricApplicability,
@@ -241,6 +242,8 @@ interface DealSummaryPDFProps {
   suburbProfile?: SuburbProfile | null;
   /** Pre-computed by the caller (Phase 4.19) — the same deterministic exit-value evidence/scenario model the Summary page shows, never recalculated here. Fix & Flip only. */
   fixFlipExitValueAnalysis?: FlipExitValueAnalysis;
+  /** Pre-computed by the caller (Phase 4.24) — the same valuation summary the Summary page shows, never recalculated here. */
+  valuationSummary?: ValuationSummary;
 }
 
 const SCENARIO_COLORS = { bear: COLORS.red, base: COLORS.gold, bull: COLORS.green };
@@ -311,6 +314,7 @@ export default function DealSummaryPDF({
   propertyValuation = null,
   suburbProfile = null,
   fixFlipExitValueAnalysis,
+  valuationSummary,
 }: DealSummaryPDFProps) {
   const currencySymbol = currency === "ZAR" ? "R" : currency;
   const reportDate = new Date().toLocaleDateString("en-US");
@@ -366,7 +370,7 @@ export default function DealSummaryPDF({
           label: "NPV (Equity)",
           value: equityApplicable ? fmt(metrics.npv, currencySymbol) : "N/A (no equity invested)",
         },
-        { key: "capRateMV", label: "Cap Rate (MV)", value: `${metrics.capRateMV.toFixed(2)}%` },
+        { key: "capRateMV", label: "Cap Rate (Est. Value)", value: `${metrics.capRateMV.toFixed(2)}%` },
         {
           key: "dscr",
           label: "DSCR (Debt Service Coverage Ratio)",
@@ -1065,9 +1069,73 @@ export default function DealSummaryPDF({
         </View>
       </Page>
 
-      {(propertyValuation || suburbProfile) && (
+      {(propertyValuation || suburbProfile || valuationSummary) && (
         <Page size="A4" style={styles.page}>
           <Text style={styles.h1}>Area Intelligence</Text>
+
+          {valuationSummary &&
+            (valuationSummary.userEstimatedCurrentMarketValue !== null ||
+              valuationSummary.evidenceBasedCurrentValue !== null ||
+              valuationSummary.evidenceBasedPostRenovationValue !== null) && (
+              <>
+                <Text style={styles.h2}>Valuation Evidence</Text>
+                <Text style={{ fontSize: 8, color: COLORS.slate, marginBottom: 6 }}>
+                  What YOU estimate the property is worth is shown separately from what recorded
+                  evidence supports — neither silently overrides the other.
+                </Text>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Your Estimated Current Market Value</Text>
+                  <Text style={styles.value}>{fmt(valuationSummary.userEstimatedCurrentMarketValue, currencySymbol)}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Evidence-Based Current Value</Text>
+                  <Text style={styles.value}>{fmt(valuationSummary.evidenceBasedCurrentValue, currencySymbol)}</Text>
+                </View>
+                {valuationSummary.evidenceValueLow !== null && valuationSummary.evidenceValueHigh !== null && (
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Evidence Range</Text>
+                    <Text style={styles.value}>
+                      {fmt(valuationSummary.evidenceValueLow, currencySymbol)} – {fmt(valuationSummary.evidenceValueHigh, currencySymbol)}
+                    </Text>
+                  </View>
+                )}
+                {valuationSummary.variance && (
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Your Estimate vs. Evidence</Text>
+                    <Text style={styles.value}>
+                      {fmt(valuationSummary.variance.differenceRand, currencySymbol)} ({valuationSummary.variance.differencePercent.toFixed(1)}%)
+                    </Text>
+                  </View>
+                )}
+                {valuationSummary.evidenceBasedPostRenovationValue !== null && (
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Evidence-Based Post-Renovation Value</Text>
+                    <Text style={styles.value}>{fmt(valuationSummary.evidenceBasedPostRenovationValue, currencySymbol)}</Text>
+                  </View>
+                )}
+                {valuationSummary.assumedFutureSalePrice !== null && (
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Assumed Future Sale Price (not evidence)</Text>
+                    <Text style={styles.value}>{fmt(valuationSummary.assumedFutureSalePrice, currencySymbol)}</Text>
+                  </View>
+                )}
+                <View style={styles.row}>
+                  <Text style={styles.label}>Source / Basis</Text>
+                  <Text style={styles.value}>
+                    {valuationSummary.valuationSource ?? "N/A"} / {valuationSummary.valuationBasis}
+                  </Text>
+                </View>
+                <View style={[styles.row, { borderBottomWidth: 1, borderBottomColor: COLORS.lightGrey, paddingBottom: 6 }]}>
+                  <Text style={styles.label}>Evidence Quality</Text>
+                  <Text style={styles.value}>{valuationSummary.valuationEvidenceQuality.replace(/_/g, " ")}</Text>
+                </View>
+                <Text style={{ fontSize: 7.5, color: COLORS.slate, marginTop: 4, marginBottom: 10 }}>
+                  Evidence Quality is AssetVerdict&apos;s own internal conceptual scale, not an
+                  externally validated rating, and currently has no effect on this deal&apos;s verdict
+                  or Estimated Value LTV.
+                </Text>
+              </>
+            )}
 
           {propertyValuation && (
             <>

@@ -5,6 +5,7 @@ import {
   DEAL_PATCH_PROTECTED_FIELDS,
   DERIVED_FINANCIAL_FIELD_NAMES,
   pickAllowedDealFields,
+  validateDealFieldValues,
 } from "../dealFieldPolicy";
 
 describe("dealFieldPolicy — allowlist/denylist design (Phase 4.22.1)", () => {
@@ -62,6 +63,62 @@ describe("dealFieldPolicy — allowlist/denylist design (Phase 4.22.1)", () => {
       const snapshot = { ...input };
       pickAllowedDealFields(input);
       expect(input).toEqual(snapshot);
+    });
+  });
+
+  describe("validateDealFieldValues (Phase 4.24, Tasks 21/22)", () => {
+    it("rejects purchasePrice of exactly 0", () => {
+      expect(validateDealFieldValues({ purchasePrice: 0 })).toBe(
+        "Purchase Price must be greater than R0"
+      );
+    });
+
+    it("rejects a negative purchasePrice", () => {
+      expect(validateDealFieldValues({ purchasePrice: -500_000 })).toBe(
+        "Purchase Price must be greater than R0"
+      );
+    });
+
+    it("rejects a non-numeric purchasePrice (e.g. failed coercion left it as a string)", () => {
+      expect(validateDealFieldValues({ purchasePrice: "abc" })).toBe(
+        "Purchase Price must be greater than R0"
+      );
+    });
+
+    it("accepts a positive purchasePrice", () => {
+      expect(validateDealFieldValues({ purchasePrice: 1_000_000 })).toBeNull();
+    });
+
+    it("is a no-op when purchasePrice isn't in the payload at all", () => {
+      expect(validateDealFieldValues({ name: "Deal" })).toBeNull();
+    });
+
+    it("rejects a negative marketValue", () => {
+      expect(validateDealFieldValues({ marketValue: -1 })).toBe(
+        "Estimated Current Market Value cannot be negative"
+      );
+    });
+
+    it("allows marketValue of null (cleared/blank)", () => {
+      expect(validateDealFieldValues({ marketValue: null })).toBeNull();
+    });
+
+    it("allows marketValue of 0", () => {
+      expect(validateDealFieldValues({ marketValue: 0 })).toBeNull();
+    });
+
+    it("allows a positive marketValue", () => {
+      expect(validateDealFieldValues({ marketValue: 3_200_000 })).toBeNull();
+    });
+
+    it("checks purchasePrice before marketValue when both are invalid, returning the first violation", () => {
+      expect(
+        validateDealFieldValues({ purchasePrice: 0, marketValue: -1 })
+      ).toBe("Purchase Price must be greater than R0");
+    });
+
+    it("an empty payload is valid", () => {
+      expect(validateDealFieldValues({})).toBeNull();
     });
   });
 });

@@ -10,6 +10,7 @@ interface FormFieldProps {
   highlight?: Highlight;
   helperText?: string;
   tooltip?: string;
+  errorText?: string;
 }
 
 const highlightClasses: Record<Exclude<Highlight, null>, string> = {
@@ -24,6 +25,7 @@ export default function FormField({
   highlight = null,
   helperText,
   tooltip,
+  errorText,
 }: FormFieldProps) {
   return (
     <div>
@@ -34,15 +36,19 @@ export default function FormField({
       <div
         className={clsx(
           "rounded-md",
-          highlight && highlightClasses[highlight]
+          errorText ? highlightClasses.red : highlight && highlightClasses[highlight]
         )}
       >
         {children}
       </div>
-      {helperText && (
-        <p className="text-xs font-body text-av-slate/80 mt-1">
-          {helperText}
-        </p>
+      {errorText ? (
+        <p className="text-xs font-body text-av-red mt-1">{errorText}</p>
+      ) : (
+        helperText && (
+          <p className="text-xs font-body text-av-slate/80 mt-1">
+            {helperText}
+          </p>
+        )
       )}
     </div>
   );

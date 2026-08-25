@@ -108,3 +108,67 @@ describe("PATCH /api/deals/[id] — explicit allowlist (Phase 4.22.1)", () => {
     expect(dataArg).not.toHaveProperty("npv");
   });
 });
+
+describe("PATCH /api/deals/[id] — Purchase Price / Estimated Market Value guards (Phase 4.24, Tasks 21/22)", () => {
+  it("rejects purchasePrice of 0 with a 400 and never calls updateDeal", async () => {
+    const res = await PATCH(makeRequest({ purchasePrice: 0 }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Purchase Price must be greater than R0");
+    expect(mockedUpdateDeal).not.toHaveBeenCalled();
+  });
+
+  it("rejects a negative purchasePrice", async () => {
+    const res = await PATCH(makeRequest({ purchasePrice: -100 }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(400);
+    expect(mockedUpdateDeal).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stringified non-positive purchasePrice after numeric coercion", async () => {
+    const res = await PATCH(makeRequest({ purchasePrice: "0" }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(400);
+    expect(mockedUpdateDeal).not.toHaveBeenCalled();
+  });
+
+  it("accepts a positive purchasePrice", async () => {
+    const res = await PATCH(makeRequest({ purchasePrice: 1_000_000 }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(200);
+    expect(mockedUpdateDeal).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a negative marketValue", async () => {
+    const res = await PATCH(makeRequest({ marketValue: -1 }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("Estimated Current Market Value cannot be negative");
+    expect(mockedUpdateDeal).not.toHaveBeenCalled();
+  });
+
+  it("allows marketValue to be cleared to blank (empty string -> null)", async () => {
+    const res = await PATCH(makeRequest({ marketValue: "" }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(200);
+    const dataArg = mockedUpdateDeal.mock.calls[0][2] as Record<string, unknown>;
+    expect(dataArg.marketValue).toBeNull();
+  });
+
+  it("allows a positive marketValue", async () => {
+    const res = await PATCH(makeRequest({ marketValue: 2_500_000 }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(200);
+    expect(mockedUpdateDeal).toHaveBeenCalledTimes(1);
+  });
+
+  it("a PATCH that touches neither field is unaffected by these guards", async () => {
+    const res = await PATCH(makeRequest({ name: "New Deal Name" }), { params: { id: "deal-1" } });
+    expect(res.status).toBe(200);
+    expect(mockedUpdateDeal).toHaveBeenCalledTimes(1);
+  });
+
+  it("purchasePrice=0 alongside an otherwise-legitimate field blocks the whole save (fail closed, not partial)", async () => {
+    const res = await PATCH(
+      makeRequest({ purchasePrice: 0, name: "New Deal Name" }),
+      { params: { id: "deal-1" } }
+    );
+    expect(res.status).toBe(400);
+    expect(mockedUpdateDeal).not.toHaveBeenCalled();
+  });
+});

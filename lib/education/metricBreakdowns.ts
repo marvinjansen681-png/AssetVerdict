@@ -194,10 +194,10 @@ export function getMetricBreakdown({
 
     case "capRateMV":
       return {
-        formula: "Annual NOI ÷ Market Value",
+        formula: "Annual NOI ÷ Estimated Current Market Value",
         lines: [
           line("Annual NOI", metrics.noiAnnual, "currency"),
-          line("Market Value", dealSummary.marketValue ?? 0, "currency"),
+          line("Estimated Current Market Value", dealSummary.marketValue ?? 0, "currency"),
         ],
         result: metrics.capRateMV,
         resultFormat: "percent",
