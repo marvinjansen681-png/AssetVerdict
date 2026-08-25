@@ -91,6 +91,12 @@ export function assembleInputs(deal: DealWithRelations): DealInputs {
   return {
     purchasePrice: deal.purchasePrice ?? 0,
     marketValue: deal.marketValue ?? deal.purchasePrice ?? 0,
+    // Phase 4.23.1: the RAW, never-defaulted value — deliberately NOT
+    // falling back to purchasePrice like `marketValue` above. The one
+    // consumer is calcEstimatedValueLTV(), which must never silently treat
+    // "investor left this blank" the same as "investor confirmed the
+    // property is worth exactly the purchase price."
+    estimatedMarketValue: deal.marketValue ?? null,
     askingPrice: deal.askingPrice ?? 0,
     transferBondCost: deal.transferBondCost ?? 0,
     renovationCost: deal.renovationCost ?? 0,

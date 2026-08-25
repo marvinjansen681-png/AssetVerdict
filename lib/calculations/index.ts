@@ -41,7 +41,33 @@ export interface FinanceSourceInput {
 export interface DealInputs {
   // Acquisition
   purchasePrice: number;
+  /**
+   * Phase 4.23 audit finding: this field silently defaults to purchasePrice
+   * when the investor never entered a value (see assembleInputs.ts) —
+   * existing consumers (calcCapRateMV, calcProjectedPropertyValue, the
+   * 20-year projection's propertyValue) genuinely depend on that fallback
+   * and are UNCHANGED by Phase 4.23.1. For Estimated Value LTV specifically,
+   * that silent fallback would be misleading (it would imply the investor
+   * entered an independent estimate when they didn't) — see
+   * `estimatedMarketValue` below, which preserves the raw, un-defaulted
+   * value for exactly that purpose.
+   */
   marketValue: number;
+  /**
+   * Phase 4.23.1 — the RAW, never-defaulted "Estimated Current Market
+   * Value" the investor explicitly typed (or null if they left it blank).
+   * Unlike `marketValue` above, this NEVER falls back to purchasePrice —
+   * see assembleInputs.ts. The one and only consumer is
+   * calcEstimatedValueLTV(); every other calculation continues reading
+   * `marketValue` unchanged.
+   *
+   * Optional (rather than required), mirroring `wantToSell?`/`saleYear?`
+   * above — so the many literal DealInputs fixtures across the test suite
+   * that predate this field don't all need updating; calcEstimatedValueLTV
+   * treats an absent value the same as an explicit null (isFiniteNumber
+   * rejects both identically).
+   */
+  estimatedMarketValue?: number | null;
   askingPrice: number;
   transferBondCost: number;
   renovationCost: number;
@@ -293,7 +319,22 @@ export interface DealMetrics {
   netYieldPreTax: number;
   netYieldPostTax: number;
   dscr: number;
+  /**
+   * @deprecated Phase 4.23.1 — kept only for backward compatibility.
+   * Numerically identical to `purchaseLtv` (same formula, same value) —
+   * see calcLTV()'s own doc comment. Never diverges from `purchaseLtv`;
+   * new code should read `purchaseLtv` directly. This field's MEANING has
+   * not changed (still Total Loan Amount ÷ Purchase Price), only its name
+   * is now known to be misleading — see
+   * AssetVerdict_Phase4.23_LTV_Leverage_Definition_Audit.md.
+   */
   ltv: number;
+  /** Phase 4.23.1 — debt relative to the AGREED PURCHASE PRICE. The authoritative, verdict-facing leverage metric (unchanged formula/thresholds from the legacy `ltv` field — see calcPurchaseLTV()). */
+  purchaseLtv: number;
+  /** Phase 4.23.1 — debt relative to the investor's own explicitly-entered Estimated Current Market Value. Informational ONLY: no verdict/Safety-State/negotiation authority, no calibrated thresholds. null when no estimate was entered — see calcEstimatedValueLTV(). */
+  estimatedValueLtv: number | null;
+  /** Phase 4.23.1 — debt relative to the full authoritative Total Investment (calcTotalInvestment). Informational ONLY: no verdict authority, no calibrated thresholds — see calcProjectLeverage(). */
+  projectLeverage: number | null;
   breakEvenRatio: number;
   operatingExpenseRatio: number;
   utilitiesRatio: number;
@@ -707,9 +748,81 @@ export function calcDSCR(inputs: DealInputs): number {
   return calcNOIAnnual(inputs) / annualDebtService;
 }
 
-export function calcLTV(inputs: DealInputs): number {
-  if (!inputs.purchasePrice) return 0;
+/**
+ * Purchase LTV (Phase 4.23.1) — debt relative to the AGREED PURCHASE
+ * PRICE. This is the authoritative, verdict-facing leverage metric:
+ * Safety State (lib/calculations/verdict.ts) and the negotiation engine's
+ * "fixed original LTV" policy have only ever been exercised against this
+ * exact denominator, and thresholds.ts's 60/75 bands were never validated
+ * against any other one — see
+ * AssetVerdict_Phase4.23_LTV_Leverage_Definition_Audit.md. This phase's
+ * acceptance rule is that verdict behaviour must not change, so the
+ * formula below is BYTE-IDENTICAL to the pre-4.23.1 calcLTV() for every
+ * purchasePrice > 0.
+ *
+ * The one substantive change is the guard now also catching a NEGATIVE
+ * purchasePrice (previously only `!inputs.purchasePrice` — falsy, so 0/
+ * null/NaN — was caught; a negative price fell through to a nonsensical
+ * negative percentage, a defect Phase 4.23 documented but did not fix).
+ * This is safe: applicability.ts's `requiresPositive(purchasePrice > 0)`
+ * already excludes ANY non-positive purchase price (negative included) as
+ * not_applicable independently of this function's return value, so no
+ * user-visible verdict/UI outcome changes for any deal — this only hardens
+ * the low-level function itself against ever handing a caller a garbage
+ * negative number.
+ */
+export function calcPurchaseLTV(inputs: DealInputs): number {
+  if (!inputs.purchasePrice || inputs.purchasePrice < 0) return 0;
   return (calcTotalLoanAmount(inputs) / inputs.purchasePrice) * 100;
+}
+
+/**
+ * @deprecated Phase 4.23.1 — renamed to calcPurchaseLTV() because "LTV"
+ * without qualification misleadingly implied an independent property
+ * valuation when the denominator has always been the purchase price. This
+ * alias delegates directly — never a second formula — and exists only so
+ * pre-4.23.1 call sites keep compiling while they're migrated. New code
+ * must call calcPurchaseLTV() directly.
+ */
+export function calcLTV(inputs: DealInputs): number {
+  return calcPurchaseLTV(inputs);
+}
+
+/**
+ * Estimated Value LTV (Phase 4.23.1) — debt relative to the investor's OWN
+ * explicitly-entered Estimated Current Market Value. INFORMATIONAL ONLY:
+ * no verdict, Safety State, or negotiation authority, and deliberately NO
+ * calibrated threshold bands exist for it in thresholds.ts (reusing
+ * Purchase LTV's 60/75 bands here would be unjustified — a different
+ * denominator changes what those numbers would even mean; see the audit
+ * report §13).
+ *
+ * Reads `inputs.estimatedMarketValue` — the RAW, never-defaulted field —
+ * never `inputs.marketValue` (which silently falls back to purchasePrice
+ * when blank; see DealInputs's own doc comment). Returns `null`, never a
+ * fabricated percentage, whenever the investor hasn't entered a positive
+ * estimate: a blank Estimated Current Market Value must never silently
+ * read as if the investor had confirmed an independent value.
+ */
+export function calcEstimatedValueLTV(inputs: DealInputs): number | null {
+  const value = inputs.estimatedMarketValue;
+  if (!isFiniteNumber(value) || value <= 0) return null;
+  return (calcTotalLoanAmount(inputs) / value) * 100;
+}
+
+/**
+ * Project Leverage (Phase 4.23.1) — debt relative to the full authoritative
+ * Total Investment (calcTotalInvestment — purchase price + transfer/bond
+ * costs + sourcing fee + Furniture/Setup/Renovation Cost Used, unchanged
+ * from Phase 4.21/4.22). INFORMATIONAL ONLY: no verdict authority, no
+ * calibrated thresholds — same rationale as calcEstimatedValueLTV above.
+ * Returns `null`, never a fabricated percentage, when Total Investment
+ * isn't positive.
+ */
+export function calcProjectLeverage(inputs: DealInputs): number | null {
+  const totalInvestment = calcTotalInvestment(inputs);
+  if (!(totalInvestment > 0)) return null;
+  return (calcTotalLoanAmount(inputs) / totalInvestment) * 100;
 }
 
 /**
@@ -1422,7 +1535,10 @@ export function calcAllMetrics(inputs: DealInputs): DealMetrics {
     netYieldPreTax: calcNetYieldPreTax(inputs),
     netYieldPostTax: calcNetYieldPostTax(inputs),
     dscr: calcDSCR(inputs),
-    ltv: calcLTV(inputs),
+    ltv: calcLTV(inputs), // deprecated alias — always equals purchaseLtv, see calcLTV's doc comment
+    purchaseLtv: calcPurchaseLTV(inputs),
+    estimatedValueLtv: calcEstimatedValueLTV(inputs),
+    projectLeverage: calcProjectLeverage(inputs),
     breakEvenRatio: calcBreakEvenRatio(inputs),
     operatingExpenseRatio: calcOperatingExpenseRatio(inputs),
     utilitiesRatio: calcUtilitiesRatio(inputs),

@@ -129,7 +129,7 @@ const REASON_TEMPLATES: Record<string, (r: VerdictReason, currency: string) => s
   dscr_unclassified: () => "AssetVerdict cannot fully certify the safety position because debt coverage is unclassified for this deal.",
   break_even_unclassified: () => "AssetVerdict cannot fully certify the safety position because Break-Even Ratio is unclassified for this deal.",
   high_ltv: () =>
-    "The deal uses relatively high leverage under AssetVerdict's current reference bands, which increases sensitivity if income or property value weakens.",
+    "The deal uses relatively high leverage — debt as a % of purchase price (Purchase LTV) — under AssetVerdict's current reference bands, which increases sensitivity if income weakens or the property is worth less than the price paid.",
   high_oer: () => "Operating expenses consume a high share of gross income under AssetVerdict's current reference band for this strategy.",
   oer_caution: () => "Operating expenses are within AssetVerdict's caution range for this strategy.",
   oer_unclassified: () => "AssetVerdict has no calibrated operating-efficiency benchmark available for this deal.",

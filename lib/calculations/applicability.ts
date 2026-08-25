@@ -15,7 +15,7 @@
  * correctly-calculated answer for some metrics, e.g. a 0% NOI Margin).
  */
 import type { DealInputs, DealMetrics } from "./index";
-import { calcInitialEquityInvestment, calcTotalFinanceCostMonthly } from "./index";
+import { calcInitialEquityInvestment, calcTotalFinanceCostMonthly, calcTotalInvestment } from "./index";
 import { classifyMetricForStrategy, type MetricClassification } from "./thresholds";
 
 export interface MetricApplicability {
@@ -35,6 +35,10 @@ export interface MetricApplicability {
 export interface ApplicabilityContext {
   purchasePrice?: number;
   marketValue?: number;
+  /** Phase 4.23.1 — the RAW, never-defaulted "Estimated Current Market Value" (DealInputs.estimatedMarketValue). Used ONLY by the estimatedValueLtv rule; never confused with `marketValue` above, which silently defaults to purchasePrice. */
+  estimatedMarketValue?: number | null;
+  /** Phase 4.23.1 — calcTotalInvestment(inputs), for the projectLeverage rule. */
+  totalInvestment?: number;
   /** Total Investment less Total Loan Amount — see calcInitialEquityInvestment(). */
   initialEquityInvestment?: number;
   annualDebtService?: number;
@@ -65,10 +69,34 @@ function requiresPositive(
   return value > 0 ? { applicable: true } : { applicable: false, reason };
 }
 
+/**
+ * Phase 4.23.1 — like requiresPositive, but distinguishes "context didn't
+ * supply this field" (undefined — stay applicable, deferred to the
+ * value-based not_applicable check in classifyMetricForDeal) from
+ * "the deal genuinely has no value here" (null — explicitly not
+ * applicable). Only estimatedMarketValue uses this: it is a real,
+ * deliberately nullable DealInputs field (investor left it blank), not an
+ * artifact of a partial ApplicabilityContext.
+ */
+function requiresExplicitPositive(
+  value: number | null | undefined,
+  reason: string
+): MetricApplicability {
+  if (value === undefined) return { applicable: true };
+  return value !== null && value > 0 ? { applicable: true } : { applicable: false, reason };
+}
+
 const APPLICABILITY_RULES: Record<string, (ctx: ApplicabilityContext) => MetricApplicability> = {
   capRatePP: (ctx) => requiresPositive(ctx.purchasePrice, "No purchase price set"),
   grossYield: (ctx) => requiresPositive(ctx.purchasePrice, "No purchase price set"),
+  // Deprecated alias — see DealMetrics.ltv's own doc comment. Kept identical
+  // to purchaseLtv's rule so any surviving `classifyMetricForDeal("ltv", ...)`
+  // call site behaves exactly as before.
   ltv: (ctx) => requiresPositive(ctx.purchasePrice, "No purchase price set"),
+  purchaseLtv: (ctx) => requiresPositive(ctx.purchasePrice, "No purchase price set"),
+  estimatedValueLtv: (ctx) =>
+    requiresExplicitPositive(ctx.estimatedMarketValue, "No estimated current market value entered"),
+  projectLeverage: (ctx) => requiresPositive(ctx.totalInvestment, "No total investment amount available"),
   capRateMV: (ctx) => requiresPositive(ctx.marketValue, "No market value set"),
   dscr: (ctx) => requiresPositive(ctx.annualDebtService, "No debt financing is being used"),
   netYieldPreTax: (ctx) =>
@@ -102,6 +130,8 @@ export function applicabilityContextFromInputs(inputs: DealInputs): Applicabilit
   return {
     purchasePrice: inputs.purchasePrice,
     marketValue: inputs.marketValue,
+    estimatedMarketValue: inputs.estimatedMarketValue,
+    totalInvestment: calcTotalInvestment(inputs),
     initialEquityInvestment: calcInitialEquityInvestment(inputs),
     annualDebtService: calcTotalFinanceCostMonthly(inputs) * 12,
     discountRate: inputs.discountRate,
@@ -115,14 +145,21 @@ export function applicabilityContextFromInputs(inputs: DealInputs): Applicabilit
  * calcInitialEquityInvestment() (see that function's doc comment).
  * discountRate is read from npvBreakdown.discountRate (the same value NPV
  * was actually discounted at) rather than requiring a separate prop — it's
- * already on DealMetrics, just nested. purchasePrice/marketValue aren't on
- * DealMetrics, so those two rules can't be evaluated from this context
- * alone — pass a fuller context if needed.
+ * already on DealMetrics, just nested. purchasePrice/marketValue/
+ * estimatedMarketValue aren't on DealMetrics, so those rules can't be
+ * evaluated from this context alone — but this is safe by construction:
+ * classifyMetricForDeal's own `!isFiniteNumber(value)` check already
+ * returns not_applicable whenever the raw metric value itself is null
+ * (which purchaseLtv/estimatedValueLtv/projectLeverage always are when
+ * their real denominator is missing), so an incomplete context here never
+ * lets an N/A metric read as applicable. Pass a fuller context only if a
+ * caller needs the applicability *reason text* specifically.
  */
 export function applicabilityContextFromMetrics(
-  metrics: Pick<DealMetrics, "depositRequired" | "operatingCostsMonthly" | "npvBreakdown">
+  metrics: Pick<DealMetrics, "depositRequired" | "operatingCostsMonthly" | "npvBreakdown" | "totalInvestment">
 ): ApplicabilityContext {
   return {
+    totalInvestment: metrics.totalInvestment,
     initialEquityInvestment: metrics.depositRequired,
     annualDebtService: metrics.operatingCostsMonthly.finance * 12,
     discountRate: metrics.npvBreakdown?.discountRate,

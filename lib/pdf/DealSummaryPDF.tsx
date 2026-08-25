@@ -258,6 +258,15 @@ const COMPARISON_ROWS: {
   { label: "Cap Rate (PP)", key: "capRatePP", metricKey: "capRatePP", unit: "%" },
   { label: "NPV", key: "npv", metricKey: "npv", unit: "R" },
   { label: "DSCR", key: "dscr", metricKey: "dscr", unit: "x" },
+  // Phase 4.23.1: three separately-named leverage metrics — Purchase LTV
+  // keeps its real gauge colour (verdict-facing, calibrated bands);
+  // Estimated Value LTV / Project Leverage automatically render with no
+  // colour (getGaugeColorForStrategy returns "neutral" for any metric with
+  // no threshold definition — see thresholds.ts) since no bands exist for
+  // them, never a fabricated judgement.
+  { label: "Purchase LTV", key: "purchaseLtv", metricKey: "purchaseLtv", unit: "%" },
+  { label: "Estimated Value LTV", key: "estimatedValueLtv", metricKey: "estimatedValueLtv", unit: "%" },
+  { label: "Project Leverage", key: "projectLeverage", metricKey: "projectLeverage", unit: "%" },
   { label: "Op. Expense Ratio", key: "operatingExpenseRatio", metricKey: "operatingExpenseRatio", unit: "%" },
   { label: "Payback Period", key: "paybackPeriod", metricKey: "paybackPeriod", unit: "Yrs" },
   { label: "Monthly Cashflow", key: "cashflowMonthly", metricKey: "cashflowMonthly", unit: "R" },
@@ -561,6 +570,13 @@ export default function DealSummaryPDF({
             </View>
           ))}
         </View>
+        <Text style={{ fontSize: 7.5, color: COLORS.slate, marginTop: 4 }}>
+          Purchase LTV, Estimated Value LTV, and Project Leverage measure three different things and
+          are not interchangeable. Estimated Value LTV is based on the user-entered estimated current
+          market value, not a bank-confirmed valuation — AssetVerdict does not classify or judge this
+          figure, and it has no effect on the deal&apos;s verdict. Project Leverage is also
+          informational only.
+        </Text>
 
         <Text style={styles.h2}>Cashflow at Key Milestones</Text>
         <View style={styles.table}>

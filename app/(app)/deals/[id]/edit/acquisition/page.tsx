@@ -125,14 +125,17 @@ export default function AcquisitionTab() {
           <FormField label="Purchase Price">
             <CurrencyInput {...register("purchasePrice")} />
           </FormField>
-          <FormField label="Market Value">
+          <FormField
+            label="Estimated Current Market Value"
+            helperText="Your estimate of what the property is worth today. Do not use a future renovation value or expected sale price here. This is not a bank valuation. If you don't have a reasonable current-value estimate, leave this blank — that's better than false precision."
+          >
             <CurrencyInput {...register("marketValue")} />
           </FormField>
           <div />
           <FormField label="Discount to Asking Price">
             <PercentInput readOnly value={discountToAsking.toFixed(2)} />
           </FormField>
-          <FormField label="Discount to Market Value">
+          <FormField label="Discount to Estimated Current Market Value">
             <PercentInput readOnly value={discountToMarket.toFixed(2)} />
           </FormField>
         </div>

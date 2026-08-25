@@ -640,14 +640,15 @@ describe("calcLTV — Phase 4.23 characterization baseline (current formula: loa
     expect(Number.isFinite(result)).toBe(true);
   });
 
-  it("a negative purchasePrice (not currently blocked by input validation) produces a negative, nonsensical percentage rather than throwing or NaN-ing — documented limitation, not fixed in this phase", () => {
+  it("Phase 4.23.1 fix: a negative purchasePrice no longer produces a negative, nonsensical percentage — sentinel 0, matching the zero-denominator case, never -80", () => {
     const inputs: DealInputs = {
       ...sampleInputs,
       purchasePrice: -1_000_000,
       financeSources: [{ loanAmount: 800_000, interestRate: 11, termYears: 20 }],
     };
     const result = calcLTV(inputs);
-    expect(result).toBe(-80);
+    expect(result).toBe(0);
+    expect(result).not.toBe(-80);
     expect(Number.isFinite(result)).toBe(true);
   });
 

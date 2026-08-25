@@ -73,7 +73,14 @@ import type {
   ScenarioKey,
 } from "./dealCoachTypes";
 
-const HEADLINE_METRICS_RENTAL = ["dscr", "cashflowMonthly", "irr", "ltv", "breakEvenRatio", "netYieldPreTax"];
+// Phase 4.23.1: "purchaseLtv" (renamed from "ltv" — see the Phase 4.23 audit
+// and Phase 4.23.1 implementation reports) — the same verdict-facing
+// leverage figure, correctly named. Estimated Value LTV / Project Leverage
+// are informational-only and deliberately NOT headline metrics; they still
+// reach the AI via the strategy's "Debt & Safety" metric group for broad
+// "explain this deal" queries, each carrying its own limitation copy from
+// lib/education/metricDefinitions.ts.
+const HEADLINE_METRICS_RENTAL = ["dscr", "cashflowMonthly", "irr", "purchaseLtv", "breakEvenRatio", "netYieldPreTax"];
 const HEADLINE_METRICS_FLIP = ["netProfit", "roi", "annualisedROI", "profitMargin"];
 
 const SCENARIO_NOTE: Record<ScenarioKey, string> = {

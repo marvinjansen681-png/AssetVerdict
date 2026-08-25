@@ -427,7 +427,7 @@ export default function DealSummaryPage({
       </AccordionSection>
 
       <AccordionSection title="Debt & Coverage">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <GaugeDial
             value={isFiniteNumber(activeMetrics.dscr) ? activeMetrics.dscr : null}
             unit="x"
@@ -438,20 +438,53 @@ export default function DealSummaryPage({
             max={3}
           />
           <GaugeDial
-            value={activeMetrics.ltv}
-            unit="%"
-            label="LTV"
-            tooltipText="Loan-to-Value ratio — your total debt as a % of purchase price. Describes leverage risk, not overall deal quality — lower leverage is lower risk, not automatically a better investment."
-            metricKey="ltv"
-            strategyId={strategyId}
-            max={100}
-          />
-          <GaugeDial
             value={activeMetrics.breakEvenRatio}
             unit="%"
             label="Break-even Ratio"
             tooltipText="The share of gross revenue needed to cover all operating expenses plus debt repayments. Lower is safer."
             metricKey="breakEvenRatio"
+            strategyId={strategyId}
+            max={100}
+          />
+        </div>
+      </AccordionSection>
+
+      {/* Phase 4.23.1 — three separately-named, separately-computed leverage
+          metrics. Purchase LTV is the only one with verdict/Safety-State
+          authority and the only one coloured; Estimated Value LTV and
+          Project Leverage are informational only — no calibrated thresholds
+          exist for them, so they deliberately render neutral (grey)
+          regardless of value, never a fabricated judgement. */}
+      <AccordionSection title="Leverage">
+        <p className="text-xs font-body text-av-slate -mt-2 mb-4">
+          These three numbers answer different questions and are not interchangeable — see each
+          tooltip for exactly what it measures.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <GaugeDial
+            value={activeMetrics.purchaseLtv}
+            unit="%"
+            label="Purchase LTV"
+            tooltipText="Total debt as a % of the agreed Purchase Price. This is AssetVerdict's verdict-facing leverage metric — lower leverage is lower risk, not automatically a better investment."
+            metricKey="purchaseLtv"
+            strategyId={strategyId}
+            max={100}
+          />
+          <GaugeDial
+            value={activeMetrics.estimatedValueLtv}
+            unit="%"
+            label="Estimated Value LTV"
+            tooltipText="Total debt as a % of your own Estimated Current Market Value — not a bank-confirmed valuation. Informational only: AssetVerdict does not classify or judge this figure, and it has no effect on your verdict."
+            metricKey="estimatedValueLtv"
+            strategyId={strategyId}
+            max={100}
+          />
+          <GaugeDial
+            value={activeMetrics.projectLeverage}
+            unit="%"
+            label="Project Leverage"
+            tooltipText="Total debt as a % of Total Investment (purchase price + transfer/bond costs + sourcing fee + Furniture, Setup & Renovation). Informational only — no effect on your verdict."
+            metricKey="projectLeverage"
             strategyId={strategyId}
             max={100}
           />

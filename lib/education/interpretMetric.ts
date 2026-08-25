@@ -44,8 +44,16 @@ export function interpretMetricValue(
     case "dscr":
       return `The property currently produces R${round(value, 2).toFixed(2)} of operating income for every R1.00 required for debt payments.`;
 
+    // @deprecated Phase 4.23.1 — kept for a stale metricKey="ltv" caller; identical to "purchaseLtv".
     case "ltv":
+    case "purchaseLtv":
       return `Around R${pct(value, 0)} of every R100 of the purchase price is financed with debt.`;
+
+    case "estimatedValueLtv":
+      return `Around R${pct(value, 0)} of every R100 of your estimated current market value is represented by debt. This is based on your own estimate, not a bank-confirmed valuation.`;
+
+    case "projectLeverage":
+      return `Around R${pct(value, 0)} of every R100 of the entire project cost (purchase price, transfer/bond costs, sourcing fee, and Furniture, Setup & Renovation) is financed with debt.`;
 
     case "operatingExpenseRatio":
       return `About R${pct(value, 0)} of every R100 of gross revenue is currently being used by operating expenses, before debt repayments.`;

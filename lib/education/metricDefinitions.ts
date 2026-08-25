@@ -386,25 +386,97 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     ],
   }),
 
+  // @deprecated Phase 4.23.1 — kept only so a stale `getMetricDefinition("ltv")`
+  // call site still resolves to something during migration. Content is
+  // identical in substance to `purchaseLtv` below; new code must use that
+  // key. See AssetVerdict_Phase4.23.1_Leverage_Metrics_Implementation.md.
   ltv: def({
     key: "ltv",
-    name: "Loan-to-Value",
+    name: "Purchase LTV",
     shortName: "LTV",
     category: "debt",
     perspective: "financing",
     simpleExplanation: "How much of the property's purchase price is funded by debt versus your own cash.",
-    whyItMatters: "Higher LTV means more leverage — bigger potential swings in your equity return (up or down), and bigger exposure if the deal or the market turns.",
+    whyItMatters: "Higher Purchase LTV means more leverage — bigger potential swings in your equity return (up or down), and bigger exposure if the deal or the market turns.",
     formulaLabel: "Total Loan Amount ÷ Purchase Price",
     formulaExplanation: "AssetVerdict divides your total borrowed amount by the purchase price.",
     preferredDirection: "lower",
     affectedBy: ["totalLoanAmount"],
     affects: ["depositRequired", "initialEquityInvestment", "dscr", "breakEvenRatio"],
-    relatedMetrics: ["dscr", "depositRequired"],
+    relatedMetrics: ["dscr", "depositRequired", "purchaseLtv"],
     investorQuestion: "How leveraged is this deal?",
     strategies: [
       "Put down a larger deposit to reduce the loan amount",
       "Refinance once the property has built equity",
     ],
+  }),
+
+  // Phase 4.23.1 — the authoritative, verdict-facing leverage metric. See
+  // AssetVerdict_Phase4.23_LTV_Leverage_Definition_Audit.md for why this
+  // was renamed from the ambiguous "Loan-to-Value"/"LTV" — the denominator
+  // has always been the agreed purchase price, never an independent
+  // valuation.
+  purchaseLtv: def({
+    key: "purchaseLtv",
+    name: "Purchase LTV",
+    shortName: "Purchase LTV",
+    category: "debt",
+    perspective: "financing",
+    simpleExplanation: "The percentage of the agreed purchase price being funded with debt.",
+    whyItMatters: "It shows how heavily financed the purchase itself is — bigger potential swings in your equity return (up or down), and bigger exposure if the deal or the market turns. This is the leverage metric AssetVerdict's Safety State and Overall Verdict are calibrated against.",
+    formulaLabel: "Total Loan Amount ÷ Purchase Price",
+    formulaExplanation: "AssetVerdict divides your total borrowed amount by the agreed purchase price.",
+    preferredDirection: "lower",
+    affectedBy: ["totalLoanAmount"],
+    affects: ["depositRequired", "initialEquityInvestment", "dscr", "breakEvenRatio"],
+    relatedMetrics: ["dscr", "depositRequired", "estimatedValueLtv", "projectLeverage"],
+    investorQuestion: "How much of what I'm agreeing to pay is financed with debt?",
+    strategies: [
+      "Put down a larger deposit to reduce the loan amount",
+      "Refinance once the property has built equity",
+    ],
+  }),
+
+  // Phase 4.23.1 — informational only. No verdict/Safety-State/negotiation
+  // authority, and deliberately no calibrated threshold bands exist for it
+  // (see lib/calculations/thresholds.ts).
+  estimatedValueLtv: def({
+    key: "estimatedValueLtv",
+    name: "Estimated Value LTV",
+    shortName: "Est. Value LTV",
+    category: "debt",
+    perspective: "financing",
+    simpleExplanation: "The percentage of your estimated current property value represented by debt.",
+    whyItMatters: "It shows how much equity cushion may exist relative to your own estimate of what the property is worth today.",
+    formulaLabel: "Total Loan Amount ÷ Estimated Current Market Value",
+    formulaExplanation: "AssetVerdict divides your total borrowed amount by the Estimated Current Market Value you entered on the Acquisition tab.",
+    preferredDirection: "lower",
+    affectedBy: ["totalLoanAmount"],
+    affects: [],
+    relatedMetrics: ["purchaseLtv", "projectLeverage"],
+    investorQuestion: "How much debt exists relative to what the property is actually worth today?",
+    commonMistake: "Based on your own estimated current market value — it is NOT a bank-confirmed or formally verified valuation, and AssetVerdict does not classify or judge this figure (no Strong/Caution/Weak band exists for it).",
+    strategies: [],
+  }),
+
+  // Phase 4.23.1 — informational only. No verdict authority, no calibrated
+  // thresholds.
+  projectLeverage: def({
+    key: "projectLeverage",
+    name: "Project Leverage",
+    shortName: "Project Leverage",
+    category: "debt",
+    perspective: "financing",
+    simpleExplanation: "The percentage of the entire project cost funded with debt.",
+    whyItMatters: "It shows leverage after including costs beyond the purchase price itself — transfer/bond costs, sourcing fees, and Furniture, Setup & Renovation.",
+    formulaLabel: "Total Loan Amount ÷ Total Investment",
+    formulaExplanation: "AssetVerdict divides your total borrowed amount by Total Investment (Purchase Price + Transfer/Bond Costs + Sourcing Fee + Furniture, Setup & Renovation Cost Used).",
+    preferredDirection: "lower",
+    affectedBy: ["totalLoanAmount", "totalInvestment"],
+    affects: [],
+    relatedMetrics: ["purchaseLtv", "estimatedValueLtv", "totalInvestment"],
+    investorQuestion: "How much of the whole project — not just the purchase — is debt-funded?",
+    strategies: [],
   }),
 
   // ---------------------------------------------------------------------

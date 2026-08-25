@@ -144,14 +144,40 @@ export function getMetricBreakdown({
         resultFormat: "multiple",
       };
 
+    // @deprecated Phase 4.23.1 — kept for a stale metricKey="ltv" caller;
+    // identical in substance to "purchaseLtv" below. New code should pass
+    // "purchaseLtv".
     case "ltv":
+    case "purchaseLtv":
       return {
         formula: "Total Loan Amount ÷ Purchase Price",
         lines: [
           line("Total Loan Amount", metrics.totalLoanAmount, "currency"),
           line("Purchase Price", dealSummary.purchasePrice ?? 0, "currency"),
         ],
-        result: metrics.ltv,
+        result: metrics.purchaseLtv,
+        resultFormat: "percent",
+      };
+
+    case "estimatedValueLtv":
+      return {
+        formula: "Total Loan Amount ÷ Estimated Current Market Value",
+        lines: [
+          line("Total Loan Amount", metrics.totalLoanAmount, "currency"),
+          line("Estimated Current Market Value", dealSummary.marketValue ?? 0, "currency"),
+        ],
+        result: metrics.estimatedValueLtv,
+        resultFormat: "percent",
+      };
+
+    case "projectLeverage":
+      return {
+        formula: "Total Loan Amount ÷ Total Investment",
+        lines: [
+          line("Total Loan Amount", metrics.totalLoanAmount, "currency"),
+          line("Total Investment", metrics.totalInvestment, "currency"),
+        ],
+        result: metrics.projectLeverage,
         resultFormat: "percent",
       };
 

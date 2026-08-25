@@ -124,11 +124,31 @@ const COMMERCIAL_DEFINITIONS: DefinitionSet = {
       rationale: "How many times NOI covers annual debt service — a well-established debt-coverage safety concept. The specific 1.25x/1.0x cutoffs are AssetVerdict's own reference values, not sourced to a named lender.",
     }),
   },
+  // Deprecated alias definition — kept byte-identical to `purchaseLtv` below
+  // so any surviving classifyMetricForDeal("ltv", ...) call site classifies
+  // exactly as before (Phase 4.23.1). New code should use "purchaseLtv".
   ltv: {
     metricKey: "ltv",
     ...cutoff("financial_safety", "lower", 60, 75, {
       evidenceLevel: "internal",
       rationale: "Describes leverage risk in the capital structure, not overall deal quality — a lower LTV is lower risk, not automatically a better investment. Band values are AssetVerdict's own reference, undocumented externally.",
+    }),
+  },
+  // Phase 4.23.1 — the authoritative, verdict-facing leverage metric,
+  // renamed from "ltv" for accuracy (Purchase LTV = debt / purchase
+  // price). Thresholds/rationale UNCHANGED from the legacy "ltv" entry
+  // above — this phase's acceptance rule is that verdict behaviour must
+  // not change. Estimated Value LTV and Project Leverage (Phase 4.23.1's
+  // two NEW, informational-only metrics) deliberately have NO entry in
+  // this file at all — see thresholds.ts's classifyMetricForStrategy,
+  // which returns "unclassified" (never a colour) for any metric key with
+  // no definition. Do not add bands for them without a dedicated
+  // calibration phase.
+  purchaseLtv: {
+    metricKey: "purchaseLtv",
+    ...cutoff("financial_safety", "lower", 60, 75, {
+      evidenceLevel: "internal",
+      rationale: "Describes leverage risk in the capital structure, not overall deal quality — a lower Purchase LTV is lower risk, not automatically a better investment. Band values are AssetVerdict's own reference, undocumented externally.",
     }),
   },
   breakEvenRatio: {

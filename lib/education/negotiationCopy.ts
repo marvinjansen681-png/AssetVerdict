@@ -98,16 +98,20 @@ export function describeNegotiationResult(result: NegotiationTargetResult, curre
 export function describeFixedLtvLimitation(result: NegotiationTargetResult): string | null {
   if (result.status !== "not_achievable_by_price") return null;
   if (!result.blockers.some((b) => b.code === "high_ltv")) return null;
-  return "Your Loan-to-Value ratio is part of this blocker. AssetVerdict preserves your original loan-to-price ratio when negotiating price, so a lower purchase price does not reduce your LTV percentage — see \"How negotiation pricing works\" below.";
+  return "Your Purchase LTV is part of this blocker. AssetVerdict preserves your original debt-to-purchase-price ratio when negotiating price, so a lower purchase price does not reduce your Purchase LTV percentage — see \"How negotiation pricing works\" below.";
 }
 
 /** Section 59 — the standing "what does this mean" explainer. */
 export const TARGET_PRICE_EXPLAINER =
   "AssetVerdict recalculates this deal at lower purchase prices and finds the highest price that still satisfies the selected financial condition. It does not predict whether a seller will accept that price.";
 
-/** Section 60 — the fixed-LTV financing assumption, always shown alongside any target price. */
+/** Section 60 — the fixed Purchase LTV financing assumption, always shown alongside any target price. */
+// Phase 4.23.1: terminology-only fix — "loan-to-price ratio (LTV)" renamed
+// to "Purchase LTV" throughout. The negotiation MATHEMATICS are unchanged:
+// financing still scales proportionally with the candidate purchase price,
+// so Purchase LTV still stays constant across every price tested.
 export const FIXED_LTV_ASSUMPTION_EXPLAINER =
-  "For negotiation analysis, AssetVerdict currently assumes your financing scales with the purchase price so your original loan-to-price ratio (LTV) stays unchanged. Interest rates and loan terms stay the same. This means a lower purchase price reduces your Rand loan amount and debt service, but does NOT reduce your LTV percentage itself.";
+  "For negotiation analysis, AssetVerdict currently assumes your financing scales with the purchase price so your original debt-to-purchase-price ratio (Purchase LTV) stays unchanged. Interest rates and loan terms stay the same. This means a lower purchase price reduces your Rand loan amount and debt service, but does NOT reduce your Purchase LTV percentage itself.";
 
 /** Section 56 — "already meets" framing, distinct from a R0 target. */
 export function describeAlreadyMeets(objective: NegotiationObjective, currentPrice: number, currency = "R"): string {
