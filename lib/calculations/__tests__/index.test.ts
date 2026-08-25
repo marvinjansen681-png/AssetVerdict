@@ -40,6 +40,7 @@ import {
   calcOperatingCostsMonthly,
   calcExitSummary,
   calcStudentCapacity,
+  calcProjectedPropertyValue,
   isFiniteNumber,
   type DealInputs,
 } from "../index";
@@ -705,6 +706,26 @@ describe("calcPaybackPeriod", () => {
 // Remaining debt at sale / terminal value
 // ---------------------------------------------------------------------------
 
+// Phase 4.21 — extracted from calc20YearProjection's own propertyValue
+// formula so the Acquisition tab's "Sale Price at Exit" live preview can
+// reuse the exact same compounding calc, never a re-derived Math.pow.
+describe("calcProjectedPropertyValue", () => {
+  it("matches calc20YearProjection's own propertyValue for the same year", () => {
+    const inputs = { ...leveredSampleInputs, capitalGrowthRate: 4 };
+    const projection = calc20YearProjection(inputs);
+    for (const year of [1, 5, 12, 20]) {
+      expect(calcProjectedPropertyValue(inputs.marketValue, inputs.capitalGrowthRate, year)).toBeCloseTo(
+        projection[year - 1].propertyValue,
+        6
+      );
+    }
+  });
+
+  it("year 0 returns marketValue unchanged", () => {
+    expect(calcProjectedPropertyValue(1_000_000, 5, 0)).toBe(1_000_000);
+  });
+});
+
 describe("calcTotalRemainingLoanBalance and its effect on Equity IRR/NPV", () => {
   it("amortises down over time and reaches 0 at the loan term", () => {
     const balanceYear1 = calcTotalRemainingLoanBalance(leveredSampleInputs, 1);
@@ -986,11 +1007,15 @@ describe("calcExitSummary", () => {
     expect(summary.isPlannedSale).toBe(false);
   });
 
-  it("the three decomposed components net to exactly terminalEquityValue", () => {
-    const inputs = { ...leveredSampleInputs, wantToSell: true, saleYear: 7 };
+  it("the four decomposed components net to exactly terminalEquityValue (Phase 4.21 — now includes sellingCostsAtExit)", () => {
+    const inputs = { ...leveredSampleInputs, agentCommission: 5, wantToSell: true, saleYear: 7 };
     const summary = calcExitSummary(inputs);
+    expect(summary.sellingCostsAtExit).toBeGreaterThan(0);
     expect(
-      summary.projectedPropertyValueAtExit - summary.remainingDebtAtExit - summary.capitalGainsTaxAtExit
+      summary.projectedPropertyValueAtExit -
+        summary.sellingCostsAtExit -
+        summary.remainingDebtAtExit -
+        summary.capitalGainsTaxAtExit
     ).toBeCloseTo(summary.terminalEquityValue, 4);
   });
 
@@ -1055,12 +1080,82 @@ describe("calcExitSummary", () => {
     expect(summary.capitalGainsTaxAtExit).toBeGreaterThan(oldMarketValueBasedGain);
   });
 
-  it("exit reconciliation still holds exactly with the new base cost: propertyValue - debt - CGT = terminalEquityValue", () => {
+  it("exit reconciliation still holds exactly with the new base cost: propertyValue - sellingCosts - debt - CGT = terminalEquityValue", () => {
     const inputs: DealInputs = { ...leveredSampleInputs, purchasePrice: 1_000_000, marketValue: 1_300_000, wantToSell: true, saleYear: 7 };
     const summary = calcExitSummary(inputs);
     expect(
+      summary.projectedPropertyValueAtExit -
+        summary.sellingCostsAtExit -
+        summary.remainingDebtAtExit -
+        summary.capitalGainsTaxAtExit
+    ).toBeCloseTo(summary.terminalEquityValue, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.21 — Defect 3: rental exit terminal value previously ignored the
+// deal's own estate-agent commission entirely (agentCommission, entered on
+// the Acquisition tab under Selling Costs), overstating terminal equity,
+// Equity IRR, Equity NPV, and Exit Analysis. sellingCostsAtExit now nets
+// this out of both actual cash proceeds AND the simplified CGT proceeds —
+// see calcTerminalValueBreakdown's own doc comment for the exact SARS-based
+// convention adopted.
+// ---------------------------------------------------------------------------
+describe("Defect 3 — rental exit selling costs at exit (Phase 4.21)", () => {
+  it("0% agent commission preserves the pre-fix result exactly (sellingCostsAtExit is 0)", () => {
+    const inputs = { ...leveredSampleInputs, agentCommission: 0, wantToSell: true, saleYear: 7 };
+    const summary = calcExitSummary(inputs);
+    expect(summary.sellingCostsAtExit).toBe(0);
+    expect(
       summary.projectedPropertyValueAtExit - summary.remainingDebtAtExit - summary.capitalGainsTaxAtExit
     ).toBeCloseTo(summary.terminalEquityValue, 4);
+  });
+
+  it("positive commission strictly lowers terminal cash proceeds, all else equal", () => {
+    const base = { ...leveredSampleInputs, agentCommission: 0, wantToSell: true, saleYear: 7 };
+    const withCommission = { ...base, agentCommission: 6 };
+    const baseSummary = calcExitSummary(base);
+    const commissionSummary = calcExitSummary(withCommission);
+    expect(commissionSummary.terminalEquityValue).toBeLessThan(baseSummary.terminalEquityValue);
+    expect(commissionSummary.sellingCostsAtExit).toBeCloseTo(
+      commissionSummary.projectedPropertyValueAtExit * 0.06,
+      2
+    );
+  });
+
+  it("positive commission strictly lowers Equity IRR and Equity NPV, all else equal", () => {
+    const base = { ...leveredSampleInputs, agentCommission: 0, wantToSell: true, saleYear: 7 };
+    const withCommission = { ...base, agentCommission: 6 };
+    expect(calcIRR(withCommission)).toBeLessThan(calcIRR(base));
+    expect(calcNPV(withCommission)).toBeLessThan(calcNPV(base));
+  });
+
+  it("ExitSummary.terminalEquityValue reconciles exactly to the terminal value baked into buildEquityCashflows (IRR/NPV)", () => {
+    const inputs = { ...leveredSampleInputs, agentCommission: 6, wantToSell: true, saleYear: 7 };
+    const summary = calcExitSummary(inputs);
+    const projection = calc20YearProjection(inputs);
+    const engineTerminalValue = calcTerminalValue(inputs, projection, 7);
+    expect(summary.terminalEquityValue).toBeCloseTo(engineTerminalValue, 4);
+
+    const cashflows = buildEquityCashflows(inputs);
+    const operatingCashflowAtExit = projection[6].cashflowForPeriod;
+    expect(cashflows[7]).toBeCloseTo(operatingCashflowAtExit + summary.terminalEquityValue, 4);
+  });
+
+  it("sellingCostsAtExit reduces the taxable capital gain too (proceeds-net-of-selling-costs convention)", () => {
+    const inputs: DealInputs = { ...leveredSampleInputs, purchasePrice: 1_000_000, marketValue: 1_300_000, agentCommission: 6, wantToSell: true, saleYear: 7 };
+    const noCommission = { ...inputs, agentCommission: 0 };
+    const summary = calcExitSummary(inputs);
+    const summaryNoCommission = calcExitSummary(noCommission);
+    // Same property value/debt, but a smaller taxable gain once selling
+    // costs are netted out of proceeds — so CGT itself must be lower too.
+    expect(summary.capitalGainsTaxAtExit).toBeLessThan(summaryNoCommission.capitalGainsTaxAtExit);
+    const expectedGain = Math.max(
+      0,
+      (summary.projectedPropertyValueAtExit - summary.sellingCostsAtExit - summary.cgtBaseCost) *
+        (inputs.capitalGainsTaxRate / 100)
+    );
+    expect(summary.capitalGainsTaxAtExit).toBeCloseTo(expectedGain, 4);
   });
 });
 
@@ -1333,5 +1428,165 @@ describe("calcStudentCapacity", () => {
       sharingBedsPerRoom: 2,
     };
     expect(calcBillsIncludedUnitCount(inputs)).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.21 — Defect 5: calc20YearProjection previously mixed
+// property-level and equity-level returns — cumulativeCashflow started at
+// -calcTotalInvestment(inputs) (full, unlevered project cost) while
+// cashflowForPeriod is already an equity-level figure (after debt service
+// and tax). yearlyROI divided that levered cashflow by the same unlevered
+// total. Both now use calcInitialEquityInvestment(inputs) — the same
+// equity-level basis Cash-on-Cash Return, Payback Period, IRR, and NPV
+// already use.
+// ---------------------------------------------------------------------------
+describe("Defect 5 — calc20YearProjection uses equity-level basis, not total investment (Phase 4.21)", () => {
+  it("cumulativeCashflow starts at -calcInitialEquityInvestment(inputs), not -calcTotalInvestment(inputs)", () => {
+    const inputs = { ...leveredSampleInputs };
+    const projection = calc20YearProjection(inputs);
+    const equity = calcInitialEquityInvestment(inputs);
+    expect(equity).not.toBeCloseTo(calcTotalInvestment(inputs), 0); // fixture is genuinely levered
+    expect(projection[0].cumulativeCashflow).toBeCloseTo(-equity + projection[0].cashflowForPeriod, 4);
+  });
+
+  it("yearlyROI = cashflowForPeriod / initialEquityInvestment (Annual Cash-on-Cash Return), not / totalInvestment", () => {
+    const inputs = { ...leveredSampleInputs };
+    const projection = calc20YearProjection(inputs);
+    const equity = calcInitialEquityInvestment(inputs);
+    const year1 = projection[0];
+    expect(year1.yearlyROI).not.toBeNull();
+    expect(year1.yearlyROI as number).toBeCloseTo((year1.cashflowForPeriod / equity) * 100, 4);
+    // Proves the old (removed) denominator would have given a materially
+    // different, wrong answer for this genuinely-levered fixture.
+    const oldWrongROI = (year1.cashflowForPeriod / calcTotalInvestment(inputs)) * 100;
+    expect(year1.yearlyROI as number).not.toBeCloseTo(oldWrongROI, 4);
+  });
+
+  it("yearlyROI is null (never a fake 0%) when initial equity is zero or negative", () => {
+    const fullyFinanced: DealInputs = {
+      ...leveredSampleInputs,
+      financeSources: [{ loanAmount: calcTotalInvestment(leveredSampleInputs), interestRate: 12, termYears: 20 }],
+    };
+    expect(calcInitialEquityInvestment(fullyFinanced)).toBeLessThanOrEqual(0);
+    const projection = calc20YearProjection(fullyFinanced);
+    for (const year of projection) {
+      expect(year.yearlyROI).toBeNull();
+    }
+  });
+
+  it("Year 1 yearlyROI matches calcNetYieldPreTax's own equity-level ratio in spirit (same numerator/denominator pairing, pre-tax vs after-tax cashflow aside)", () => {
+    const inputs = { ...leveredSampleInputs };
+    const projection = calc20YearProjection(inputs);
+    const equity = calcInitialEquityInvestment(inputs);
+    // cashflowForPeriod is after-tax; calcCashflowAnnual(inputs, false) is
+    // the same after-tax annual figure calcNetYieldPostTax divides by
+    // equity — Year 1 (no growth escalation yet) must match exactly.
+    const afterTaxAnnual = calcCashflowAnnual(inputs, false);
+    expect(projection[0].cashflowForPeriod).toBeCloseTo(afterTaxAnnual, 0);
+    expect(projection[0].yearlyROI as number).toBeCloseTo((afterTaxAnnual / equity) * 100, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4.21 — Defect 6: the 20-year projection previously grew the ENTIRE
+// provisions total (management + maintenance + bad debts, whatever mix of %
+// and fixed-Rand fields produced it) at the rental growth rate. A fixed-Rand
+// provision (e.g. a flat management fee amount) has no economic link to
+// rent — it should grow with cost inflation instead. Revenue-linked
+// provisions (percentage fees, bad debts) correctly grow with that year's
+// own projected revenue.
+// ---------------------------------------------------------------------------
+describe("Defect 6 — projection provisions grow on the correct per-component basis (Phase 4.21)", () => {
+  it("a FIXED-RAND management fee grows with cost inflation (4%), not rental growth (10%)", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      rentalGrowthRate: 10,
+      costInflation: 4,
+      managementFeeMode: "amount",
+      managementFeeValue: 1_000, // flat R1,000/month
+      maintenanceCostMode: "percent",
+      maintenanceCostValue: 0, // isolate management only
+      badDebtsPct: 0,
+    };
+    const projection = calc20YearProjection(inputs);
+
+    const year1Expected = 1_000 * 12; // costGrowthFactor(year 1) = 1
+    const year2Expected = 1_000 * 12 * 1.04; // costGrowthFactor(year 2) = 1.04
+    const year2WrongIfRentGrown = 1_000 * 12 * 1.1; // the old (removed) behaviour
+
+    expect(projection[0].provisions).toBeCloseTo(year1Expected, 2);
+    expect(projection[1].provisions).toBeCloseTo(year2Expected, 2);
+    expect(projection[1].provisions).not.toBeCloseTo(year2WrongIfRentGrown, 2);
+  });
+
+  it("a PERCENTAGE maintenance fee grows with that year's own projected revenue (rental growth), not cost inflation", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      rentalGrowthRate: 10,
+      costInflation: 4,
+      managementFeeMode: "percent",
+      managementFeeValue: 0, // isolate maintenance only
+      maintenanceCostMode: "percent",
+      maintenanceCostValue: 5,
+      badDebtsPct: 0,
+    };
+    const projection = calc20YearProjection(inputs);
+
+    const year1Expected = projection[0].grossRevenue * 0.05;
+    const year2Expected = projection[1].grossRevenue * 0.05;
+    const year2WrongIfCostInflated = projection[0].provisions * 1.04;
+
+    expect(projection[0].provisions).toBeCloseTo(year1Expected, 2);
+    expect(projection[1].provisions).toBeCloseTo(year2Expected, 2);
+    // Revenue growth (10%) != cost inflation (4%), so these must differ.
+    expect(projection[1].provisions).not.toBeCloseTo(year2WrongIfCostInflated, 2);
+  });
+
+  it("bad debts (always % of revenue) tracks projected revenue exactly, every year", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      rentalGrowthRate: 10,
+      costInflation: 4,
+      managementFeeMode: "percent",
+      managementFeeValue: 0,
+      maintenanceCostMode: "percent",
+      maintenanceCostValue: 0,
+      badDebtsPct: 3,
+    };
+    const projection = calc20YearProjection(inputs);
+    for (const year of [0, 1, 5, 19]) {
+      expect(projection[year].provisions).toBeCloseTo(projection[year].grossRevenue * 0.03, 2);
+    }
+  });
+
+  it("a mixed fixed-Rand management + percentage maintenance case: each component compounds on its own assumption and the total is their sum", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      rentalGrowthRate: 10,
+      costInflation: 4,
+      managementFeeMode: "amount",
+      managementFeeValue: 1_000,
+      maintenanceCostMode: "percent",
+      maintenanceCostValue: 5,
+      badDebtsPct: 0,
+    };
+    const projection = calc20YearProjection(inputs);
+    const year3ManagementExpected = 1_000 * 12 * Math.pow(1.04, 2);
+    const year3MaintenanceExpected = projection[2].grossRevenue * 0.05;
+    expect(projection[2].provisions).toBeCloseTo(year3ManagementExpected + year3MaintenanceExpected, 2);
+  });
+
+  it("Year 1 (no escalation yet) matches calcProvisionsMonthly(inputs).total x 12 exactly, for any % / fixed-Rand mix", () => {
+    const inputs: DealInputs = {
+      ...leveredSampleInputs,
+      managementFeeMode: "amount",
+      managementFeeValue: 1_500,
+      maintenanceCostMode: "percent",
+      maintenanceCostValue: 4,
+      badDebtsPct: 2,
+    };
+    const projection = calc20YearProjection(inputs);
+    expect(projection[0].provisions).toBeCloseTo(calcAllMetrics(inputs).provisionsMonthly.total * 12, 2);
   });
 });

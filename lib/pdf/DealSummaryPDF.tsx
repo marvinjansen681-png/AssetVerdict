@@ -838,7 +838,7 @@ export default function DealSummaryPDF({
                 <Text style={styles.tableCellSmall}>Costs</Text>
                 <Text style={styles.tableCellSmall}>Cashflow</Text>
                 <Text style={styles.tableCellSmall}>Cum. Cashflow</Text>
-                <Text style={styles.tableCellSmall}>ROI%</Text>
+                <Text style={styles.tableCellSmall}>Cash-on-Cash %</Text>
               </View>
               {scenarios[s].projection
                 .filter((p: YearlyProjection) => highlightYears.includes(p.year))
@@ -849,7 +849,7 @@ export default function DealSummaryPDF({
                     <Text style={styles.tableCellSmall}>{fmt(p.operatingCosts + p.financeCost, currencySymbol)}</Text>
                     <Text style={styles.tableCellSmall}>{fmt(p.cashflowForPeriod, currencySymbol)}</Text>
                     <Text style={styles.tableCellSmall}>{fmt(p.cumulativeCashflow, currencySymbol)}</Text>
-                    <Text style={styles.tableCellSmall}>{p.yearlyROI.toFixed(1)}%</Text>
+                    <Text style={styles.tableCellSmall}>{p.yearlyROI === null ? "N/A" : `${p.yearlyROI.toFixed(1)}%`}</Text>
                   </View>
                 ))}
             </View>

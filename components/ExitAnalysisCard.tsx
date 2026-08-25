@@ -86,6 +86,12 @@ export default function ExitAnalysisCard({
               </span>
             </div>
             <div className="flex justify-between">
+              <span className="text-av-slate">Less Selling Costs (Agent Commission)</span>
+              <span className="font-mono text-av-navy">
+                -{fmtCurrency(exitSummary.sellingCostsAtExit)}
+              </span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-av-slate">Less Remaining Debt</span>
               <span className="font-mono text-av-navy">
                 -{fmtCurrency(exitSummary.remainingDebtAtExit)}
@@ -106,13 +112,14 @@ export default function ExitAnalysisCard({
           </div>
           <p className="text-xs font-body text-av-slate/80 mt-3">
             This is the same terminal value your Equity IRR and Equity NPV are calculated from.
-            Property value at exit isn&apos;t what you&apos;d actually walk away with — remaining
-            debt and capital gains tax come off first.
+            Property value at exit isn&apos;t what you&apos;d actually walk away with — selling
+            costs, remaining debt, and capital gains tax come off first.
           </p>
           <p className="text-xs font-body text-av-slate/80 mt-2">
-            AssetVerdict uses a simplified CGT estimate based on your purchase price of{" "}
-            {fmtCurrency(exitSummary.cgtBaseCost)} and your Effective CGT Rate. Actual base cost may
-            include qualifying acquisition, disposal and improvement costs not separately modelled
+            AssetVerdict uses a simplified CGT estimate: your estimated sale proceeds (property
+            value less selling costs) against a base cost of your purchase price of{" "}
+            {fmtCurrency(exitSummary.cgtBaseCost)}, at your Effective CGT Rate. Actual base cost may
+            include other qualifying acquisition and improvement costs not separately modelled
             here — this is not a calculation of actual tax liability.
           </p>
         </div>

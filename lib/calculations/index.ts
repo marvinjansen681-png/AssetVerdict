@@ -158,9 +158,30 @@ export interface YearlyProjection {
   noi: number;
   taxAmount: number;
   cashflowForPeriod: number;
+  /**
+   * Phase 4.21 (Defect 5): an INVESTOR/EQUITY-level running total — starts
+   * at -calcInitialEquityInvestment(inputs), not -calcTotalInvestment(inputs).
+   * cashflowForPeriod is already after debt service and tax (a levered,
+   * equity-level figure — see its own field position in buildEquityCashflows),
+   * so the cumulative total it feeds must start from the same equity basis,
+   * not the full project cost. Mixing an equity-level numerator with a
+   * project-cost-level starting balance was exactly the class of bug already
+   * fixed for Cash-on-Cash Return, Payback Period, IRR, and NPV (see
+   * calcInitialEquityInvestment's own doc comment) — this was the one place
+   * it survived.
+   */
   cumulativeCashflow: number;
   propertyValue: number;
-  yearlyROI: number;
+  /**
+   * Phase 4.21 (Defect 5) — renamed in effect from a mixed-basis "ROI" to an
+   * "Annual Cash-on-Cash Return": cashflowForPeriod (equity-level) divided by
+   * calcInitialEquityInvestment(inputs) (equity-level), the same pairing
+   * calcNetYieldPreTax/calcNetYieldPostTax already use for Year 1. `null` —
+   * never a fake 0% — when initial equity is zero or negative (fully or
+   * over-financed deal), where a cash-on-cash return has no meaningful
+   * denominator. See UI/PDF labels: "Annual Cash-on-Cash Return", not "ROI".
+   */
+  yearlyROI: number | null;
   remainingDebt: number;
 }
 
@@ -837,6 +858,67 @@ export function calcPaybackPeriod(inputs: DealInputs): number {
 const PROJECTION_YEARS = 20;
 
 /**
+ * Year-specific provisions for the 20-year projection (Phase 4.21 — Defect
+ * 6). Previously the projection took the CURRENT total provisions (management
+ * + maintenance + bad debts, whatever mix of % and fixed-Rand fields produced
+ * it) and applied a single blended rentGrowthFactor to the whole total — this
+ * silently grew fixed-Rand provisions (e.g. a flat management fee amount) at
+ * the rental growth rate, which has no economic basis; a flat Rand fee has
+ * nothing to do with rent.
+ *
+ * Each component now grows on the assumption that actually applies to it:
+ *   - Revenue-linked components (a percentage management fee, the STR
+ *     platform fee, percentage maintenance, and bad debts — which is always
+ *     a % of gross revenue, with no fixed-Rand mode) scale with THAT YEAR'S
+ *     own projected gross revenue (`grossRevenueAnnualForYear`, already
+ *     reflecting rental growth) — recomputed fresh each year, not derived by
+ *     multiplying a Year-1 Rand figure by a growth factor.
+ *   - Fixed-Rand components (a flat management fee amount, a flat
+ *     maintenance amount) grow with cost inflation (`costGrowthFactor`)
+ *     instead, exactly like the projection's other fixed operating costs
+ *     (utilities, rates/insurance/other).
+ *
+ * At year 1 (rentGrowthFactor === costGrowthFactor === 1), this reproduces
+ * calcProvisionsMonthly(inputs).total * 12 exactly — see
+ * index.test.ts's own reconciliation test.
+ */
+function calcProvisionsAnnualForYear(
+  inputs: DealInputs,
+  grossRevenueAnnualForYear: number,
+  costGrowthFactor: number
+): Provisions {
+  const management =
+    inputs.strategy === "str"
+      ? grossRevenueAnnualForYear * (inputs.platformFeesPct / 100)
+      : inputs.managementFeeMode === "percent"
+        ? grossRevenueAnnualForYear * (inputs.managementFeeValue / 100)
+        : inputs.managementFeeValue * 12 * costGrowthFactor;
+
+  const maintenance =
+    inputs.maintenanceCostMode === "percent"
+      ? grossRevenueAnnualForYear * (inputs.maintenanceCostValue / 100)
+      : inputs.maintenanceCostValue * 12 * costGrowthFactor;
+
+  // Bad debts has no fixed-Rand mode (DealInputs.badDebtsPct is always a %
+  // of gross revenue — see calcBadDebtsMonthly) — always revenue-linked.
+  const badDebts = grossRevenueAnnualForYear * (inputs.badDebtsPct / 100);
+
+  return { management, maintenance, badDebts, total: management + maintenance + badDebts };
+}
+
+/**
+ * Projected property value after `year` years of capital growth from
+ * `marketValue` — the exact compounding formula calc20YearProjection uses
+ * for its own `propertyValue` field, extracted (Phase 4.21) so a caller that
+ * only needs this one figure (e.g. the Acquisition tab's "Sale Price at
+ * Exit" live preview) can reuse it directly instead of re-deriving the
+ * Math.pow compounding itself or running the full 20-year loop.
+ */
+export function calcProjectedPropertyValue(marketValue: number, capitalGrowthRatePct: number, year: number): number {
+  return marketValue * Math.pow(1 + capitalGrowthRatePct / 100, year);
+}
+
+/**
  * 20-year cashflow projection with rent/cost/capital growth escalations.
  * Finance repayments are held fixed at their monthly amount while a loan is
  * outstanding (loan terms/rates don't change), and stop entirely once a
@@ -844,18 +926,29 @@ const PROJECTION_YEARS = 20;
  * calcAnnualDebtServiceForYear(), which stays exactly consistent with the
  * remaining-balance amortisation below so `financeCost` and `remainingDebt`
  * can never disagree about whether a loan is still being paid off.
+ *
+ * Phase 4.21 (Defect 5): `cashflowForPeriod` is already an INVESTOR/EQUITY-
+ * level cashflow — it has debt service and tax already subtracted, exactly
+ * like buildEquityCashflows' own per-year entries (this function's rows ARE
+ * that stream's source, sliced to the hold period — see buildEquityCashflows).
+ * `cumulativeCashflow` and `yearlyROI` must therefore be read on that SAME
+ * equity basis, not against calcTotalInvestment (the full, unlevered project
+ * cost) — mixing a levered numerator with an unlevered denominator was
+ * exactly the class of bug already fixed for Cash-on-Cash Return, Payback
+ * Period, IRR, and NPV (see calcInitialEquityInvestment's doc comment); this
+ * was the one place in the engine it had survived. `yearlyROI` is `null`,
+ * never a fake 0%, when initial equity is zero or negative.
  */
 export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
-  const totalInvestment = calcTotalInvestment(inputs);
+  const initialEquityInvestment = calcInitialEquityInvestment(inputs);
   const baseGrossRevenue = calcGrossRevenueAnnual(inputs);
   const baseOperatingCostsExclFinance =
     (calcOperatingCostsMonthly(inputs).utilities +
       calcOperatingCostsMonthly(inputs).ratesInsuranceOther) *
     12;
-  const baseProvisions = calcProvisionsMonthly(inputs).total * 12;
 
   const projections: YearlyProjection[] = [];
-  let cumulativeCashflow = -totalInvestment;
+  let cumulativeCashflow = -initialEquityInvestment;
 
   for (let year = 1; year <= PROJECTION_YEARS; year++) {
     const rentGrowthFactor = Math.pow(1 + inputs.rentalGrowthRate / 100, year - 1);
@@ -864,7 +957,7 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
 
     const grossRevenue = baseGrossRevenue * rentGrowthFactor;
     const operatingCostsExclFinance = baseOperatingCostsExclFinance * costGrowthFactor;
-    const provisions = baseProvisions * rentGrowthFactor;
+    const provisions = calcProvisionsAnnualForYear(inputs, grossRevenue, costGrowthFactor).total;
     const noi = grossRevenue - operatingCostsExclFinance - provisions;
     const debtBreakdown = calcDebtServiceBreakdownForYear(inputs, year);
     const financeCostAnnual = debtBreakdown.debtService;
@@ -883,9 +976,7 @@ export function calc20YearProjection(inputs: DealInputs): YearlyProjection[] {
     cumulativeCashflow += cashflowForPeriod;
 
     const propertyValue = inputs.marketValue * capitalGrowthFactor;
-    const yearlyROI = totalInvestment
-      ? (cashflowForPeriod / totalInvestment) * 100
-      : 0;
+    const yearlyROI = initialEquityInvestment > 0 ? (cashflowForPeriod / initialEquityInvestment) * 100 : null;
     const remainingDebt = debtBreakdown.remainingBalance;
 
     projections.push({
@@ -1014,6 +1105,17 @@ function calcTerminalValueBreakdown(
   holdYear: number
 ): {
   projectedPropertyValueAtExit: number;
+  /**
+   * Phase 4.21 (Defect 3): estate-agent commission due on the eventual sale
+   * (the same `agentCommission` % entered on the Acquisition tab under
+   * Selling Costs, applied to the projected exit-year property value) — a
+   * real disposal cash cost that was previously omitted entirely from
+   * rental terminal value, overstating terminal equity, Equity IRR, Equity
+   * NPV, and Exit Analysis. Fix & Flip already deducts this exact cost (see
+   * calcFlipProfit's `agentFee` / fixFlip.ts's `sellingCosts`) — this closes
+   * the equivalent gap on the rental side.
+   */
+  sellingCostsAtExit: number;
   remainingDebtAtExit: number;
   cgtBaseCost: number;
   capitalGainsTaxAtExit: number;
@@ -1021,6 +1123,8 @@ function calcTerminalValueBreakdown(
 } {
   const remainingDebtAtExit = calcTotalRemainingLoanBalance(inputs, holdYear);
   const projectedPropertyValueAtExit = projection[holdYear - 1].propertyValue;
+  const sellingCostsAtExit = projectedPropertyValueAtExit * (inputs.agentCommission / 100);
+
   // Phase 4.10: CGT base cost is the deal's own purchase price — SARS base
   // cost for an ordinary arm's-length acquisition is the acquisition cost
   // (https://www.sars.gov.za/types-of-tax/capital-gains-tax/assets-subject-to-cgt/base-cost/),
@@ -1033,17 +1137,39 @@ function calcTerminalValueBreakdown(
   // concepts (financing costs, repairs vs. improvements) that don't all
   // qualify as CGT base cost, and AssetVerdict cannot currently tell which
   // portion would.
+  //
+  // Phase 4.21 (Defect 3): the taxable CAPITAL GAIN itself is now computed
+  // on PROCEEDS net of selling costs, not on the gross property value.
+  // Under the Eighth Schedule to the Income Tax Act, "proceeds" on disposal
+  // are the amount received LESS expenditure directly related to the
+  // disposal that would itself qualify as base-cost expenditure — and SARS
+  // explicitly includes "remuneration for the services of a surveyor,
+  // valuer, auctioneer, agent, accountant, broker, agent, consultant or
+  // legal advisor for the services in the disposal" in that base-cost
+  // category (https://www.sars.gov.za/types-of-tax/capital-gains-tax/assets-subject-to-cgt/base-cost/).
+  // Estate agent commission on the sale is exactly this kind of qualifying
+  // disposal cost — so it reduces the taxable gain, not just the cash the
+  // seller nets. This is the exact, deliberately simplified convention
+  // AssetVerdict adopts: proceedsForCGT = projectedPropertyValueAtExit -
+  // sellingCostsAtExit; gain = proceedsForCGT - cgtBaseCost. transferBondCost
+  // and renovationCost remain OUT of cgtBaseCost (unchanged from Phase
+  // 4.10) — those fields bundle costs (financing, repairs vs. improvements)
+  // that don't uniformly qualify, and AssetVerdict cannot currently tell
+  // which portion would.
   const cgtBaseCost = inputs.purchasePrice;
+  const proceedsForCGT = projectedPropertyValueAtExit - sellingCostsAtExit;
   const capitalGainsTaxAtExit = Math.max(
     0,
-    (projectedPropertyValueAtExit - cgtBaseCost) * (inputs.capitalGainsTaxRate / 100)
+    (proceedsForCGT - cgtBaseCost) * (inputs.capitalGainsTaxRate / 100)
   );
   return {
     projectedPropertyValueAtExit,
+    sellingCostsAtExit,
     remainingDebtAtExit,
     cgtBaseCost,
     capitalGainsTaxAtExit,
-    terminalEquityValue: projectedPropertyValueAtExit - remainingDebtAtExit - capitalGainsTaxAtExit,
+    terminalEquityValue:
+      projectedPropertyValueAtExit - sellingCostsAtExit - remainingDebtAtExit - capitalGainsTaxAtExit,
   };
 }
 
@@ -1083,9 +1209,12 @@ export interface ExitSummary {
   /** True when this hold period comes from the deal's own wantToSell/saleYear assumption, false when it's AssetVerdict's 20-year default analysis horizon. */
   isPlannedSale: boolean;
   projectedPropertyValueAtExit: number;
+  /** Phase 4.21 (Defect 3) — estate-agent commission on the eventual sale (projectedPropertyValueAtExit x agentCommission%). See calcTerminalValueBreakdown's own doc comment. */
+  sellingCostsAtExit: number;
   remainingDebtAtExit: number;
   /** The simplified CGT base cost actually used — the deal's own purchase price (Phase 4.10). Exposed so UI/education/Deal Coach can reference the exact number rather than re-deriving or guessing it. */
   cgtBaseCost: number;
+  /** Phase 4.21 (Defect 3): now computed on proceeds net of sellingCostsAtExit — see calcTerminalValueBreakdown's own doc comment for the SARS base-cost/proceeds rationale. */
   capitalGainsTaxAtExit: number;
   terminalEquityValue: number;
 }

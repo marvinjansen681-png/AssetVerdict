@@ -5,6 +5,8 @@ import { mutate as globalMutate } from "swr";
 import { useDeal } from "@/lib/DealContext";
 import { useToast } from "@/components/ui/Toast";
 import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
+import { calcTotalLoanAmount, calcTotalFinanceCostMonthly, calcDepositRequired } from "@/lib/calculations";
+import { buildPreviewInputs } from "@/lib/calculations/previewInputs";
 import SaveBar from "@/components/forms/SaveBar";
 import FinanceBlock from "@/components/forms/FinanceBlock";
 import Button from "@/components/ui/Button";
@@ -51,6 +53,10 @@ export default function FinanceTab() {
 
   const watchedSources = watch("financeSources");
 
+  // Live loan amount per row (percent-of-price LTV mode resolves against the
+  // deal's own purchase price) — the one place this resolution happens; every
+  // aggregate below is then read from the authoritative engine, not re-summed
+  // here (Phase 4.21).
   const computed = watchedSources.map((s) => {
     const loanAmount =
       s.ltvMode === "percent"
@@ -64,13 +70,16 @@ export default function FinanceTab() {
     return { loanAmount, repayment };
   });
 
-  const totalLoanAmount = computed.reduce((sum, c) => sum + c.loanAmount, 0);
-  const totalFinanceCost = computed.reduce((sum, c) => sum + c.repayment, 0);
-  const buyingCosts =
-    (deal.transferBondCost ?? 0) +
-    (deal.renovationCost ?? 0) +
-    (deal.sourcingFee ?? 0);
-  const depositRequired = purchasePrice + buyingCosts - totalLoanAmount;
+  const previewInputs = buildPreviewInputs(deal, {
+    financeSources: watchedSources.map((s, i) => ({
+      loanAmount: computed[i].loanAmount,
+      interestRate: Number(s.interestRate) || 0,
+      termYears: Number(s.termYears) || 15,
+    })),
+  });
+  const totalLoanAmount = calcTotalLoanAmount(previewInputs);
+  const totalFinanceCost = calcTotalFinanceCostMonthly(previewInputs);
+  const depositRequired = calcDepositRequired(previewInputs);
 
   async function onSubmit(data: FinanceFormValues) {
     const payload = data.financeSources.map((s, index) => {

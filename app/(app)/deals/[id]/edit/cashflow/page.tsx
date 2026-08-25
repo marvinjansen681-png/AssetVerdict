@@ -5,7 +5,16 @@ import { useForm } from "react-hook-form";
 import { mutate as globalMutate } from "swr";
 import { useDeal } from "@/lib/DealContext";
 import { useToast } from "@/components/ui/Toast";
-import { calcMonthlyRepayment } from "@/lib/calculations/amortisation";
+import {
+  calcRevenueMonthly,
+  calcEffectiveMonthlyRevenue,
+  calcProvisionsMonthly,
+  calcOperatingCostsMonthly,
+  calcTaxMonthly,
+  calcCashflowMonthly,
+  calcFlipProfit,
+} from "@/lib/calculations";
+import { buildPreviewInputs } from "@/lib/calculations/previewInputs";
 import SaveBar from "@/components/forms/SaveBar";
 import StrategyHint from "@/components/forms/StrategyHint";
 import MarketIntelligencePanel from "@/components/forms/MarketIntelligencePanel";
@@ -80,13 +89,6 @@ export default function CashflowTab() {
   // field — its effect (if any) is already embedded in Electricity from the old
   // behaviour, so this is not a confirmed R0 and shouldn't be presented as one.
   const legacyBillsUnrecorded = Boolean(cf?.billsIncluded) && (cf?.billsIncludedAmount === null || cf?.billsIncludedAmount === undefined);
-  // Recomputed rather than read from storage (Phase 4.11) so this preview
-  // can never show a stale repayment for a finance source saved before the
-  // server-authoritative write path shipped.
-  const financeCostMonthly = deal.financeSources.reduce(
-    (sum, f) => sum + calcMonthlyRepayment(f.loanAmount ?? 0, f.interestRate ?? 0, f.termYears ?? 0),
-    0
-  );
 
   const { register, watch, setValue, handleSubmit, formState, reset } =
     useForm<CashflowForm>({
@@ -157,87 +159,98 @@ export default function CashflowTab() {
       totalSharingBeds * (Number(v.sharingRoomRent) || 0)) *
     ((Number(v.occupancyRate) || 0) / 100);
 
-  // ---- Base revenue (mirrors lib/calculations/index.ts calcBaseMonthlyRevenue) ----
-  let baseMonthlyRevenue = 0;
-  if (mode === "nightly") {
-    baseMonthlyRevenue = ((Number(v.nightlyRate) || 0) * (Number(v.avgOccupiedNights) || 0)) / 12;
-  } else if (mode === "student") {
-    const studentAnnualRevenue =
-      nsfasSingleBeds * (Number(v.singleRoomRent) || 0) * nsfasMonths +
-      privateSingleBeds * (Number(v.singleRoomRent) || 0) * privateMonths +
-      nsfasSharingBeds * (Number(v.sharingRoomRent) || 0) * nsfasMonths +
-      privateSharingBeds * (Number(v.sharingRoomRent) || 0) * privateMonths;
-    baseMonthlyRevenue = (studentAnnualRevenue / 12) * ((Number(v.occupancyRate) || 0) / 100);
-  } else if (mode === "per_room") {
-    baseMonthlyRevenue =
-      (Number(v.pricePerRoom) || 0) * numUnits * ((Number(v.occupancyRate) || 0) / 100);
-  } else if (mode === "instalment") {
-    baseMonthlyRevenue = Number(v.instalmentAmount) || 0;
-  } else if (mode !== "flip") {
-    baseMonthlyRevenue = (Number(v.monthlyRent) || 0) * ((Number(v.occupancyRate) || 0) / 100);
-  }
+  // ---- Authoritative preview (Phase 4.21) ----
+  // Build a temporary DealInputs from the live, unsaved form values and run
+  // it through the SAME calculation engine every other surface uses — this
+  // component must never re-derive NOI, tax, cashflow, or Fix & Flip profit
+  // itself. See lib/calculations/previewInputs.ts. Every value rendered
+  // below is read straight off calcAllMetrics()'s own building blocks, so it
+  // is structurally guaranteed to reconcile with the Deal Summary/PDF/Deal
+  // Coach once this form is saved — see
+  // lib/calculations/__tests__/previewInputs.test.ts's parity tests.
+  const previewInputs = buildPreviewInputs(deal, {
+    monthlyRent: Number(v.monthlyRent) || 0,
+    occupancyRate: Number(v.occupancyRate) || 0,
+    additionalIncome: Number(v.additionalIncome) || 0,
+    recoveries: Number(v.recoveries) || 0,
+    managementFeeMode: v.managementFeeMode,
+    managementFeeValue: Number(v.managementFeeValue) || 0,
+    maintenanceCostMode: v.maintenanceCostMode,
+    maintenanceCostValue: Number(v.maintenanceCostValue) || 0,
+    levies: Number(v.levies) || 0,
+    ratesAndTaxes: Number(v.ratesAndTaxes) || 0,
+    insurance: Number(v.insurance) || 0,
+    waterSewerage: Number(v.waterSewerage) || 0,
+    securityCleaning: Number(v.securityCleaning) || 0,
+    electricity: Number(v.electricity) || 0,
+    badDebtsPct: Number(v.badDebtsPct) || 0,
+    nightlyRate: Number(v.nightlyRate) || 0,
+    avgOccupiedNights: Number(v.avgOccupiedNights) || 0,
+    platformFeesPct: Number(v.platformFeesPct) || 0,
+    billsIncluded: Boolean(v.billsIncluded),
+    billsIncludedAmount:
+      v.billsIncludedAmount === null || v.billsIncludedAmount === undefined
+        ? null
+        : Number(v.billsIncludedAmount) || 0,
+    pricePerRoom: Number(v.pricePerRoom) || 0,
+    singleRoomCount: Number(v.singleRoomCount) || 0,
+    singleRoomRent: Number(v.singleRoomRent) || 0,
+    singleRoomNsfasBeds: Number(v.singleRoomNsfasBeds) || 0,
+    sharingRoomCount: Number(v.sharingRoomCount) || 0,
+    sharingBedsPerRoom: Number(v.sharingBedsPerRoom) || 0,
+    sharingRoomRent: Number(v.sharingRoomRent) || 0,
+    sharingRoomNsfasBeds: Number(v.sharingRoomNsfasBeds) || 0,
+    nsfasCycleMonths: Number(v.nsfasCycleMonths) || 10,
+    privateCycleMonths: Number(v.privateCycleMonths) || 12,
+    houseParentCost: Number(v.houseParentCost) || 0,
+    internetCost: Number(v.internetCost) || 0,
+    netflixCost: Number(v.netflixCost) || 0,
+    gasRefillCost: Number(v.gasRefillCost) || 0,
+    wasteRemovalCost: Number(v.wasteRemovalCost) || 0,
+    holdingPeriodMonths: Number(v.holdingPeriodMonths) || 0,
+    expectedSalePrice: Number(v.expectedSalePrice) || 0,
+    holdingCostPerMonth: Number(v.holdingCostPerMonth) || 0,
+    instalmentAmount: Number(v.instalmentAmount) || 0,
+    instalmentTerm: Number(v.instalmentTerm) || 0,
+    instalmentRate: Number(v.instalmentRate) || 0,
+  });
 
-  const effectiveMonthlyRevenue =
-    baseMonthlyRevenue + (Number(v.additionalIncome) || 0) + (Number(v.recoveries) || 0);
+  const revenueMonthly = calcRevenueMonthly(previewInputs);
+  const effectiveMonthlyRevenue = calcEffectiveMonthlyRevenue(previewInputs);
+  const provisions = calcProvisionsMonthly(previewInputs);
+  const operatingCosts = calcOperatingCostsMonthly(previewInputs);
+  const taxMonthly = calcTaxMonthly(previewInputs);
+  const cashflowMonthly = calcCashflowMonthly(previewInputs);
 
-  const managementFeeMonthly =
-    mode === "nightly"
-      ? effectiveMonthlyRevenue * ((Number(v.platformFeesPct) || 0) / 100)
-      : v.managementFeeMode === "percent"
-        ? effectiveMonthlyRevenue * ((Number(v.managementFeeValue) || 0) / 100)
-        : Number(v.managementFeeValue) || 0;
-
-  const maintenanceCostMonthly =
-    v.maintenanceCostMode === "percent"
-      ? effectiveMonthlyRevenue * ((Number(v.maintenanceCostValue) || 0) / 100)
-      : Number(v.maintenanceCostValue) || 0;
-
+  const baseMonthlyRevenue = revenueMonthly.rentalIncome;
   const grossRevenueMonthly = effectiveMonthlyRevenue;
-  const badDebtsMonthly = grossRevenueMonthly * ((Number(v.badDebtsPct) || 0) / 100);
-
-  const billsUnitCount = mode === "student" ? totalBeds : numUnits;
-  const billsFromRooms =
-    (mode === "per_room" || mode === "student") && v.billsIncluded
-      ? (Number(v.billsIncludedAmount) || 0) * billsUnitCount
-      : 0;
-
-  const utilitiesMonthly =
-    (Number(v.waterSewerage) || 0) +
-    (Number(v.electricity) || 0) +
-    (Number(v.securityCleaning) || 0) +
-    billsFromRooms +
-    (mode === "student"
-      ? (Number(v.internetCost) || 0) +
-        (Number(v.netflixCost) || 0) +
-        (Number(v.gasRefillCost) || 0) +
-        (Number(v.wasteRemovalCost) || 0)
-      : 0);
-  const ratesInsuranceOtherMonthly =
-    (Number(v.ratesAndTaxes) || 0) +
-    (Number(v.insurance) || 0) +
-    (Number(v.levies) || 0) +
-    (mode === "student" ? Number(v.houseParentCost) || 0 : 0);
-
-  const operatingCostsMonthly = financeCostMonthly + utilitiesMonthly + ratesInsuranceOtherMonthly;
-  const provisionsMonthly = managementFeeMonthly + maintenanceCostMonthly + badDebtsMonthly;
-
-  const noiMonthly = grossRevenueMonthly - utilitiesMonthly - ratesInsuranceOtherMonthly - provisionsMonthly;
-  const taxMonthly = Math.max(0, (noiMonthly - financeCostMonthly) * ((deal.incomeTaxRate ?? 27) / 100));
-  const cashflowMonthly = grossRevenueMonthly - operatingCostsMonthly - provisionsMonthly - taxMonthly;
+  const managementFeeMonthly = provisions.management;
+  const maintenanceCostMonthly = provisions.maintenance;
+  const badDebtsMonthly = provisions.badDebts;
+  const utilitiesMonthly = operatingCosts.utilities;
+  const ratesInsuranceOtherMonthly = operatingCosts.ratesInsuranceOther;
+  const financeCostMonthly = operatingCosts.finance;
+  const operatingCostsMonthly = operatingCosts.total;
+  const provisionsMonthly = provisions.total;
 
   const mult = view === "annual" ? 12 : 1;
   const fmt = (n: number) => `R ${(n * mult).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
-  // ---- Fix & Flip summary (separate from ongoing cashflow) ----
-  const holdingCosts = (Number(v.holdingCostPerMonth) || 0) * (Number(v.holdingPeriodMonths) || 0);
-  const agentFee = (Number(v.expectedSalePrice) || 0) * ((deal.agentCommission ?? 0) / 100);
-  const flipTotalCost = (deal.purchasePrice ?? 0) + (deal.renovationCost ?? 0) + holdingCosts + agentFee;
-  const flipGrossProfit = (Number(v.expectedSalePrice) || 0) - flipTotalCost;
-  const flipCgt = Math.max(0, flipGrossProfit * ((deal.capitalGainsTaxRate ?? 22) / 100));
-  const flipNetProfit = flipGrossProfit - flipCgt;
-  const flipRoi = flipTotalCost ? (flipNetProfit / flipTotalCost) * 100 : 0;
+  // ---- Fix & Flip summary (Phase 4.21 — delegated entirely to calcFlipProfit,
+  // the one authoritative Fix & Flip engine; see the "flip" JSX branch below
+  // for the pre-tax, no-CGT presentation this now produces). ----
+  const flip = calcFlipProfit(previewInputs);
 
   // ---- Instalment split ----
+  // Illustrative estimate only (Phase 4.21 audit) — instalmentRate and
+  // instalmentTerm are captured but NOT consumed anywhere in
+  // lib/calculations' authoritative model (calcBaseMonthlyRevenue treats an
+  // Instalment Sale as a flat monthly instalmentAmount only). This
+  // principal/interest split is a simplistic, presentation-only estimate,
+  // never an authoritative Instalment Sale amortisation — it is explicitly
+  // labelled as such below, and the deal's verdict remains unavailable for
+  // this strategy (see VERDICT_ENABLED_STRATEGIES in lib/calculations/verdict.ts)
+  // until a genuine seller-finance model is built.
   const instalmentRateMonthly = (Number(v.instalmentRate) || 0) / 12 / 100;
   const instalmentInterestComponent = (Number(v.instalmentAmount) || 0) > 0
     ? Math.min(Number(v.instalmentAmount) || 0, (deal.purchasePrice ?? 0) * instalmentRateMonthly)
@@ -293,61 +306,69 @@ export default function CashflowTab() {
             <FormField label="Agent Commission on Sale">
               <PercentInput readOnly value={(deal.agentCommission ?? 0).toFixed(2)} />
             </FormField>
-            <FormField label="Capital Gains Tax">
-              <PercentInput readOnly value={(deal.capitalGainsTaxRate ?? 22).toFixed(2)} />
-            </FormField>
           </div>
         </section>
 
+        {/* Phase 4.21 — sourced entirely from calcFlipProfit(previewInputs),
+            the same authoritative Fix & Flip engine the Deal Summary/PDF
+            read. No formula is re-derived here. Pre-tax, no CGT deducted —
+            see FixFlipAnalysis.modelAssumptions.taxAssumption / FlipMetrics
+            netProfit's own doc comment (lib/calculations/index.ts) for why. */}
         <section className="rounded-lg border border-av-light-grey p-6 font-body text-sm">
           <div className="flex justify-between py-1">
             <span className="text-av-slate">Purchase Price</span>
-            <span className="font-mono">R {(deal.purchasePrice ?? 0).toLocaleString("en-US")}</span>
+            <span className="font-mono">R {flip.purchasePrice.toLocaleString("en-US")}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span className="text-av-slate">Acquisition Costs (Transfer, Bond &amp; Sourcing)</span>
+            <span className="font-mono">R {flip.acquisitionCosts.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
           </div>
           <div className="flex justify-between py-1">
             <span className="text-av-slate">Total Renovation Cost</span>
-            <span className="font-mono">R {(deal.renovationCost ?? 0).toLocaleString("en-US")}</span>
+            <span className="font-mono">R {flip.renovationCost.toLocaleString("en-US")}</span>
           </div>
           <div className="flex justify-between py-1">
             <span className="text-av-slate">Holding Costs ({v.holdingPeriodMonths} months)</span>
-            <span className="font-mono">R {holdingCosts.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <span className="font-mono">R {flip.holdingCosts.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span className="text-av-slate">Financing Interest During Hold</span>
+            <span className="font-mono">R {flip.financingInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-av-light-grey pb-3">
             <span className="text-av-slate">Agent Commission</span>
-            <span className="font-mono">R {agentFee.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <span className="font-mono">R {flip.agentFee.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
           </div>
           <div className="flex justify-between py-2 font-semibold">
             <span>Total Cost</span>
-            <span className="font-mono">R {flipTotalCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <span className="font-mono">R {flip.totalCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-av-light-grey pb-3">
             <span className="text-av-slate">Expected Sale Price</span>
-            <span className="font-mono">R {(Number(v.expectedSalePrice) || 0).toLocaleString("en-US")}</span>
-          </div>
-          <div className="flex justify-between py-1">
-            <span className="text-av-slate">Gross Profit</span>
-            <span className="font-mono">R {flipGrossProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-av-light-grey pb-3">
-            <span className="text-av-slate">Capital Gains Tax</span>
-            <span className="font-mono text-av-red">-R {flipCgt.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <span className="font-mono">R {flip.expectedSalePrice.toLocaleString("en-US")}</span>
           </div>
           <div className="flex justify-between py-2 text-base font-bold">
-            <span>NET PROFIT</span>
+            <span>ESTIMATED PROFIT BEFORE TAX</span>
             <span className="font-mono text-av-navy">
-              R {flipNetProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              R {flip.netProfit.toLocaleString("en-US", { maximumFractionDigits: 0 })}
             </span>
           </div>
           <div className="flex justify-between py-1">
-            <span className="text-av-slate">ROI on Investment</span>
-            <span className="font-mono">{flipRoi.toFixed(1)}%</span>
+            <span className="text-av-slate">Pre-Tax ROI</span>
+            <span className="font-mono">{flip.roi.toFixed(1)}%</span>
           </div>
           <div className="flex justify-between py-1">
-            <span className="text-av-slate">Annualised ROI</span>
+            <span className="text-av-slate">Annualised Pre-Tax ROI</span>
             <span className="font-mono">
-              {(Number(v.holdingPeriodMonths) > 0 ? flipRoi / (Number(v.holdingPeriodMonths) / 12) : 0).toFixed(1)}%
+              {flip.annualisedROI === null ? "N/A" : `${flip.annualisedROI.toFixed(1)}%`}
             </span>
           </div>
+          <p className="text-xs font-body text-av-slate/80 pt-3">
+            AssetVerdict currently reports Fix &amp; Flip returns before tax. Loan principal is
+            never treated as a project expense — see Financing on the Deal Summary for the full
+            debt breakdown. The tax character of a property disposal (capital gain vs. revenue)
+            depends on the transaction&apos;s own facts and is not determined by this model.
+          </p>
         </section>
 
         <SaveBar dirty={formState.isDirty} saving={formState.isSubmitting} onSave={handleSubmit(onSubmit)} />
@@ -511,6 +532,15 @@ export default function CashflowTab() {
               income rather than overstating it by assuming every bed pays year-round.
             </p>
           )}
+          {(nsfasSingleBeds + nsfasSharingBeds > 0) && (privateSingleBeds + privateSharingBeds > 0) && (
+            <p className="text-xs font-body text-av-orange mt-2">
+              Known limitation: AssetVerdict currently uses ONE rent per room type (Single / Sharing)
+              for both NSFAS and private/bursary beds. If your private-market rent actually differs
+              from your NSFAS rate, this mix will not capture that difference — revenue may be over-
+              or understated for whichever funding type the entered rent doesn&apos;t match. Separate
+              NSFAS/private rates per room type are not yet supported.
+            </p>
+          )}
 
           <div className="mt-4">
             <MarketIntelligencePanel
@@ -634,12 +664,18 @@ export default function CashflowTab() {
                 <PercentInput {...register("instalmentRate")} />
               </FormField>
               <div />
-              <FormField label="Interest Component / month">
+              <FormField label="Interest Component / month (illustrative)">
                 <CurrencyInput readOnly value={instalmentInterestComponent.toFixed(2)} />
               </FormField>
-              <FormField label="Principal Component / month">
+              <FormField label="Principal Component / month (illustrative)">
                 <CurrencyInput readOnly value={instalmentPrincipalComponent.toFixed(2)} />
               </FormField>
+              <p className="md:col-span-2 text-xs font-body text-av-slate">
+                This principal/interest split is an illustrative estimate only, not sourced from
+                AssetVerdict&apos;s authoritative calculation engine — Instalment Sale does not
+                yet have a full seller-finance model, so an Overall Verdict is not available for
+                this strategy.
+              </p>
               <p className="md:col-span-2 text-xs font-body text-av-slate">
                 In an ISA, you remain the registered owner until the final instalment is paid.
               </p>

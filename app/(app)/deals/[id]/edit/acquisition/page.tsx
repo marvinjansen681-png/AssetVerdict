@@ -6,6 +6,8 @@ import { mutate as globalMutate } from "swr";
 import { useDeal } from "@/lib/DealContext";
 import { useToast } from "@/components/ui/Toast";
 import { calcTransferDuty } from "@/lib/calculations/transferDuty";
+import { calcTotalInvestment, calcProjectedPropertyValue } from "@/lib/calculations";
+import { buildPreviewInputs } from "@/lib/calculations/previewInputs";
 import SaveBar from "@/components/forms/SaveBar";
 import FormField from "@/components/ui/FormField";
 import CurrencyInput from "@/components/ui/CurrencyInput";
@@ -70,15 +72,25 @@ export default function AcquisitionTab() {
     [purchasePrice]
   );
 
-  const totalInvestmentCost =
-    purchasePrice + transferBondCost + renovationCost + sourcingFee;
+  // Phase 4.21 — sourced from the authoritative engine (calcTotalInvestment)
+  // rather than re-summing these fields inline, and the projected sale
+  // price reuses the exact same capital-growth compounding
+  // calc20YearProjection's own propertyValue field uses (calcProjectedPropertyValue),
+  // so this preview can never drift from what Exit Analysis eventually shows.
+  const previewInputs = buildPreviewInputs(deal, {
+    askingPrice,
+    purchasePrice,
+    marketValue,
+    transferBondCost,
+    sourcingFee,
+    renovationCost,
+  });
+  const totalInvestmentCost = calcTotalInvestment(previewInputs);
 
   const capitalGrowthRate = deal.capitalGrowthRate ?? 3;
   const saleYear = Number(watch("saleYear")) || 10;
   const projectedSalePrice =
-    marketValue > 0
-      ? marketValue * Math.pow(1 + capitalGrowthRate / 100, saleYear)
-      : 0;
+    marketValue > 0 ? calcProjectedPropertyValue(marketValue, capitalGrowthRate, saleYear) : 0;
 
   async function onSubmit(data: AcquisitionForm) {
     const res = await fetch(`/api/deals/${deal.id}`, {
@@ -164,6 +176,13 @@ export default function AcquisitionTab() {
                 })}
               </span>
             </div>
+            <p className="text-xs font-body text-av-slate mt-3">
+              Transfer duty generally applies only to property transactions that are not subject
+              to VAT — AssetVerdict does not yet model VAT status, so this estimate should not be
+              assumed to apply to every transaction (e.g. a purchase from a VAT-registered
+              seller/developer in the course of their enterprise is typically subject to VAT
+              instead of transfer duty).
+            </p>
           </div>
         )}
 

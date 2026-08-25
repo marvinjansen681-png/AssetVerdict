@@ -29,7 +29,7 @@ function formatRand(value: number) {
 interface TooltipPayloadItem {
   color: string;
   name: string;
-  value: number;
+  value: number | null;
 }
 
 function CustomTooltip({
@@ -49,9 +49,11 @@ function CustomTooltip({
       {payload.map((entry) => (
         <p key={entry.name} style={{ color: entry.color }}>
           {entry.name}:{" "}
-          {entry.name === "Yearly ROI"
-            ? `${entry.value.toFixed(2)}%`
-            : `R ${entry.value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}
+          {entry.value === null
+            ? "N/A"
+            : entry.name === "Annual Cash-on-Cash Return"
+              ? `${entry.value.toFixed(2)}%`
+              : `R ${entry.value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}
         </p>
       ))}
     </div>
@@ -73,7 +75,11 @@ export default function ProjectCashflowChart({
     year: p.year,
     "Total Cash Flow for Period": p.cashflowForPeriod,
     "Cumulative Cash Flow": p.cumulativeCashflow,
-    "Yearly ROI": p.yearlyROI,
+    // Phase 4.21 (Defect 5): equity-level cash-on-cash return, not a
+    // property-level "ROI" — see YearlyProjection.yearlyROI's own doc
+    // comment (lib/calculations/index.ts). null (no equity invested) breaks
+    // the line rather than plotting a fake 0%.
+    "Annual Cash-on-Cash Return": p.yearlyROI,
   }));
 
   return (
@@ -109,7 +115,7 @@ export default function ProjectCashflowChart({
               orientation="right"
               domain={[0, 35]}
               tick={{ fontSize: 11 }}
-              label={{ value: "Yearly ROI %", angle: 90, position: "insideRight", fontSize: 11 }}
+              label={{ value: "Annual Cash-on-Cash Return %", angle: 90, position: "insideRight", fontSize: 11 }}
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -127,10 +133,11 @@ export default function ProjectCashflowChart({
             <Line
               yAxisId="right"
               type="monotone"
-              dataKey="Yearly ROI"
+              dataKey="Annual Cash-on-Cash Return"
               stroke="#E67E22"
               strokeWidth={2}
               dot={false}
+              connectNulls={false}
             />
           </ComposedChart>
         </ResponsiveContainer>
