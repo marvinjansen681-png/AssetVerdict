@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
+import { calcFurnitureItemBudgetCost, calcFurnitureCostSummary, CONTINGENCY_CATEGORY } from "@/lib/calculations/furnitureCosts";
 
 const dealWithRelations = {
   financeSources: { orderBy: { order: "asc" } },
@@ -97,15 +98,80 @@ export async function upsertFinanceSources(
   });
 }
 
+/**
+ * Server-authoritative furniture/renovation persistence (Phase 4.22).
+ *
+ * Two trust-boundary corrections over the pre-4.22 version:
+ *   1. Every ordinary item's `budgeted` is RECOMPUTED here from its own
+ *      quantity/unitCost via calcFurnitureItemBudgetCost — a client-sent
+ *      `budgeted` figure is never trusted when unit pricing is engaged
+ *      (requirement 13). A client sending Qty=10, Unit=R2,500,
+ *      Budget=R99,000 is persisted as R25,000, not R99,000.
+ *   2. `Deal.renovationCost` is set to calcFurnitureCostSummary's own
+ *      `grandTotal` — Cost Used (quote-or-budget per item, never both) plus
+ *      dynamic contingency — never a naive sum of `budgeted` alone, which
+ *      previously ignored `quoted` and any contingency entirely.
+ *
+ * At most one Contingency-category item is accepted (requirement 9) — the
+ * UI's dedicated single percentage control should never send more than one,
+ * but this is the actual trust boundary; a manipulated request with two is
+ * rejected here rather than silently summed or overwritten.
+ *
+ * Still a delete-all/insert-all replace, matching upsertFinanceSources'
+ * existing convention (Phase 4.22 requirement 12 audit): retained
+ * deliberately as the "smallest robust solution" for this phase — it is
+ * already fully transactional (an all-or-nothing single DB transaction, no
+ * partial state is ever observable), and the client-side serial save queue
+ * (lib/saveQueue.ts) now guarantees at most one PUT to this function is ever
+ * in flight per browser session, which is the realistic race this phase
+ * needed to close. True multi-tab/multi-device concurrent editing with
+ * optimistic-concurrency version columns is out of scope — see the Phase
+ * 4.22 report's Remaining Limitations.
+ */
 export async function upsertRenovationItems(
   dealId: string,
   items: Omit<Prisma.RenovationItemUncheckedCreateInput, "dealId">[]
 ) {
+  const contingencyRows = items.filter((i) => i.category === CONTINGENCY_CATEGORY);
+  if (contingencyRows.length > 1) {
+    throw new Error("Only one Contingency item is allowed per deal.");
+  }
+  const contingencyInput = contingencyRows[0];
+
+  const recomputedNonContingency = items
+    .filter((i) => i.category !== CONTINGENCY_CATEGORY)
+    .map((item) => ({
+      ...item,
+      budgeted: calcFurnitureItemBudgetCost({
+        quantity: item.quantity ?? null,
+        unitCost: item.unitCost ?? null,
+        budgeted: item.budgeted ?? 0,
+      }) ?? 0,
+    }));
+
+  const summary = calcFurnitureCostSummary(
+    recomputedNonContingency.map((i) => ({
+      category: i.category,
+      budgeted: i.budgeted,
+      quoted: i.quoted ?? null,
+      quantity: i.quantity ?? null,
+      unitCost: i.unitCost ?? null,
+    })),
+    contingencyInput?.unitCost ?? null
+  );
+
+  const finalItems: typeof items = contingencyInput
+    ? [
+        ...recomputedNonContingency,
+        { ...contingencyInput, quantity: null, budgeted: summary.contingencyAmount },
+      ]
+    : recomputedNonContingency;
+
   return prisma.$transaction(async (tx) => {
     await tx.renovationItem.deleteMany({ where: { dealId } });
-    if (items.length > 0) {
+    if (finalItems.length > 0) {
       await tx.renovationItem.createMany({
-        data: items.map((item, index) => ({ ...item, dealId, order: index })),
+        data: finalItems.map((item, index) => ({ ...item, dealId, order: index })),
       });
     }
 
@@ -114,10 +180,9 @@ export async function upsertRenovationItems(
       orderBy: { order: "asc" },
     });
 
-    const total = saved.reduce((sum, item) => sum + item.budgeted, 0);
     await tx.deal.update({
       where: { id: dealId },
-      data: { renovationCost: total },
+      data: { renovationCost: summary.grandTotal },
     });
 
     return saved;

@@ -12,6 +12,7 @@ import { isFiniteNumber } from "@/lib/calculations";
 import type { DealSummaryInputs } from "@/hooks/useDealMetrics";
 import type { Scenarios } from "@/lib/calculations/scenarios";
 import type { RenovationItem, PropertyValuation, SuburbProfile } from "@/types";
+import { calcFurnitureItemResult, CONTINGENCY_CATEGORY } from "@/lib/calculations/furnitureCosts";
 import { getGaugeColorForStrategy, type GaugeVisualColor } from "@/lib/calculations/thresholds";
 import {
   getMetricApplicability,
@@ -945,12 +946,16 @@ export default function DealSummaryPDF({
           </View>
         </View>
 
-        <Text style={styles.h2}>Renovation Summary</Text>
+        <Text style={styles.h2}>Furniture, Setup &amp; Renovation Summary</Text>
         <Text style={{ fontFamily: "Helvetica-Bold", marginBottom: 8 }}>
-          Total Renovation Cost: {fmt(dealSummary.renovationCost, currencySymbol)}
+          Cost Used in Deal: {fmt(dealSummary.renovationCost, currencySymbol)}
+        </Text>
+        <Text style={{ fontSize: 8, color: COLORS.slate, marginBottom: 8 }}>
+          The amount AssetVerdict includes in Total Investment and return calculations — Quote-or-Budget
+          per item, plus contingency. See lib/calculations/furnitureCosts.ts.
         </Text>
         {renovationItems.length === 0 ? (
-          <Text style={styles.label}>No renovation items added.</Text>
+          <Text style={styles.label}>No furniture/setup/renovation items added.</Text>
         ) : (
           <View style={styles.table}>
             <View style={styles.tableRow}>
@@ -959,22 +964,37 @@ export default function DealSummaryPDF({
               <Text style={styles.tableCellSmall}>Qty x Unit Cost</Text>
               <Text style={styles.tableCellSmall}>Budgeted</Text>
               <Text style={styles.tableCellSmall}>Quoted</Text>
+              <Text style={styles.tableCellSmall}>Cost Used</Text>
               <Text style={styles.tableCellSmall}>Status</Text>
             </View>
-            {renovationItems.map((item) => (
-              <View style={styles.tableRow} key={item.id}>
-                <Text style={styles.tableCellSmall}>{item.category}</Text>
-                <Text style={styles.tableCellSmall}>{item.description}</Text>
-                <Text style={styles.tableCellSmall}>
-                  {item.quantity != null && item.unitCost != null
-                    ? `${item.quantity} x ${fmt(item.unitCost, currencySymbol)}`
-                    : ""}
-                </Text>
-                <Text style={styles.tableCellSmall}>{fmt(item.budgeted, currencySymbol)}</Text>
-                <Text style={styles.tableCellSmall}>{fmt(item.quoted, currencySymbol)}</Text>
-                <Text style={styles.tableCellSmall}>{item.status}</Text>
-              </View>
-            ))}
+            {renovationItems.map((item) => {
+              const isContingency = item.category === CONTINGENCY_CATEGORY;
+              const result = calcFurnitureItemResult({
+                budgeted: item.budgeted,
+                quoted: item.quoted ?? null,
+                quantity: item.quantity ?? null,
+                unitCost: item.unitCost ?? null,
+              });
+              return (
+                <View style={styles.tableRow} key={item.id}>
+                  <Text style={styles.tableCellSmall}>{item.category}</Text>
+                  <Text style={styles.tableCellSmall}>{item.description}</Text>
+                  <Text style={styles.tableCellSmall}>
+                    {isContingency
+                      ? `${item.unitCost ?? 0}% of Cost Used`
+                      : item.quantity != null && item.unitCost != null
+                        ? `${item.quantity} x ${fmt(item.unitCost, currencySymbol)}`
+                        : ""}
+                  </Text>
+                  <Text style={styles.tableCellSmall}>{fmt(item.budgeted, currencySymbol)}</Text>
+                  <Text style={styles.tableCellSmall}>{isContingency ? "--" : fmt(item.quoted, currencySymbol)}</Text>
+                  <Text style={styles.tableCellSmall}>
+                    {fmt(isContingency ? item.budgeted : result.costUsed, currencySymbol)}
+                  </Text>
+                  <Text style={styles.tableCellSmall}>{isContingency ? "--" : item.status}</Text>
+                </View>
+              );
+            })}
           </View>
         )}
       </Page>

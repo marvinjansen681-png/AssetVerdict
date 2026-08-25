@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { mutate as globalMutate } from "swr";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 import Input from "@/components/ui/Input";
+import PercentInput from "@/components/ui/PercentInput";
 import { useToast } from "@/components/ui/Toast";
 import type { RenovationItem } from "@/types";
+import {
+  calcFurnitureItemBudgetCost,
+  calcFurnitureItemResult,
+  calcFurnitureCostSummary,
+  inferLegacyContingencyPct,
+  CONTINGENCY_CATEGORY,
+  type FurnitureLineItemInput,
+} from "@/lib/calculations/furnitureCosts";
+import { createSerialSaveQueue } from "@/lib/saveQueue";
 
 const DEFAULT_CATEGORIES = [
   "Structural",
@@ -22,7 +32,6 @@ const DEFAULT_CATEGORIES = [
   "HVAC / Solar / Geysers",
   "Compliance & Certs",
   "Professional Fees",
-  "Contingency",
   "Other",
 ];
 
@@ -100,6 +109,10 @@ function toLocal(item: RenovationItem): LocalItem {
   };
 }
 
+function fmtRand(n: number) {
+  return `R ${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
 interface RenovationBudgetProps {
   dealId: string;
   initialItems: RenovationItem[];
@@ -110,33 +123,114 @@ interface RenovationBudgetProps {
   totalLabel?: string;
 }
 
+/** Payload shape sent to the /renovation API — mirrors FurnitureLineItemInput plus the DB row's other required columns. */
+interface SaveItemPayload extends FurnitureLineItemInput {
+  description: string;
+  status: string;
+}
+
 export default function RenovationBudget({
   dealId,
   initialItems,
   onTotalChange,
   categories = DEFAULT_CATEGORIES,
   presets = {},
-  title = "Renovation Budget",
-  totalLabel = "Total Renovation",
+  title = "Furniture, Setup & Renovation Budget",
+  totalLabel = "Cost Used in Deal",
 }: RenovationBudgetProps) {
   const { showToast } = useToast();
-  const [items, setItems] = useState<LocalItem[]>(initialItems.map(toLocal));
+
+  const [ordinaryInitial, legacyContingencyInitial] = useMemo(() => {
+    const ordinary: RenovationItem[] = [];
+    const legacyContingency: RenovationItem[] = [];
+    for (const item of initialItems) {
+      (item.category === CONTINGENCY_CATEGORY ? legacyContingency : ordinary).push(item);
+    }
+    return [ordinary, legacyContingency];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [items, setItems] = useState<LocalItem[]>(ordinaryInitial.map(toLocal));
+  const [contingencyPct, setContingencyPct] = useState<number | null>(() => {
+    const initialCostUsedTotal = ordinaryInitial.reduce(
+      (sum, i) => sum + calcFurnitureItemResult(toLocal(i)).costUsed,
+      0
+    );
+    return inferLegacyContingencyPct(legacyContingencyInitial.map(toLocal), initialCostUsedTotal);
+  });
   const [saving, setSaving] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRender = useRef(true);
 
-  const subtotal = items
-    .filter((i) => i.category !== "Contingency")
-    .reduce((sum, i) => sum + (Number(i.budgeted) || 0), 0);
-  const total = items.reduce((sum, i) => sum + (Number(i.budgeted) || 0), 0);
+  // ---- Authoritative totals (Phase 4.22) — the ONE source for every total
+  // shown below, the autosave payload, and onTotalChange. No duplicate
+  // reduce()-based sum lives anywhere else in this component. ----
+  const summary = useMemo(() => calcFurnitureCostSummary(items, contingencyPct), [items, contingencyPct]);
   const completeCount = items.filter((i) => i.status === "Complete").length;
   const progressPct = items.length > 0 ? (completeCount / items.length) * 100 : 0;
 
   useEffect(() => {
-    onTotalChange(total);
+    onTotalChange(summary.grandTotal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total]);
+  }, [summary.grandTotal]);
+
+  // ---- Autosave (Phase 4.22, requirements 10-11) ----
+  // A serial save queue guarantees at most one PUT is ever in flight and
+  // that only the latest known state is ever sent — see lib/saveQueue.ts's
+  // own doc comment for why this structurally prevents an older save from
+  // completing after, and overwriting, a newer one.
+  const dealIdRef = useRef(dealId);
+  dealIdRef.current = dealId;
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
+  const [queue] = useState(() =>
+    createSerialSaveQueue<SaveItemPayload[]>(async (payloadItems) => {
+      setSaving(true);
+      try {
+        const res = await fetch(`/api/deals/${dealIdRef.current}/renovation`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: payloadItems }),
+          keepalive: true, // survives a tab close/navigation-away that fires this as the page unloads
+        });
+        if (!res.ok) {
+          showToastRef.current("error", "Could not save renovation budget.");
+          return;
+        }
+        globalMutate(`/api/deals/${dealIdRef.current}/calculate`);
+      } finally {
+        setSaving(false);
+      }
+    })
+  );
+
+  function buildSavePayload(currentItems: LocalItem[], currentContingencyPct: number | null): SaveItemPayload[] {
+    const ordinaryPayload: SaveItemPayload[] = currentItems.map((i) => ({
+      category: i.category,
+      description: i.description,
+      budgeted: Number(i.budgeted) || 0,
+      quoted: i.quoted === null ? null : Number(i.quoted) || 0,
+      status: i.status,
+      quantity: i.quantity === null ? null : Number(i.quantity) || 0,
+      unitCost: i.unitCost === null ? null : Number(i.unitCost) || 0,
+    }));
+    const localSummary = calcFurnitureCostSummary(currentItems, currentContingencyPct);
+    if (localSummary.contingencyPct === null) return ordinaryPayload;
+    return [
+      ...ordinaryPayload,
+      {
+        category: CONTINGENCY_CATEGORY,
+        description: `Contingency (${localSummary.contingencyPct}% of Cost Used)`,
+        budgeted: localSummary.contingencyAmount,
+        quoted: null,
+        status: "Not Started",
+        quantity: null,
+        unitCost: localSummary.contingencyPct,
+      },
+    ];
+  }
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -144,36 +238,35 @@ export default function RenovationBudget({
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setSaving(true);
-      const res = await fetch(`/api/deals/${dealId}/renovation`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((i) => ({
-            category: i.category,
-            description: i.description,
-            budgeted: Number(i.budgeted) || 0,
-            quoted: i.quoted === null ? null : Number(i.quoted) || 0,
-            status: i.status,
-            quantity: i.quantity === null ? null : Number(i.quantity) || 0,
-            unitCost: i.unitCost === null ? null : Number(i.unitCost) || 0,
-          })),
-        }),
-      });
-      setSaving(false);
-      if (!res.ok) {
-        showToast("error", "Could not save renovation budget.");
-        return;
-      }
-      globalMutate(`/api/deals/${dealId}/calculate`);
+    debounceRef.current = setTimeout(() => {
+      queue.schedule(buildSavePayload(items, contingencyPct));
     }, 800);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [items, contingencyPct]);
+
+  // Flush the latest pending edit before it can be silently lost — on
+  // unmount (tab/step change within the app) and when the browser tab is
+  // hidden (navigating away, closing, refreshing). Never depends purely on
+  // the 800ms timer completing (Phase 4.22, requirement 10).
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        queue.flush();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      queue.flush();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue]);
 
   function addItem(category: string) {
     const preset = presets[category];
@@ -205,14 +298,13 @@ export default function RenovationBudget({
       return;
     }
 
-    const defaultBudgeted = category === "Contingency" ? Math.round(subtotal * 0.1) : 0;
     setItems((prev) => [
       ...prev,
       {
         id: `local-${Date.now()}-${Math.random()}`,
         category,
-        description: category === "Contingency" ? "Contingency (10% of subtotal)" : "",
-        budgeted: defaultBudgeted,
+        description: "",
+        budgeted: 0,
         quoted: null,
         status: "Not Started",
         quantity: null,
@@ -248,13 +340,13 @@ export default function RenovationBudget({
       prev.map((i) => {
         if (i.id !== id) return i;
         const next = { ...i, ...patch };
-        // Unit pricing is optional (section: "Do you understand?" furniture
-        // feature) — whenever both Quantity and Unit Cost are present,
-        // Budgeted is derived from them, never typed directly. Clearing
-        // either one reverts Budgeted to a normal, directly-editable lump
-        // sum (its last value is kept as the starting point).
-        if (("quantity" in patch || "unitCost" in patch) && next.quantity !== null && next.unitCost !== null) {
-          next.budgeted = next.quantity * next.unitCost;
+        // Phase 4.22 (Defect: stale budget after clearing inputs) — every
+        // edit to quantity/unitCost recomputes budgetCost from the SAME
+        // authoritative helper the server uses. Clearing either primitive
+        // now correctly collapses budgeted to 0 rather than silently
+        // preserving whatever number was last computed.
+        if ("quantity" in patch || "unitCost" in patch) {
+          next.budgeted = calcFurnitureItemBudgetCost(next) ?? 0;
         }
         return next;
       })
@@ -322,7 +414,10 @@ export default function RenovationBudget({
           <div className="flex flex-col gap-3">
             {categoryOrder.map((category) => {
               const categoryItems = grouped.get(category)!;
-              const categoryTotal = categoryItems.reduce((sum, i) => sum + (Number(i.budgeted) || 0), 0);
+              const categoryCostUsed = categoryItems.reduce(
+                (sum, i) => sum + calcFurnitureItemResult(i).costUsed,
+                0
+              );
               const isCollapsed = collapsed.has(category);
 
               return (
@@ -339,9 +434,7 @@ export default function RenovationBudget({
                       </span>
                     </span>
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm text-av-navy">
-                        R {categoryTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                      </span>
+                      <span className="font-mono text-sm text-av-navy">{fmtRand(categoryCostUsed)}</span>
                       <ChevronDown
                         size={16}
                         className={clsx("text-av-slate transition-transform", !isCollapsed && "rotate-180")}
@@ -351,7 +444,7 @@ export default function RenovationBudget({
 
                   {!isCollapsed && (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm font-body min-w-[980px]">
+                      <table className="w-full text-sm font-body min-w-[1100px]">
                         <thead>
                           <tr className="text-left text-xs text-av-slate border-b border-av-light-grey">
                             <th className="py-2 px-4">Description</th>
@@ -359,6 +452,7 @@ export default function RenovationBudget({
                             <th className="py-2 pr-2">Unit Cost</th>
                             <th className="py-2 pr-2">Budgeted</th>
                             <th className="py-2 pr-2">Quoted</th>
+                            <th className="py-2 pr-2">Cost Used</th>
                             <th className="py-2 pr-2">Status</th>
                             <th className="py-2" />
                           </tr>
@@ -366,6 +460,7 @@ export default function RenovationBudget({
                         <tbody>
                           {categoryItems.map((item) => {
                             const isUnitPriced = item.quantity !== null && item.unitCost !== null;
+                            const result = calcFurnitureItemResult(item);
                             return (
                             <tr key={item.id} className="border-b border-av-light-grey last:border-0">
                               <td className="py-2 px-4 min-w-[160px]">
@@ -402,7 +497,8 @@ export default function RenovationBudget({
                               </td>
                               <td className="py-2 pr-2 min-w-[130px]">
                                 <CurrencyInput
-                                  value={item.budgeted}
+                                  value={result.budgetCost ?? ""}
+                                  placeholder={result.budgetCost === null ? "Incomplete" : undefined}
                                   readOnly={isUnitPriced}
                                   title={isUnitPriced ? "Computed from Qty x Unit Cost" : undefined}
                                   onChange={(e) => {
@@ -420,6 +516,20 @@ export default function RenovationBudget({
                                     })
                                   }
                                 />
+                                {result.variance !== null && (
+                                  <div
+                                    className={clsx(
+                                      "text-xs font-mono mt-0.5",
+                                      result.variance > 0 ? "text-av-red" : result.variance < 0 ? "text-av-green" : "text-av-slate"
+                                    )}
+                                  >
+                                    {result.variance > 0 ? "+" : ""}
+                                    {fmtRand(result.variance)} vs budget
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2 pr-2 min-w-[110px] font-mono text-av-navy font-semibold">
+                                {fmtRand(result.costUsed)}
                               </td>
                               <td className="py-2 pr-2 min-w-[130px]">
                                 <select
@@ -466,11 +576,53 @@ export default function RenovationBudget({
         </>
       )}
 
-      <div className="rounded-lg bg-av-light-grey p-4 mt-4 flex items-center justify-between">
-        <span className="font-body text-sm text-av-navy font-semibold">{totalLabel}</span>
-        <span className="font-mono text-xl font-bold text-av-navy">
-          R {total.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-        </span>
+      {/* Phase 4.22 (requirement 9): the ONE dedicated contingency control —
+          never a repeatable, duplicable line item. */}
+      <div className="mt-4 rounded-lg border border-av-light-grey p-4 flex items-center justify-between gap-4">
+        <div>
+          <div className="font-body text-sm font-semibold text-av-navy">Contingency</div>
+          <p className="text-xs font-body text-av-slate mt-0.5">
+            Applied to the Cost Used total above (Quote-or-Budget per item) — recalculates automatically
+            whenever that total changes.
+          </p>
+        </div>
+        <div className="w-28">
+          <PercentInput
+            value={contingencyPct ?? ""}
+            onChange={(e) => setContingencyPct(e.target.value === "" ? null : Number(e.target.value))}
+          />
+        </div>
+      </div>
+
+      {/* Phase 4.22 (requirement 5): the active-cost summary — the user must
+          never have to guess which number is feeding the deal. */}
+      <div className="rounded-lg bg-av-light-grey p-4 mt-4 flex flex-col gap-2 font-body text-sm">
+        <div className="flex justify-between text-av-slate">
+          <span>Budget Total</span>
+          <span className="font-mono">{fmtRand(summary.budgetTotal)}</span>
+        </div>
+        <div className="flex justify-between text-av-slate">
+          <span>Quoted Total (items with a quote)</span>
+          <span className="font-mono">{fmtRand(summary.quotedTotal)}</span>
+        </div>
+        <div className="flex justify-between text-av-slate">
+          <span>Items Cost Used (Quote or Budget, per item)</span>
+          <span className="font-mono">{fmtRand(summary.costUsedTotal)}</span>
+        </div>
+        {summary.contingencyPct !== null && (
+          <div className="flex justify-between text-av-slate">
+            <span>Contingency ({summary.contingencyPct}% of Cost Used)</span>
+            <span className="font-mono">{fmtRand(summary.contingencyAmount)}</span>
+          </div>
+        )}
+        <div className="flex justify-between items-center pt-2 border-t border-white">
+          <span className="font-semibold text-av-navy">{totalLabel}</span>
+          <span className="font-mono text-xl font-bold text-av-navy">{fmtRand(summary.grandTotal)}</span>
+        </div>
+        <p className="text-xs font-body text-av-slate/80">
+          Cost Used in Deal is the amount AssetVerdict currently includes in Total Investment and return
+          calculations.
+        </p>
       </div>
     </div>
   );

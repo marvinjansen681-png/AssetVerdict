@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { getDeal, upsertRenovationItems } from "@/lib/db/deals";
 import { prisma } from "@/lib/db";
+import { calcFurnitureItemBudgetCost, calcFurnitureCostSummary, CONTINGENCY_CATEGORY } from "@/lib/calculations/furnitureCosts";
 
 const itemSchema = z.object({
   category: z.string().min(1),
@@ -55,6 +56,17 @@ export async function PUT(
     );
   }
 
+  // Server-side trust boundary (Phase 4.22, requirement 9): reject a
+  // request carrying more than one Contingency-category item, regardless of
+  // whether the UI's own single-control design should already prevent this.
+  const contingencyCount = parsed.data.filter((i) => i.category === CONTINGENCY_CATEGORY).length;
+  if (contingencyCount > 1) {
+    return NextResponse.json(
+      { error: "Only one Contingency item is allowed per deal." },
+      { status: 400 }
+    );
+  }
+
   const updated = await upsertRenovationItems(params.id, parsed.data);
   return NextResponse.json(updated);
 }
@@ -82,15 +94,42 @@ export async function POST(
     );
   }
 
+  const existingContingencyCount = deal.renovationItems.filter(
+    (i) => i.category === CONTINGENCY_CATEGORY
+  ).length;
+  if (parsed.data.category === CONTINGENCY_CATEGORY && existingContingencyCount >= 1) {
+    return NextResponse.json(
+      { error: "Only one Contingency item is allowed per deal." },
+      { status: 400 }
+    );
+  }
+
+  // Server-authoritative recomputation (Phase 4.22, requirement 13) — a
+  // conflicting client-sent `budgeted` is never trusted once
+  // quantity/unitCost are present.
+  const budgeted = calcFurnitureItemBudgetCost({
+    quantity: parsed.data.quantity ?? null,
+    unitCost: parsed.data.unitCost ?? null,
+    budgeted: parsed.data.budgeted,
+  }) ?? 0;
+
   const item = await prisma.renovationItem.create({
-    data: { ...parsed.data, dealId: params.id, order: deal.renovationItems.length },
+    data: { ...parsed.data, budgeted, dealId: params.id, order: deal.renovationItems.length },
   });
 
-  const total =
-    deal.renovationItems.reduce((sum, i) => sum + i.budgeted, 0) + item.budgeted;
+  // Deal.renovationCost = calcFurnitureCostSummary's own grandTotal (Cost
+  // Used, quote-or-budget per item, plus dynamic contingency) — never a
+  // naive sum of `budgeted` alone (Phase 4.22, requirement 17).
+  const allNonContingency = [...deal.renovationItems, item].filter(
+    (i) => i.category !== CONTINGENCY_CATEGORY
+  );
+  const contingencyItem = [...deal.renovationItems, item].find(
+    (i) => i.category === CONTINGENCY_CATEGORY
+  );
+  const summary = calcFurnitureCostSummary(allNonContingency, contingencyItem?.unitCost ?? null);
   await prisma.deal.update({
     where: { id: params.id },
-    data: { renovationCost: total },
+    data: { renovationCost: summary.grandTotal },
   });
 
   return NextResponse.json(item, { status: 201 });

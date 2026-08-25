@@ -76,7 +76,7 @@ export default function FlipDashboard({ flipMetrics, fixFlipAnalysis, currency =
         <h3 className="font-display text-base text-av-navy mb-2">Cost Breakdown</h3>
         <Row label="Purchase Price" value={fmt(flipMetrics.purchasePrice, currency)} />
         <Row label="Acquisition Costs" value={fmt(flipMetrics.acquisitionCosts, currency)} />
-        <Row label="Renovation Cost" value={fmt(flipMetrics.renovationCost, currency)} />
+        <Row label="Furniture, Setup & Renovation Cost" value={fmt(flipMetrics.renovationCost, currency)} />
         <Row label="Holding Costs" value={fmt(flipMetrics.holdingCosts, currency)} />
         <Row label="Financing Interest" value={fmt(flipMetrics.financingInterest, currency)} />
         <Row label="Agent Commission" value={fmt(flipMetrics.agentFee, currency)} border />

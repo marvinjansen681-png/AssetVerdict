@@ -8,7 +8,12 @@ const DEAL_NUMERIC_FIELDS = [
   "purchasePrice",
   "marketValue",
   "transferBondCost",
-  "renovationCost",
+  // renovationCost is deliberately EXCLUDED (Phase 4.22): it is
+  // server-authoritative, derived from furniture/setup/renovation line
+  // items via calcFurnitureCostSummary, and settable ONLY through
+  // /api/deals/[id]/renovation. See the PATCH handler below, which
+  // additionally strips it even if a request body includes it — the
+  // browser must never be trusted to hand this endpoint a total directly.
   "sourcingFee",
   "agentCommission",
   "saleYear",
@@ -59,7 +64,13 @@ export async function PATCH(
   }
 
   const body = await req.json();
-  const coerced = coerceNumericFields(body, DEAL_NUMERIC_FIELDS);
+  const coerced = coerceNumericFields(body, DEAL_NUMERIC_FIELDS) as Record<string, unknown>;
+  // Phase 4.22 trust boundary: renovationCost must never be settable from
+  // this general-purpose PATCH endpoint, no matter what a request body
+  // happens to include — it is authoritative ONLY via
+  // /api/deals/[id]/renovation (which recomputes it from furniture/setup
+  // line items, never trusts a client-sent total).
+  delete coerced.renovationCost;
   const updated = await updateDeal(params.id, session.user.id, coerced);
   if (!updated) {
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });

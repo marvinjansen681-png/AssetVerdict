@@ -204,12 +204,7 @@ export default function AcquisitionTab() {
               refreshDeal({ renovationCost: total });
             }}
             {...(strategy.id === "student"
-              ? {
-                  categories: STUDENT_CATEGORIES,
-                  presets: STUDENT_FURNITURE_PRESETS,
-                  title: "Furniture, Setup & Renovation Budget",
-                  totalLabel: "Total Furniture, Setup & Renovation Cost",
-                }
+              ? { categories: STUDENT_CATEGORIES, presets: STUDENT_FURNITURE_PRESETS }
               : {})}
           />
         </div>
