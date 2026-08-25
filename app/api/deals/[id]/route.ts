@@ -2,40 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getDeal, updateDeal, deleteDeal } from "@/lib/db/deals";
 import { coerceNumericFields } from "@/lib/coerceNumeric";
-
-const DEAL_NUMERIC_FIELDS = [
-  "askingPrice",
-  "purchasePrice",
-  "marketValue",
-  "transferBondCost",
-  // renovationCost is deliberately EXCLUDED (Phase 4.22): it is
-  // server-authoritative, derived from furniture/setup/renovation line
-  // items via calcFurnitureCostSummary, and settable ONLY through
-  // /api/deals/[id]/renovation. See the PATCH handler below, which
-  // additionally strips it even if a request body includes it — the
-  // browser must never be trusted to hand this endpoint a total directly.
-  "sourcingFee",
-  "agentCommission",
-  "saleYear",
-  "incomeTaxRate",
-  "capitalGainsTaxRate",
-  "capitalGrowthRate",
-  "rentalGrowthRate",
-  "costInflation",
-  "sustainableGrowthRate",
-  "discountRate",
-  "realGrowthFactor",
-  "occupationFactor",
-  "marketCapRate",
-  "erfSize",
-  "floorSize",
-  "bedrooms",
-  "bathrooms",
-  "garages",
-  "numUnits",
-  "yearBuilt",
-  "schemeLevy",
-] as const;
+import { DEAL_PATCH_NUMERIC_FIELDS, pickAllowedDealFields } from "@/lib/dealFieldPolicy";
 
 export async function GET(
   _req: Request,
@@ -64,13 +31,17 @@ export async function PATCH(
   }
 
   const body = await req.json();
-  const coerced = coerceNumericFields(body, DEAL_NUMERIC_FIELDS) as Record<string, unknown>;
-  // Phase 4.22 trust boundary: renovationCost must never be settable from
-  // this general-purpose PATCH endpoint, no matter what a request body
-  // happens to include — it is authoritative ONLY via
-  // /api/deals/[id]/renovation (which recomputes it from furniture/setup
-  // line items, never trusts a client-sent total).
-  delete coerced.renovationCost;
+  // Phase 4.22.1 — explicit allowlist, not a denylist: ONLY the fields in
+  // DEAL_PATCH_ALLOWED_FIELDS ever reach the database, regardless of what
+  // else a request body contains. This is what actually closes the
+  // class of bug Phase 4.22 only partially fixed (deleting `renovationCost`
+  // one field at a time) — a derived financial output (totalInvestment,
+  // dscr, irr, npv, verdict, negotiation, ...) or a protected field
+  // (renovationCost) sent alongside a legitimate field like purchasePrice
+  // is silently dropped, never applied, while purchasePrice still saves
+  // normally. See lib/dealFieldPolicy.ts for the full classification.
+  const picked = pickAllowedDealFields(body);
+  const coerced = coerceNumericFields(picked, DEAL_PATCH_NUMERIC_FIELDS);
   const updated = await updateDeal(params.id, session.user.id, coerced);
   if (!updated) {
     return NextResponse.json({ error: "Deal not found" }, { status: 404 });
